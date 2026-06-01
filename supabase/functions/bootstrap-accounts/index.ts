@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
         if (sup) supplier_id = sup.id;
         else {
           const { data: ins, error: sErr } = await admin.from("ops_suppliers")
-            .insert({ code: spec.supplier_code, name: "MMZ 测试供应商", status: "active" })
+            .insert({ code: spec.supplier_code, name: "MMZ 测试供应商", status: "active", confirm_status: "confirmed", confirmed_at: new Date().toISOString() })
             .select("id").single();
           if (sErr) throw sErr;
           supplier_id = ins.id;
