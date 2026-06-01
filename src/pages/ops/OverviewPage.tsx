@@ -165,10 +165,10 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <LineIcon className="w-4 h-4 text-ops-sky" />
               今日销售额与退款额趋势图 (实时每小时)
-            </h3>
+            </h2>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">主数据集中在 19:30-23:30 黄金抖音达人直播时间段</p>
           <div className="h-[260px]">
@@ -188,10 +188,10 @@ export default function OverviewPage() {
 
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-ops-sky" />
               本月每周收入 / 支出 / 净现金流趋势图
-            </h3>
+            </h2>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">本周累计到周实发到货款、低虚拟支预，纯真实交款</p>
           <div className="h-[260px]">
@@ -215,10 +215,10 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-500" />
               聚水潭订单未发货超时预警 (已超 48H)
-            </h3>
+            </h2>
             <span className="text-[11px] text-muted-foreground">未发货总计: <span className="font-semibold text-foreground">342 单</span></span>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">需要客服员立即推送供应商快速发货或安排仓库提前</p>
@@ -250,10 +250,10 @@ export default function OverviewPage() {
 
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-500" />
               异常退款商品监控 (单款退款率 &gt; 85%)
-            </h3>
+            </h2>
             <span className="text-[11px] text-muted-foreground">警报触发量: <span className="font-semibold text-foreground">88%</span></span>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">退货原因多为面料勾丝与色差，决定本月对涉事供应商额停或限售</p>
@@ -291,10 +291,10 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <Layers className="w-4 h-4 text-ops-sky" />
               供应商应付款大额排行 (应付款 Top 4)
-            </h3>
+            </h2>
             <span className="text-[11px] text-muted-foreground">本月待收票合计: <span className="font-semibold text-foreground">¥4.6M</span></span>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">客单未发货宁贝与温州长比对账，应付货款偏大</p>
@@ -324,10 +324,10 @@ export default function OverviewPage() {
 
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-rose-500" />
               年报 500 万流水红线主体监控 (个体户)
-            </h3>
+            </h2>
             <span className="text-[11px] text-rose-600 font-semibold">30+ 个体户统一并联对账</span>
           </div>
           <p className="text-[11px] text-muted-foreground mb-3">控制在单家 500 万人民币/年，超限会被认定为一般纳税人并查税</p>
