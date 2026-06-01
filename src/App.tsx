@@ -51,7 +51,7 @@ const App = () => (
           <Route path="/operations/analysis" element={wrap(<OpsPlaceholder breadcrumb={["运营分析"]} title="运营分析" description="销售、直播、达人、短视频引流等多维度运营数据分析" columns={["日期", "平台", "店铺", "销售额", "退款额", "净销售额", "操作"]} />)} />
           <Route path="/suppliers" element={wrap(<SuppliersPage />)} />
           <Route path="/products" element={wrap(<ProductsPage />)} />
-          <Route path="/products/skus" element={wrap(<SkusPage />)} />
+          
           <Route path="/warehouse/arrivals" element={wrap(<ArrivalsPage />)} />
           <Route path="/finance/supplier-bills" element={wrap(<SupplierBillsPage />)} />
           <Route path="/system/users" element={wrap(<UsersPage />)} />
@@ -59,28 +59,21 @@ const App = () => (
           {/* 财税系统 */}
           <Route path="/finance/overview" element={wrap(<FinanceOverviewPage />)} />
           <Route path="/finance/cashflow" element={wrap(<CashflowPage />)} />
-          <Route path="/finance/books" element={wrap(<OpsPlaceholder breadcrumb={["财税系统", "账务管理"]} title="账务管理" description="科目、凭证与账务分类管理" columns={["凭证号", "日期", "科目", "金额", "经办人", "操作"]} />)} />
           <Route path="/finance/entities" element={wrap(<FinanceMasterDataPage />)} />
           <Route path="/finance/master-data" element={wrap(<FinanceMasterDataPage />)} />
-          <Route path="/finance/quota-alerts" element={wrap(<OpsPlaceholder breadcrumb={["财税系统", "额度预警"]} title="额度预警" description="个体户接近 500 万年度流水额度预警" columns={["主体", "本年流水", "剩余额度", "使用率", "风险等级", "操作"]} />)} />
 
           {/* 供应商系统 */}
           <Route path="/suppliers/overview" element={wrap(<OpsPlaceholder breadcrumb={["供应商系统", "供应商总览"]} title="供应商总览" description="核心供应商业绩、交期、质量指标全景" columns={["供应商", "在途订单", "本月入库", "应付金额", "交期达成率", "客诉数"]} />)} />
           <Route path="/suppliers/po-alerts" element={wrap(<OpsPlaceholder breadcrumb={["供应商系统", "采购超时预警"]} title="采购超时预警" description="采购单交期超时、未发货订单联动预警" columns={["采购单号", "供应商", "款号", "应交日期", "已超期天数", "状态", "操作"]} />)} />
 
           {/* 商品系统 */}
-          <Route path="/products/detail" element={wrap(<OpsPlaceholder breadcrumb={["商品系统", "商品详情"]} title="商品详情" description="款式 / SKU 完整信息、成本与销售表现" columns={["款号", "商品", "颜色 / 尺码", "成本", "采购价", "客诉", "操作"]} />)} />
           <Route path="/products/image-search" element={wrap(<OpsPlaceholder breadcrumb={["商品系统", "图片搜索入口"]} title="图片搜索入口" description="上传图片快速定位款号 / SKU（规划中）" columns={["上传时间", "图片", "匹配款号", "相似度", "操作"]} />)} />
 
           {/* 客服 / 售后 */}
           <Route path="/cs/complaints" element={wrap(<OpsPlaceholder breadcrumb={["客服 / 售后", "商品投诉登记"]} title="商品投诉登记" description="客服快速登记投诉、上传图片、关联订单与款号" columns={["投诉编号", "日期", "款号", "投诉类型", "处理状态", "操作"]} />)} />
-          <Route path="/cs/refunds" element={wrap(<OpsPlaceholder breadcrumb={["客服 / 售后", "异常退款商品"]} title="异常退款商品" description="退款率异常的商品聚合分析" columns={["款号", "商品", "退款数", "退款率", "主要原因", "操作"]} />)} />
-          <Route path="/cs/quality" element={wrap(<OpsPlaceholder breadcrumb={["客服 / 售后", "质量问题分析"]} title="质量问题分析" description="按供应商 / 款号 / 问题类型分析质量趋势" columns={["供应商", "款号", "问题类型", "次数", "占比", "操作"]} />)} />
 
           {/* 数据中心 */}
           <Route path="/data-center" element={wrap(<OpsPlaceholder breadcrumb={["数据中心"]} title="数据中心" description="销售、退款、直播、达人多维数据汇总" columns={["数据集", "来源", "更新时间", "记录数", "状态", "操作"]} />)} />
-          <Route path="/data-center/jst-sync" element={wrap(<JstSyncPage />)} />
-          <Route path="/data-center/jst-product-sync" element={wrap(<JstProductSyncPage />)} />
           <Route path="/data-center/jst-integration" element={wrap(<JstDataIntegrationPage />)} />
 
           {/* 系统设置 */}

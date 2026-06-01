@@ -19,8 +19,6 @@ const GROUPS: Group[] = [
     title: "商品系统", icon: Package,
     items: [
       { title: "商品档案", url: "/products" },
-      { title: "SKU 管理", url: "/products/skus" },
-      { title: "商品详情", url: "/products/detail" },
       { title: "图片搜索入口", url: "/products/image-search" },
     ],
   },
@@ -28,8 +26,6 @@ const GROUPS: Group[] = [
     title: "客服系统", icon: Headphones,
     items: [
       { title: "商品投诉登记", url: "/cs/complaints" },
-      { title: "异常退款商品", url: "/cs/refunds" },
-      { title: "质量问题分析", url: "/cs/quality" },
     ],
   },
   {
@@ -39,8 +35,6 @@ const GROUPS: Group[] = [
       { title: "公司资金流水", url: "/finance/cashflow" },
       { title: "财务基础资料", url: "/finance/master-data" },
       { title: "供应商账单核对", url: "/finance/supplier-bills" },
-      { title: "账务管理", url: "/finance/books" },
-      { title: "额度预警", url: "/finance/quota-alerts" },
     ],
   },
   {
@@ -60,8 +54,6 @@ const GROUPS: Group[] = [
     items: [
       { title: "数据中心", url: "/data-center" },
       { title: "聚水潭数据接入详情", url: "/data-center/jst-integration" },
-      { title: "聚水潭同步（开发）", url: "/data-center/jst-sync" },
-      { title: "聚水潭商品同步（开发）", url: "/data-center/jst-product-sync" },
     ],
   },
   {
