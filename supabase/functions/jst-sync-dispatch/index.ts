@@ -113,7 +113,8 @@ async function callOpenweb(path: string, biz: Record<string, unknown>, attempt =
   params.sign = signOpenweb(params, JST_APP_SECRET);
   const url = `${OPENWEB_BASE}/open/${path.replace(/^\/+/, "")}`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 30_000);
+  // 单次 60s 超时（之前 30s，suppliers/query 命中 abort）
+  const timer = setTimeout(() => ctrl.abort(), 60_000);
   let text: string;
   try {
     const resp = await proxyFetch(url, {
@@ -121,8 +122,19 @@ async function callOpenweb(path: string, biz: Record<string, unknown>, attempt =
       body: new URLSearchParams(params).toString(), signal: ctrl.signal,
     });
     text = await resp.text();
+  } catch (e: any) {
+    clearTimeout(timer);
+    const errMsg = String(e?.message ?? e);
+    // fetch abort / network 错误：自动重试一次
+    if (attempt === 1 && /abort|aborted|timeout|fetch|ECONN|network/i.test(errMsg)) {
+      await sleep(1000);
+      return await callOpenweb(path, biz, 2);
+    }
+    throw new Error(`JST ${path} 网络异常: ${errMsg}`);
   } finally { clearTimeout(timer); }
-  const json = JSON.parse(text);
+  let json: any;
+  try { json = JSON.parse(text); }
+  catch { throw new Error(`JST ${path} 返回非 JSON: ${String(text).slice(0,200)}`); }
   const code = json.code ?? json.errCode;
   const msg = json.msg ?? json.message ?? "";
   const isOk = code === 0 || code === "0" || json.issuccess === true;
