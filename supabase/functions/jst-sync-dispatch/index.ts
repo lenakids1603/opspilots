@@ -340,11 +340,13 @@ Deno.serve(async (req) => {
     try {
       const parts: string[] = [];
       let inserted = 0, updated = 0;
+      let shopStats: any = null;
       for (const t of targets) {
         if (t === "shops") {
           const r = await syncShops();
           parts.push(r.summary);
-          updated += r.updated;
+          inserted += r.mappingInserted; updated += r.mappingUpdated + r.shopsUpdated;
+          shopStats = r;
         } else if (t === "suppliers") {
           const r = await syncSuppliers();
           parts.push(r.summary);
@@ -371,11 +373,9 @@ Deno.serve(async (req) => {
         last_result_summary: summary, retry_count: 0,
       }).eq("module_key", "base_archive");
 
-      // 解决该模块下的开放异常
       await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: finishedAt })
         .eq("module_key", "base_archive").neq("status", "resolved");
 
-      // 更新指标
       await admin.from("jst_sync_metrics").upsert({
         metric_key: "base_archive_summary",
         metric_name: "基础档案",
@@ -387,7 +387,28 @@ Deno.serve(async (req) => {
         updated_at: finishedAt,
       }, { onConflict: "metric_key" });
 
-      return respJson({ ok: true, run_id: runId, summary, inserted, updated, duration_ms: durationMs });
+      // 店铺映射指标（从映射表实时聚合，避免只反映本次同步增量）
+      if (shopStats) {
+        const { data: allMaps } = await admin.from("jst_shop_mappings")
+          .select("mapping_status");
+        const totalAll = allMaps?.length ?? 0;
+        const mapped = (allMaps ?? []).filter((m) => m.mapping_status === "mapped").length;
+        const ignored = (allMaps ?? []).filter((m) => m.mapping_status === "ignored").length;
+        const unmappedAll = (allMaps ?? []).filter((m) => m.mapping_status === "unmapped").length;
+        await admin.from("jst_sync_metrics").upsert({
+          metric_key: "shop_mapping_summary",
+          metric_name: "店铺映射",
+          metric_value: `共 ${totalAll}，已绑 ${mapped}，未绑 ${unmappedAll}，已忽略 ${ignored}`,
+          metric_extra: { total: totalAll, mapped, unmapped: unmappedAll, ignored, ...shopStats },
+          time_range_label: "全量快照",
+          data_source_label: "聚水潭店铺",
+          last_sync_at: finishedAt,
+          updated_at: finishedAt,
+        }, { onConflict: "metric_key" });
+      }
+
+      return respJson({ ok: true, run_id: runId, summary, inserted, updated, duration_ms: durationMs, shopStats });
+
     } catch (e: any) {
       const finishedAt = new Date().toISOString();
       const errMsg = String(e?.message ?? e);
