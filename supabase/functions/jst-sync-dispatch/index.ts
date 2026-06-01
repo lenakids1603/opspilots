@@ -135,6 +135,107 @@ async function callOpenweb(path: string, biz: Record<string, unknown>, attempt =
   return json.data ?? json;
 }
 
+const SENSITIVE_KEY_RE = /(access[_-]?token|refresh[_-]?token|app[_-]?secret|secret|token|password|passwd|pass|proxy[_-]?pass|sign)/i;
+function maskSensitive(value: any, depth = 0): any {
+  if (value === null || value === undefined) return value;
+  if (depth > 4) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 3).map((v) => maskSensitive(v, depth + 1));
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = SENSITIVE_KEY_RE.test(k) ? "***MASKED***" : maskSensitive(v, depth + 1);
+    return out;
+  }
+  return value;
+}
+const keysOf = (v: any) => v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v) : [];
+function getPath(obj: any, path: string) {
+  return path.split(".").reduce((cur, key) => cur?.[key], obj);
+}
+function detectListPayload(raw: any) {
+  const paths = ["data.shops", "data.datas", "data.list", "data.rows", "data.data", "data.items", "shops", "datas", "list", "rows", "items"];
+  const candidates = paths.map((path) => {
+    const value = getPath(raw, path);
+    return { path, exists: value !== undefined, is_array: Array.isArray(value), count: Array.isArray(value) ? value.length : null };
+  });
+  if (Array.isArray(raw?.data)) candidates.unshift({ path: "data", exists: true, is_array: true, count: raw.data.length });
+  const hit = candidates.find((c) => c.is_array);
+  const list = hit ? getPath(raw, hit.path) : [];
+  return {
+    list: Array.isArray(list) ? list : [],
+    path: hit?.path ?? "",
+    candidates,
+    rootKeys: keysOf(raw),
+    dataKeys: keysOf(raw?.data),
+    fieldPresence: {
+      root: ["data", "datas", "shops", "list", "rows", "items"].filter((k) => raw && Object.prototype.hasOwnProperty.call(raw, k)),
+      data: ["data", "datas", "shops", "list", "rows", "items"].filter((k) => raw?.data && Object.prototype.hasOwnProperty.call(raw.data, k)),
+    },
+  };
+}
+async function callOpenwebDiagnostic(path: string, biz: Record<string, unknown>, attempt = 1): Promise<any> {
+  const accessToken = await getValidAccessToken();
+  const ts = String(Math.floor(Date.now() / 1000));
+  const params: Record<string, string> = { access_token: accessToken, app_key: JST_APP_KEY, biz: JSON.stringify(biz), charset: "utf-8", timestamp: ts, version: "2" };
+  params.sign = signOpenweb(params, JST_APP_SECRET);
+  const endpoint = `/open/${path.replace(/^\/+/, "")}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30_000);
+  let httpStatus = 0, text = "", json: any = null, parseError = "";
+  try {
+    const resp = await proxyFetch(`${OPENWEB_BASE}${endpoint}`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(), signal: ctrl.signal,
+    });
+    httpStatus = resp.status;
+    text = await resp.text();
+  } finally { clearTimeout(timer); }
+  try { json = JSON.parse(text); } catch (e: any) { parseError = String(e?.message ?? e); json = {}; }
+  const code = json?.code ?? json?.errCode;
+  const msg = json?.msg ?? json?.message ?? "";
+  const isApiOk = code === 0 || code === "0" || json?.issuccess === true;
+  if (!isApiOk && attempt === 1 && /token|授权|access_token|令牌/i.test(String(msg))) {
+    const seed = (await loadToken())?.refreshToken || JST_REFRESH_TOKEN_SEED;
+    if (seed) {
+      await refreshAccessToken(seed);
+      const retry = await callOpenwebDiagnostic(path, biz, 2);
+      return { ...retry, diagnostics: { ...retry.diagnostics, retried_after_token_refresh: true } };
+    }
+  }
+  const detected = detectListPayload(json);
+  const diagnostics = {
+    request_endpoint: endpoint,
+    request_params_summary: {
+      biz,
+      app_key: JST_APP_KEY ? "***CONFIGURED***" : "missing",
+      access_token: accessToken ? "***CONFIGURED***" : "missing",
+      charset: "utf-8",
+      version: "2",
+      timestamp_present: true,
+      sign_present: true,
+      proxy_enabled: !!JST_PROXY_URL,
+      proxy_auth_configured: !!(JST_PROXY_USER && JST_PROXY_PASS),
+    },
+    http_status: httpStatus,
+    response_code: code ?? null,
+    response_msg: msg || null,
+    response_root_keys: detected.rootKeys,
+    response_data_keys: detected.dataKeys,
+    response_field_presence: detected.fieldPresence,
+    candidate_list_paths: detected.candidates,
+    detected_list_path: detected.path || null,
+    detected_record_count: detected.list.length,
+    first_record_sample: detected.list[0] ? maskSensitive(detected.list[0]) : null,
+    parse_error: parseError || null,
+  };
+  console.log("JST connection_test diagnostic", diagnostics);
+  return { ok: httpStatus >= 200 && httpStatus < 300 && isApiOk, httpStatus, code, msg, json: maskSensitive(json), list: detected.list, diagnostics };
+}
+async function resolveOldCredentialErrors(resolvedAt: string) {
+  const { data } = await admin.from("jst_sync_errors").select("id,error_message,module_key").neq("status", "resolved");
+  const ids = (data ?? []).filter((r: any) => /credential_missing|missing secret|缺少.*JST_|缺少.*凭证|缺少必要凭证|Token 种子|JST_APP_KEY|JST_APP_SECRET|JST_ACCESS_TOKEN|JST_REFRESH_TOKEN/i.test(String(r.error_message ?? ""))).map((r: any) => r.id);
+  if (ids.length) await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: resolvedAt }).in("id", ids);
+}
+
 const pickStr = (...vs: any[]) => {
   for (const v of vs) if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
   return "";
