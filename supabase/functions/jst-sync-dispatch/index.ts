@@ -518,9 +518,10 @@ async function syncSuppliers() {
 }
 
 function detectSupplierList(raw: any) {
+  // Prefer deeper data.* paths first (聚水潭 v2 标准结构是 data.datas)
   const paths = [
-    "datas", "list", "suppliers", "channels", "items", "rows", "data",
-    "data.datas", "data.list", "data.suppliers", "data.channels", "data.items", "data.rows",
+    "data.datas", "data.list", "data.suppliers", "data.channels", "data.rows", "data.items",
+    "datas", "list", "suppliers", "channels", "rows", "items", "data",
   ];
   const candidates = paths.map((path) => {
     const value = getPath(raw, path);
