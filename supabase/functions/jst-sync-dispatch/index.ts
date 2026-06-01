@@ -656,39 +656,82 @@ Deno.serve(async (req) => {
         JST_ACCESS_TOKEN: !!JST_ACCESS_TOKEN_SEED,
         JST_REFRESH_TOKEN: !!JST_REFRESH_TOKEN_SEED,
         JST_PROXY_URL: !!JST_PROXY_URL,
+        JST_PROXY_USER: !!JST_PROXY_USER,
+        JST_PROXY_PASS: !!JST_PROXY_PASS,
       };
       const missing = ["JST_APP_KEY", "JST_APP_SECRET"].filter((k) => !(present as any)[k]);
       const tokRow = await loadToken();
       const hasTokenSource = !!(JST_ACCESS_TOKEN_SEED || JST_REFRESH_TOKEN_SEED || tokRow?.accessToken);
+      const checkedAt = new Date().toISOString();
+      const createConnectionRun = async (status: "ok" | "warn" | "error", summary: string, durationMs?: number, errorMessage = "") => {
+        await admin.from("jst_sync_runs").insert({
+          module_key: "connection", trigger_type: "manual", status,
+          started_at: checkedAt, finished_at: new Date().toISOString(), duration_ms: durationMs,
+          current_total_summary: summary, error_message: errorMessage, created_by: user.id,
+        });
+      };
       if (missing.length || !hasTokenSource) {
         const reason = missing.length
           ? `缺少必要凭证: ${missing.join(", ")}`
           : "缺少 JST_ACCESS_TOKEN 或 JST_REFRESH_TOKEN（任意其一作为初始种子）";
+        await createConnectionRun("error", "连接检测失败", undefined, reason);
         await admin.from("jst_sync_errors").insert({
           module_key: "connection", error_level: "error", status: "open",
-          error_message: reason,
+          error_message: reason, first_seen_at: checkedAt, last_seen_at: checkedAt,
         });
-        return respJson({ ok: false, present, checked_at: new Date().toISOString(), error: reason });
+        return respJson({ ok: false, status: "error", present, checked_at: checkedAt, error: reason });
       }
+      await resolveOldCredentialErrors(checkedAt);
       const t0 = Date.now();
       try {
-        const data = await callOpenweb("shops/query", { page_index: 1, page_size: 1 });
-        const shopCount = Array.isArray(data?.shops) ? data.shops.length : (data?.data_count ?? 0);
+        const probe = await callOpenwebDiagnostic("shops/query", { page_index: 1, page_size: 10 });
+        const durationMs = Date.now() - t0;
+        if (!probe.ok) {
+          const errMsg = `shops/query 接口错误 code=${probe.code ?? ""} msg=${probe.msg ?? ""}`.trim();
+          await createConnectionRun("error", "连接检测失败", durationMs, errMsg);
+          await admin.from("jst_sync_errors").insert({
+            module_key: "connection", error_level: "error", status: "open",
+            error_message: errMsg, first_seen_at: checkedAt, last_seen_at: checkedAt,
+          });
+          return respJson({ ok: false, status: "error", present, checked_at: checkedAt, duration_ms: durationMs, error: errMsg, diagnostics: probe.diagnostics, sanitized_response: probe.json });
+        }
+        const shopCount = probe.list.length;
+        if (shopCount === 0) {
+          const warning = probe.diagnostics.detected_list_path
+            ? `shops/query 返回空列表，读取路径 ${probe.diagnostics.detected_list_path}`
+            : "shops/query 返回结构无法识别，未找到 shops/list/rows/datas 数组";
+          await createConnectionRun("warn", "连接可达，但未获取到店铺数据", durationMs, warning);
+          await admin.from("jst_sync_errors").insert({
+            module_key: "connection", error_level: "warn", status: "open",
+            error_message: warning, first_seen_at: checkedAt, last_seen_at: checkedAt,
+          });
+          return respJson({
+            ok: false, status: "warning", present, checked_at: checkedAt, duration_ms: durationMs,
+            sample_shop_count: 0, message: "连接可达，但未获取到店铺数据", error: warning,
+            hint: "可能是 shops/query 权限不足、请求参数不符合该 App 要求、账号确实未返回店铺，或返回结构需要调整解析。请查看脱敏响应诊断。",
+            diagnostics: probe.diagnostics, sanitized_response: probe.json,
+          });
+        }
+        await createConnectionRun("ok", `聚水潭 API 连接正常，样本店铺 ${shopCount} 条`, durationMs);
         return respJson({
-          ok: true, present, checked_at: new Date().toISOString(),
-          duration_ms: Date.now() - t0,
+          ok: true, status: "success", present, checked_at: checkedAt,
+          duration_ms: durationMs,
           sample_shop_count: shopCount,
           message: "聚水潭 API 连接正常",
+          diagnostics: probe.diagnostics,
+          sanitized_response: probe.json,
         });
       } catch (e: any) {
         const errMsg = String(e?.message ?? e);
+        const durationMs = Date.now() - t0;
+        await createConnectionRun("error", "连接检测失败", durationMs, errMsg);
         await admin.from("jst_sync_errors").insert({
           module_key: "connection", error_level: "error", status: "open",
-          error_message: `连接检测失败: ${errMsg}`,
+          error_message: `连接检测失败: ${errMsg}`, first_seen_at: checkedAt, last_seen_at: checkedAt,
         });
         return respJson({
-          ok: false, present, checked_at: new Date().toISOString(),
-          duration_ms: Date.now() - t0, error: errMsg,
+          ok: false, status: "error", present, checked_at: checkedAt,
+          duration_ms: durationMs, error: errMsg,
           hint: /timeout|abort|fetch|proxy|ECONN|network/i.test(errMsg)
             ? "可能为网络/代理/IP 白名单问题，请检查 JST_PROXY_URL 与聚水潭白名单"
             : "请检查凭证是否正确，或 Access Token 是否过期",
