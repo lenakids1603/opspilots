@@ -100,6 +100,7 @@ export type Database = {
           entity_id: string
           id: string
           is_default: boolean
+          normalized_account_no: string | null
           purpose: string
           remark: string | null
           status: string
@@ -117,6 +118,7 @@ export type Database = {
           entity_id: string
           id?: string
           is_default?: boolean
+          normalized_account_no?: string | null
           purpose?: string
           remark?: string | null
           status?: string
@@ -134,6 +136,7 @@ export type Database = {
           entity_id?: string
           id?: string
           is_default?: boolean
+          normalized_account_no?: string | null
           purpose?: string
           remark?: string | null
           status?: string
@@ -159,6 +162,7 @@ export type Database = {
           id: string
           legal_person: string | null
           name: string
+          normalized_name: string | null
           registration_no: string | null
           remark: string | null
           status: string
@@ -174,6 +178,7 @@ export type Database = {
           id?: string
           legal_person?: string | null
           name: string
+          normalized_name?: string | null
           registration_no?: string | null
           remark?: string | null
           status?: string
@@ -189,6 +194,7 @@ export type Database = {
           id?: string
           legal_person?: string | null
           name?: string
+          normalized_name?: string | null
           registration_no?: string | null
           remark?: string | null
           status?: string
@@ -327,6 +333,7 @@ export type Database = {
           direction: Database["public"]["Enums"]["cash_direction"]
           id: string
           name: string
+          normalized_name: string | null
           parent_id: string | null
           remark: string | null
           sort_order: number
@@ -340,6 +347,7 @@ export type Database = {
           direction: Database["public"]["Enums"]["cash_direction"]
           id?: string
           name: string
+          normalized_name?: string | null
           parent_id?: string | null
           remark?: string | null
           sort_order?: number
@@ -353,6 +361,7 @@ export type Database = {
           direction?: Database["public"]["Enums"]["cash_direction"]
           id?: string
           name?: string
+          normalized_name?: string | null
           parent_id?: string | null
           remark?: string | null
           sort_order?: number
@@ -2067,6 +2076,7 @@ export type Database = {
           external_shop_id: string | null
           id: string
           name: string
+          normalized_name: string | null
           platform_id: string
           remark: string | null
           status: string
@@ -2081,6 +2091,7 @@ export type Database = {
           external_shop_id?: string | null
           id?: string
           name: string
+          normalized_name?: string | null
           platform_id: string
           remark?: string | null
           status?: string
@@ -2095,6 +2106,7 @@ export type Database = {
           external_shop_id?: string | null
           id?: string
           name?: string
+          normalized_name?: string | null
           platform_id?: string
           remark?: string | null
           status?: string
