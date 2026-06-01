@@ -87,6 +87,282 @@ export type Database = {
           },
         ]
       }
+      bank_accounts: {
+        Row: {
+          account_name: string
+          account_no_masked: string | null
+          account_type: string | null
+          bank_name: string | null
+          created_at: string
+          currency: string
+          current_balance: number
+          deleted_at: string | null
+          entity_id: string
+          id: string
+          remark: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_name: string
+          account_no_masked?: string | null
+          account_type?: string | null
+          bank_name?: string | null
+          created_at?: string
+          currency?: string
+          current_balance?: number
+          deleted_at?: string | null
+          entity_id: string
+          id?: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_name?: string
+          account_no_masked?: string | null
+          account_type?: string | null
+          bank_name?: string | null
+          created_at?: string
+          currency?: string
+          current_balance?: number
+          deleted_at?: string | null
+          entity_id?: string
+          id?: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_accounts_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "business_entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      business_entities: {
+        Row: {
+          annual_flow_limit: number
+          code: string | null
+          created_at: string
+          deleted_at: string | null
+          entity_type: Database["public"]["Enums"]["business_entity_type"]
+          id: string
+          legal_person: string | null
+          name: string
+          registration_no: string | null
+          remark: string | null
+          status: string
+          tax_no: string | null
+          updated_at: string
+        }
+        Insert: {
+          annual_flow_limit?: number
+          code?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          entity_type?: Database["public"]["Enums"]["business_entity_type"]
+          id?: string
+          legal_person?: string | null
+          name: string
+          registration_no?: string | null
+          remark?: string | null
+          status?: string
+          tax_no?: string | null
+          updated_at?: string
+        }
+        Update: {
+          annual_flow_limit?: number
+          code?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          entity_type?: Database["public"]["Enums"]["business_entity_type"]
+          id?: string
+          legal_person?: string | null
+          name?: string
+          registration_no?: string | null
+          remark?: string | null
+          status?: string
+          tax_no?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cash_transactions: {
+        Row: {
+          amount: number
+          attachment_path: string | null
+          bank_account_id: string
+          category_id: string | null
+          counterparty: string | null
+          created_at: string
+          currency: string
+          deleted_at: string | null
+          direction: Database["public"]["Enums"]["cash_direction"]
+          entity_id: string
+          id: string
+          occurred_at: string
+          operator_id: string | null
+          remark: string | null
+          shop_id: string | null
+          status: string
+          summary: string | null
+          supplier_bill_id: string | null
+          supplier_id: string | null
+          tx_no: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          attachment_path?: string | null
+          bank_account_id: string
+          category_id?: string | null
+          counterparty?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          direction: Database["public"]["Enums"]["cash_direction"]
+          entity_id: string
+          id?: string
+          occurred_at?: string
+          operator_id?: string | null
+          remark?: string | null
+          shop_id?: string | null
+          status?: string
+          summary?: string | null
+          supplier_bill_id?: string | null
+          supplier_id?: string | null
+          tx_no?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          attachment_path?: string | null
+          bank_account_id?: string
+          category_id?: string | null
+          counterparty?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          direction?: Database["public"]["Enums"]["cash_direction"]
+          entity_id?: string
+          id?: string
+          occurred_at?: string
+          operator_id?: string | null
+          remark?: string | null
+          shop_id?: string | null
+          status?: string
+          summary?: string | null
+          supplier_bill_id?: string | null
+          supplier_id?: string | null
+          tx_no?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_transactions_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "cash_tx_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "business_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_shop_id_fkey"
+            columns: ["shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_supplier_bill_id_fkey"
+            columns: ["supplier_bill_id"]
+            isOneToOne: false
+            referencedRelation: "ops_supplier_bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_transactions_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "ops_suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cash_tx_categories: {
+        Row: {
+          code: string
+          created_at: string
+          deleted_at: string | null
+          direction: Database["public"]["Enums"]["cash_direction"]
+          id: string
+          name: string
+          parent_id: string | null
+          remark: string | null
+          sort_order: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          deleted_at?: string | null
+          direction: Database["public"]["Enums"]["cash_direction"]
+          id?: string
+          name: string
+          parent_id?: string | null
+          remark?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          deleted_at?: string | null
+          direction?: Database["public"]["Enums"]["cash_direction"]
+          id?: string
+          name?: string
+          parent_id?: string | null
+          remark?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_tx_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "cash_tx_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_categories: {
         Row: {
           description: string | null
@@ -772,6 +1048,39 @@ export type Database = {
           },
         ]
       }
+      platforms: {
+        Row: {
+          code: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          remark: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           account_type: Database["public"]["Enums"]["ops_account_type"]
@@ -1160,6 +1469,63 @@ export type Database = {
           },
         ]
       }
+      shops: {
+        Row: {
+          code: string | null
+          created_at: string
+          deleted_at: string | null
+          entity_id: string
+          external_shop_id: string | null
+          id: string
+          name: string
+          platform_id: string
+          remark: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          entity_id: string
+          external_shop_id?: string | null
+          id?: string
+          name: string
+          platform_id: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          entity_id?: string
+          external_shop_id?: string | null
+          id?: string
+          name?: string
+          platform_id?: string
+          remark?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shops_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "business_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shops_platform_id_fkey"
+            columns: ["platform_id"]
+            isOneToOne: false
+            referencedRelation: "platforms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -1222,6 +1588,8 @@ export type Database = {
       }
     }
     Functions: {
+      can_read_finance: { Args: { _uid: string }; Returns: boolean }
+      can_write_finance: { Args: { _uid: string }; Returns: boolean }
       get_email_by_identifier: {
         Args: { _identifier: string }
         Returns: string
@@ -1254,6 +1622,8 @@ export type Database = {
     Enums: {
       app_role: "employee" | "manager" | "finance"
       approval_level: "manager" | "finance"
+      business_entity_type: "individual" | "company"
+      cash_direction: "in" | "out" | "transfer"
       expense_status:
         | "draft"
         | "submitted"
@@ -1393,6 +1763,8 @@ export const Constants = {
     Enums: {
       app_role: ["employee", "manager", "finance"],
       approval_level: ["manager", "finance"],
+      business_entity_type: ["individual", "company"],
+      cash_direction: ["in", "out", "transfer"],
       expense_status: [
         "draft",
         "submitted",
