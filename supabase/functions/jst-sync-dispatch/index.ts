@@ -320,9 +320,24 @@ Deno.serve(async (req) => {
     const triggerType = String(body.trigger_type ?? "manual");
     const scope = body.scope as string[] | undefined; // 可选: ["shops","suppliers","warehouses"]
 
+    // sales_refund 真实同步前的店铺映射质量前置校验
+    if (moduleKey === "sales_refund") {
+      const precheck = await shopMappingPrecheck();
+      if (precheck.blocking) {
+        // 写 warning 错误,不更新正式销售汇总
+        await admin.from("jst_sync_errors").insert({
+          module_key: "sales_refund", error_level: "warn", status: "open",
+          error_message: `店铺映射未完成治理,允许保存原始数据但不更新正式销售汇总:${precheck.summary}`,
+        });
+        return respJson({ ok: false, blocked: true, reason: "shop_mapping_not_ready", detail: precheck }, 200);
+      }
+      return respJson({ error: "sales_refund 真实同步尚未接入,请先完成店铺映射治理" }, 400);
+    }
+
     if (moduleKey !== "base_archive") {
       return respJson({ error: `module_key=${moduleKey} 暂未接入真实同步，目前仅支持 base_archive` }, 400);
     }
+
 
     const targets = scope?.length ? scope : ["shops", "suppliers", "warehouses"];
     const startedAt = new Date().toISOString();
