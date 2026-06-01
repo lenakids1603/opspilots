@@ -205,11 +205,15 @@ export type Database = {
       }
       cash_transactions: {
         Row: {
+          ai_match_warnings: string[] | null
+          ai_matched: boolean
           amount: number
           attachment_path: string | null
           bank_account_id: string
           category_id: string | null
           counterparty: string | null
+          counterparty_account: string | null
+          counterparty_bank: string | null
           created_at: string
           currency: string
           deleted_at: string | null
@@ -218,21 +222,29 @@ export type Database = {
           id: string
           occurred_at: string
           operator_id: string | null
+          receipt_ai_confidence: Json | null
+          receipt_parsed_json: Json | null
+          receipt_raw_text: string | null
           remark: string | null
           shop_id: string | null
           status: string
           summary: string | null
           supplier_bill_id: string | null
           supplier_id: string | null
+          transaction_serial_no: string | null
           tx_no: string | null
           updated_at: string
         }
         Insert: {
+          ai_match_warnings?: string[] | null
+          ai_matched?: boolean
           amount: number
           attachment_path?: string | null
           bank_account_id: string
           category_id?: string | null
           counterparty?: string | null
+          counterparty_account?: string | null
+          counterparty_bank?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -241,21 +253,29 @@ export type Database = {
           id?: string
           occurred_at?: string
           operator_id?: string | null
+          receipt_ai_confidence?: Json | null
+          receipt_parsed_json?: Json | null
+          receipt_raw_text?: string | null
           remark?: string | null
           shop_id?: string | null
           status?: string
           summary?: string | null
           supplier_bill_id?: string | null
           supplier_id?: string | null
+          transaction_serial_no?: string | null
           tx_no?: string | null
           updated_at?: string
         }
         Update: {
+          ai_match_warnings?: string[] | null
+          ai_matched?: boolean
           amount?: number
           attachment_path?: string | null
           bank_account_id?: string
           category_id?: string | null
           counterparty?: string | null
+          counterparty_account?: string | null
+          counterparty_bank?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -264,12 +284,16 @@ export type Database = {
           id?: string
           occurred_at?: string
           operator_id?: string | null
+          receipt_ai_confidence?: Json | null
+          receipt_parsed_json?: Json | null
+          receipt_raw_text?: string | null
           remark?: string | null
           shop_id?: string | null
           status?: string
           summary?: string | null
           supplier_bill_id?: string | null
           supplier_id?: string | null
+          transaction_serial_no?: string | null
           tx_no?: string | null
           updated_at?: string
         }
