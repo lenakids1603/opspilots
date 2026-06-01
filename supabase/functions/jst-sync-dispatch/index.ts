@@ -341,8 +341,8 @@ async function syncShops() {
   };
 }
 
-// 已通过权限：/open/api/drp/inneropen/partner/channel/querymysupplier （查询我的供应商列表 - 新）
-const SUPPLIERS_ENDPOINT = "api/drp/inneropen/partner/channel/querymysupplier";
+// 已通过权限：/open/supplier/query （采购 API - 供应商查询）
+const SUPPLIERS_ENDPOINT = "supplier/query";
 
 async function syncSuppliers() {
   const PAGE_SIZE = 50;
