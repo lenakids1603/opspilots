@@ -296,6 +296,27 @@ async function syncWarehouses() {
   return { total, inserted, updated, summary: `仓库 ${total} 条（新增 ${inserted}，更新 ${updated}）` };
 }
 
+// ---------- 店铺映射前置校验 (sales_refund 等真实业务同步前调用) ----------
+async function shopMappingPrecheck() {
+  const { data } = await admin.from("jst_shop_mappings")
+    .select("matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status");
+  const rows = (data ?? []) as any[];
+  const active = rows.filter(r => r.mapping_status !== "ignored");
+  const unmapped = active.filter(r => r.mapping_status === "unmapped").length;
+  const noEntity = active.filter(r => !r.matched_business_entity_id).length;
+  const noPlatform = active.filter(r => !r.matched_platform_id).length;
+  const shopCount = new Map<string, number>();
+  active.forEach(r => { if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1); });
+  const dupCount = Array.from(shopCount.values()).filter(n => n > 1).length;
+  const blocking = unmapped > 0 || noEntity > 0 || noPlatform > 0 || dupCount > 0;
+  return {
+    blocking, unmapped, noEntity, noPlatform, dupCount,
+    summary: `未绑定 ${unmapped} 个,无主体 ${noEntity} 个,无平台 ${noPlatform} 个,重复绑定 ${dupCount} 组`,
+  };
+}
+
+
+
 // ---------- main ----------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
