@@ -828,6 +828,31 @@ export default function JstDataIntegrationPage() {
                   <AlertDialogTrigger asChild>
                     <Button variant="destructive" size="sm">
                       <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                      全量同步商品资料
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确认全量同步商品资料？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        全量同步商品资料会重新拉取聚水潭所有商品与 SKU，
+                        耗时较长且占用 API 配额，请确认继续。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual_backfill", label: "全量同步商品资料" })}>
+                        确认执行
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                      <AlertTriangle className="w-3.5 h-3.5 mr-1" />
                       全量同步全部数据
                     </Button>
                   </AlertDialogTrigger>
