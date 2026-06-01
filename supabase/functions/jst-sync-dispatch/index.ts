@@ -476,11 +476,13 @@ async function syncSuppliers() {
       let written: "inserted" | "updated" = "updated";
       let opsId: string | null = null;
       if (existing) {
-        await admin.from("ops_suppliers").update(row).eq("id", existing.id);
+        // 仅更新聚水潭侧字段。confirm_status / confirmed_* / archived_* 由人工维护，sync 永不动。
+        await admin.from("ops_suppliers").update({ ...row, status: statusStr }).eq("id", existing.id);
         opsId = existing.id;
         updated++;
         written = "updated";
       } else {
+        // 新建供应商默认 confirm_status='unconfirmed'（由数据库默认值控制），等待人工确认。
         const { data: ins } = await admin.from("ops_suppliers")
           .insert({ ...row, status: statusStr }).select("id").single();
         opsId = ins?.id ?? null;
