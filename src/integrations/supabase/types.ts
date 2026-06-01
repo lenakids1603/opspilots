@@ -469,6 +469,144 @@ export type Database = {
           },
         ]
       }
+      jst_sales_refund_daily_summary: {
+        Row: {
+          business_entity_id: string
+          created_at: string
+          data_source_label: string
+          generated_at: string
+          generated_from_run_id: string | null
+          gmv_amount: number
+          gsv_amount: number
+          id: string
+          order_count: number
+          platform_id: string
+          refund_amount: number
+          refund_count: number
+          refund_rate: number
+          shop_id: string
+          summary_date: string
+          updated_at: string
+        }
+        Insert: {
+          business_entity_id: string
+          created_at?: string
+          data_source_label?: string
+          generated_at?: string
+          generated_from_run_id?: string | null
+          gmv_amount?: number
+          gsv_amount?: number
+          id?: string
+          order_count?: number
+          platform_id: string
+          refund_amount?: number
+          refund_count?: number
+          refund_rate?: number
+          shop_id: string
+          summary_date: string
+          updated_at?: string
+        }
+        Update: {
+          business_entity_id?: string
+          created_at?: string
+          data_source_label?: string
+          generated_at?: string
+          generated_from_run_id?: string | null
+          gmv_amount?: number
+          gsv_amount?: number
+          id?: string
+          order_count?: number
+          platform_id?: string
+          refund_amount?: number
+          refund_count?: number
+          refund_rate?: number
+          shop_id?: string
+          summary_date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jst_sales_refund_raw: {
+        Row: {
+          created_at: string
+          id: string
+          jst_order_id: string
+          jst_shop_id: string
+          mapping_status: string
+          matched_business_entity_id: string | null
+          matched_platform_id: string | null
+          matched_shop_id: string | null
+          order_amount: number
+          order_paid_at: string | null
+          order_status: string
+          platform_order_id: string
+          product_code: string
+          product_name: string
+          raw_json: Json | null
+          record_type: string
+          refund_amount: number
+          refund_completed_at: string | null
+          refund_id: string
+          refund_status: string
+          sku_code: string
+          sku_id: string
+          source_updated_at: string | null
+          sync_run_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          jst_order_id?: string
+          jst_shop_id?: string
+          mapping_status?: string
+          matched_business_entity_id?: string | null
+          matched_platform_id?: string | null
+          matched_shop_id?: string | null
+          order_amount?: number
+          order_paid_at?: string | null
+          order_status?: string
+          platform_order_id?: string
+          product_code?: string
+          product_name?: string
+          raw_json?: Json | null
+          record_type: string
+          refund_amount?: number
+          refund_completed_at?: string | null
+          refund_id?: string
+          refund_status?: string
+          sku_code?: string
+          sku_id?: string
+          source_updated_at?: string | null
+          sync_run_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          jst_order_id?: string
+          jst_shop_id?: string
+          mapping_status?: string
+          matched_business_entity_id?: string | null
+          matched_platform_id?: string | null
+          matched_shop_id?: string | null
+          order_amount?: number
+          order_paid_at?: string | null
+          order_status?: string
+          platform_order_id?: string
+          product_code?: string
+          product_name?: string
+          raw_json?: Json | null
+          record_type?: string
+          refund_amount?: number
+          refund_completed_at?: string | null
+          refund_id?: string
+          refund_status?: string
+          sku_code?: string
+          sku_id?: string
+          source_updated_at?: string | null
+          sync_run_id?: string | null
+        }
+        Relationships: []
+      }
       jst_shop_mapping_audit_logs: {
         Row: {
           action_type: string

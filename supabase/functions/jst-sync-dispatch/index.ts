@@ -296,6 +296,210 @@ async function syncWarehouses() {
   return { total, inserted, updated, summary: `仓库 ${total} 条（新增 ${inserted}，更新 ${updated}）` };
 }
 
+// ---------- 销售/退款同步 ----------
+async function fetchShopMappingIndex() {
+  const { data } = await admin.from("jst_shop_mappings")
+    .select("jst_shop_id, matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status");
+  const map = new Map<string, any>();
+  (data ?? []).forEach((r: any) => { if (r.jst_shop_id) map.set(String(r.jst_shop_id), r); });
+  return map;
+}
+
+function pickDate(...vs: any[]): string | null {
+  for (const v of vs) if (v) { const d = new Date(v); if (!isNaN(d.getTime())) return d.toISOString(); }
+  return null;
+}
+function pickNum(...vs: any[]): number {
+  for (const v of vs) if (v !== undefined && v !== null && v !== "") { const n = Number(v); if (!isNaN(n)) return n; }
+  return 0;
+}
+
+async function syncSalesRefund(runId: string, days: number, allowSummary: boolean) {
+  const shopIdx = await fetchShopMappingIndex();
+  const endDate = new Date();
+  const startDate = new Date(Date.now() - days * 86400_000);
+  const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+
+  let rawOrders = 0, rawRefunds = 0;
+
+  // ----- 订单 -----
+  let page = 1;
+  while (true) {
+    let data: any;
+    try {
+      data = await callOpenweb("orders/single/query", {
+        page_index: page, page_size: 100,
+        start_time: fmt(startDate), end_time: fmt(endDate),
+        date_type: "modified",
+      });
+    } catch (e) {
+      // 接口路径可能不同,记录后停止订单同步
+      await admin.from("jst_sync_errors").insert({
+        module_key: "sales_refund", error_level: "warn", status: "open",
+        error_message: `订单接口调用失败(可能路径不匹配):${String((e as any)?.message ?? e)}`,
+      });
+      break;
+    }
+    const list: any[] = data.orders ?? data.datas ?? data.list ?? [];
+    if (list.length === 0) break;
+
+    const rows = list.flatMap((o) => {
+      const jstShopId = pickStr(o.shop_id, o.shopId);
+      const m = shopIdx.get(jstShopId) ?? {};
+      const items: any[] = o.items ?? o.order_items ?? [{ sku_id: o.sku_id, sku: o.sku, name: o.name, amount: o.pay_amount ?? o.amount }];
+      return items.map((it) => ({
+        sync_run_id: runId,
+        record_type: "order",
+        jst_shop_id: jstShopId,
+        matched_shop_id: m.matched_shop_id ?? null,
+        matched_business_entity_id: m.matched_business_entity_id ?? null,
+        matched_platform_id: m.matched_platform_id ?? null,
+        mapping_status: m.mapping_status ?? "unmapped",
+        jst_order_id: pickStr(o.o_id, o.order_id, o.id),
+        platform_order_id: pickStr(o.so_id, o.platform_order_id, o.out_order_id),
+        sku_id: pickStr(it.sku_id, it.skuId),
+        sku_code: pickStr(it.sku, it.sku_code, it.outer_sku_id),
+        product_code: pickStr(it.i_id, it.item_id, it.product_code),
+        product_name: pickStr(it.name, it.product_name),
+        order_paid_at: pickDate(o.pay_date, o.paid_at, o.modified),
+        order_amount: pickNum(it.amount, it.pay_amount, o.pay_amount),
+        order_status: pickStr(o.status, o.order_status),
+        raw_json: o,
+        source_updated_at: pickDate(o.modified, o.updated_at),
+      })).filter((r) => r.jst_order_id);
+    });
+
+    if (rows.length) {
+      const { error } = await admin.from("jst_sales_refund_raw")
+        .upsert(rows, { onConflict: "jst_order_id,sku_code", ignoreDuplicates: false });
+      if (!error) rawOrders += rows.length;
+    }
+
+    if (list.length < 100) break;
+    page++;
+    await sleep(RATE_DELAY_MS);
+  }
+
+  // ----- 退款 -----
+  page = 1;
+  while (true) {
+    let data: any;
+    try {
+      data = await callOpenweb("refunds/query", {
+        page_index: page, page_size: 100,
+        start_time: fmt(startDate), end_time: fmt(endDate),
+        date_type: "modified",
+      });
+    } catch (e) {
+      await admin.from("jst_sync_errors").insert({
+        module_key: "sales_refund", error_level: "warn", status: "open",
+        error_message: `退款接口调用失败(可能路径不匹配):${String((e as any)?.message ?? e)}`,
+      });
+      break;
+    }
+    const list: any[] = data.refunds ?? data.datas ?? data.list ?? [];
+    if (list.length === 0) break;
+
+    const rows = list.flatMap((r) => {
+      const jstShopId = pickStr(r.shop_id, r.shopId);
+      const m = shopIdx.get(jstShopId) ?? {};
+      const items: any[] = r.items ?? r.refund_items ?? [{ sku: r.sku, sku_id: r.sku_id, name: r.name, refund: r.refund }];
+      return items.map((it) => ({
+        sync_run_id: runId,
+        record_type: "refund",
+        jst_shop_id: jstShopId,
+        matched_shop_id: m.matched_shop_id ?? null,
+        matched_business_entity_id: m.matched_business_entity_id ?? null,
+        matched_platform_id: m.matched_platform_id ?? null,
+        mapping_status: m.mapping_status ?? "unmapped",
+        refund_id: pickStr(r.as_id, r.refund_id, r.id),
+        jst_order_id: pickStr(r.o_id, r.order_id),
+        platform_order_id: pickStr(r.so_id, r.out_order_id),
+        sku_id: pickStr(it.sku_id, it.skuId),
+        sku_code: pickStr(it.sku, it.sku_code),
+        product_name: pickStr(it.name, it.product_name),
+        refund_completed_at: pickDate(r.refunded_date, r.refund_date, r.modified),
+        refund_amount: pickNum(it.refund, it.refund_amount, r.refund),
+        refund_status: pickStr(r.status, r.refund_status),
+        raw_json: r,
+        source_updated_at: pickDate(r.modified, r.updated_at),
+      })).filter((x) => x.refund_id);
+    });
+
+    if (rows.length) {
+      const { error } = await admin.from("jst_sales_refund_raw")
+        .upsert(rows, { onConflict: "refund_id,sku_code", ignoreDuplicates: false });
+      if (!error) rawRefunds += rows.length;
+    }
+
+    if (list.length < 100) break;
+    page++;
+    await sleep(RATE_DELAY_MS);
+  }
+
+  // ----- 汇总 -----
+  let summaryRows = 0, todayGmv = 0, todayGsv = 0, todayRefund = 0, todayOrders = 0, activeShops = 0;
+  if (allowSummary) {
+    // 拉取 mapped 且字段完整的原始数据
+    const since = new Date(Date.now() - days * 86400_000).toISOString();
+    const { data: raws } = await admin.from("jst_sales_refund_raw")
+      .select("record_type, matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status, order_paid_at, refund_completed_at, order_amount, refund_amount, jst_order_id, refund_id")
+      .eq("mapping_status", "mapped")
+      .gte("created_at", since);
+
+    const grouped = new Map<string, any>();
+    (raws ?? []).forEach((r: any) => {
+      if (!r.matched_shop_id || !r.matched_business_entity_id || !r.matched_platform_id) return;
+      const ts = r.record_type === "order" ? r.order_paid_at : r.refund_completed_at;
+      if (!ts) return;
+      const dateStr = String(ts).substring(0, 10);
+      const key = `${dateStr}__${r.matched_shop_id}`;
+      const g = grouped.get(key) ?? {
+        summary_date: dateStr, shop_id: r.matched_shop_id,
+        business_entity_id: r.matched_business_entity_id, platform_id: r.matched_platform_id,
+        gmv_amount: 0, gsv_amount: 0, refund_amount: 0,
+        order_count: 0, refund_count: 0,
+        order_ids: new Set<string>(), refund_ids: new Set<string>(),
+      };
+      if (r.record_type === "order") {
+        g.gmv_amount += Number(r.order_amount ?? 0);
+        if (r.jst_order_id) g.order_ids.add(r.jst_order_id);
+      } else {
+        g.refund_amount += Number(r.refund_amount ?? 0);
+        if (r.refund_id) g.refund_ids.add(r.refund_id);
+      }
+      grouped.set(key, g);
+    });
+
+    const today = new Date().toISOString().substring(0, 10);
+    const upserts = Array.from(grouped.values()).map((g) => {
+      const orderCount = g.order_ids.size, refundCount = g.refund_ids.size;
+      const gsv = Math.max(0, g.gmv_amount - g.refund_amount);
+      const refundRate = g.gmv_amount > 0 ? Number((g.refund_amount / g.gmv_amount * 100).toFixed(2)) : 0;
+      if (g.summary_date === today) {
+        todayGmv += g.gmv_amount; todayGsv += gsv; todayRefund += g.refund_amount; todayOrders += orderCount;
+      }
+      return {
+        summary_date: g.summary_date, shop_id: g.shop_id,
+        business_entity_id: g.business_entity_id, platform_id: g.platform_id,
+        gmv_amount: g.gmv_amount, gsv_amount: gsv, refund_amount: g.refund_amount,
+        order_count: orderCount, refund_count: refundCount, refund_rate: refundRate,
+        data_source_label: "聚水潭经营口径",
+        generated_from_run_id: runId, generated_at: new Date().toISOString(),
+      };
+    });
+
+    if (upserts.length) {
+      await admin.from("jst_sales_refund_daily_summary")
+        .upsert(upserts, { onConflict: "summary_date,shop_id" });
+      summaryRows = upserts.length;
+    }
+    activeShops = new Set(upserts.filter((u) => u.summary_date === today).map((u) => u.shop_id)).size;
+  }
+
+  return { rawOrders, rawRefunds, summaryRows, todayGmv, todayGsv, todayRefund, todayOrders, activeShops };
+}
+
 // ---------- 店铺映射前置校验 (sales_refund 等真实业务同步前调用) ----------
 async function shopMappingPrecheck() {
   const { data } = await admin.from("jst_shop_mappings")
@@ -339,20 +543,78 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const moduleKey = String(body.module_key ?? "");
     const triggerType = String(body.trigger_type ?? "manual");
-    const scope = body.scope as string[] | undefined; // 可选: ["shops","suppliers","warehouses"]
+    const scope = body.scope as string[] | undefined;
+    const days = Math.max(1, Math.min(60, Number(body.days ?? 7)));
 
-    // sales_refund 真实同步前的店铺映射质量前置校验
+    // ============ sales_refund ============
     if (moduleKey === "sales_refund") {
       const precheck = await shopMappingPrecheck();
-      if (precheck.blocking) {
-        // 写 warning 错误,不更新正式销售汇总
+      const startedAt = new Date().toISOString();
+      const t0 = Date.now();
+
+      const { data: runRow, error: runErr } = await admin.from("jst_sync_runs").insert({
+        module_key: "sales_refund", trigger_type: triggerType, status: "running",
+        started_at: startedAt, created_by: user.id,
+        current_total_summary: precheck.blocking
+          ? `开始同步原始数据(店铺映射未完成,跳过正式汇总):${precheck.summary}`
+          : `开始同步并生成正式汇总`,
+      }).select("id").single();
+      if (runErr) return respJson({ error: runErr.message }, 500);
+      const runId = runRow.id;
+
+      try {
+        const result = await syncSalesRefund(runId, days, !precheck.blocking);
+        const finishedAt = new Date().toISOString();
+        const durationMs = Date.now() - t0;
+        const summaryUpdated = !precheck.blocking;
+        const msg = summaryUpdated
+          ? `原始订单 ${result.rawOrders} 条,原始退款 ${result.rawRefunds} 条,正式汇总 ${result.summaryRows} 行(店铺×日)`
+          : `原始订单 ${result.rawOrders} 条,原始退款 ${result.rawRefunds} 条;被阻止汇总:${precheck.summary}`;
+
+        await admin.from("jst_sync_runs").update({
+          status: "ok", finished_at: finishedAt, duration_ms: durationMs,
+          inserted_count: result.rawOrders + result.rawRefunds,
+          updated_count: result.summaryRows,
+          current_total_summary: msg,
+          error_message: precheck.blocking ? `店铺映射未完成,未更新正式汇总:${precheck.summary}` : "",
+        }).eq("id", runId);
+
+        if (precheck.blocking) {
+          await admin.from("jst_sync_errors").insert({
+            module_key: "sales_refund", error_level: "warn", status: "open",
+            error_message: `店铺映射未完成,允许保存原始数据但不更新正式销售汇总:${precheck.summary}`,
+          });
+        } else {
+          await admin.from("jst_sync_metrics").upsert({
+            metric_key: "sales_summary", metric_name: "销售与退款",
+            metric_value: `今日 GMV ¥${result.todayGmv.toFixed(0)}`,
+            metric_extra: {
+              today_gmv: result.todayGmv, today_gsv: result.todayGsv,
+              today_refund: result.todayRefund, today_orders: result.todayOrders,
+              refund_rate: result.todayGmv > 0 ? Number((result.todayRefund / result.todayGmv * 100).toFixed(2)) : 0,
+              active_shops: result.activeShops,
+              sync_delta_orders: result.rawOrders, sync_delta_gmv: result.todayGmv, status: "ok",
+            },
+            time_range_label: `最近 ${days} 天`,
+            data_source_label: "聚水潭经营口径",
+            last_sync_at: finishedAt, updated_at: finishedAt,
+          }, { onConflict: "metric_key" });
+        }
+
+        return respJson({ ok: true, run_id: runId, summary_updated: summaryUpdated, message: msg, precheck, ...result });
+      } catch (e: any) {
+        const finishedAt = new Date().toISOString();
+        const errMsg = String(e?.message ?? e);
+        await admin.from("jst_sync_runs").update({
+          status: "error", finished_at: finishedAt, duration_ms: Date.now() - t0,
+          error_message: errMsg, current_total_summary: "同步失败",
+        }).eq("id", runId);
         await admin.from("jst_sync_errors").insert({
-          module_key: "sales_refund", error_level: "warn", status: "open",
-          error_message: `店铺映射未完成治理,允许保存原始数据但不更新正式销售汇总:${precheck.summary}`,
+          module_key: "sales_refund", error_level: "error",
+          error_message: errMsg, status: "open",
         });
-        return respJson({ ok: false, blocked: true, reason: "shop_mapping_not_ready", detail: precheck }, 200);
+        return respJson({ ok: false, run_id: runId, error: errMsg }, 200);
       }
-      return respJson({ error: "sales_refund 真实同步尚未接入,请先完成店铺映射治理" }, 400);
     }
 
     if (moduleKey !== "base_archive") {
