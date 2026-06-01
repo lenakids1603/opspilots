@@ -850,10 +850,10 @@ export default function JstDataIntegrationPage() {
           <CollapsibleContent>
             <CardContent className="pt-0 pb-5 px-5 space-y-3 border-t border-border">
               <div className="flex flex-wrap gap-2 pt-4">
-                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "按时间窗补同步" })}>按时间窗补同步</Button>
-                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual_backfill", label: "按款号补同步" })}>按款号补同步</Button>
-                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "sku", trigger_type: "manual_backfill", label: "按 SKU 补同步" })}>按 SKU 补同步</Button>
-                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "shop", trigger_type: "manual_backfill", label: "按店铺补同步" })}>按店铺补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "按时间窗补同步（销售退款最近 7 天）" })}>按时间窗补同步（销售退款 7d）</Button>
+                <Button variant="outline" size="sm" disabled title="按款号补同步暂未接入" onClick={() => notWired("按款号补同步")}>按款号补同步</Button>
+                <Button variant="outline" size="sm" disabled title="按 SKU 补同步暂未接入" onClick={() => notWired("按 SKU 补同步")}>按 SKU 补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ kind: "base_archive", scope: ["shops"], trigger_type: "manual_backfill", label: "按店铺补同步（重新拉取店铺资料）" })}>按店铺补同步（基础档案）</Button>
 
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
