@@ -76,19 +76,8 @@ interface InternalUser {
   must_change_password: boolean;
 }
 
-// ============== mock 数据 ==============
-const initialUsers: InternalUser[] = [
-  { id: "u1", username: "admin",       real_name: "系统管理员", phone: "", department: "开发组",  position: "管理员",   roles: ["super_admin"], employment_status: "active", account_status: "active", remark: "", last_login_at: "2026-05-29T20:21:00", must_change_password: false },
-  { id: "u2", username: "finance01",   real_name: "财务01",     phone: "", department: "财务",    position: "财务",     roles: ["finance"],     employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-  { id: "u3", username: "operation01", real_name: "运营01",     phone: "", department: "运营组",  position: "运营",     roles: ["operation"],   employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-  { id: "u4", username: "purchase01",  real_name: "采购01",     phone: "", department: "采购",    position: "采购",     roles: ["purchase"],    employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-  { id: "u5", username: "service01",   real_name: "客服01",     phone: "", department: "客服",    position: "客服",     roles: ["service"],     employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-  { id: "u6", username: "warehouse01", real_name: "仓库01",     phone: "", department: "仓库入仓", position: "入库员",   roles: ["wh_in"],       employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-  { id: "u7", username: "hr01",        real_name: "人事01",     phone: "", department: "人事",    position: "人事",     roles: ["hr"],          employment_status: "active", account_status: "active", remark: "", last_login_at: null, must_change_password: true },
-];
-
-// 当前登录用户（mock）— 用于"不能停用自己"逻辑
-const CURRENT_USER_ID = "u1";
+// 当前登录用户 id，用于"不能停用自己"逻辑（异步加载）
+let CURRENT_USER_ID = "";
 
 // ============== 工具 ==============
 const usernameRe = /^[a-z0-9_]+$/;
