@@ -43,7 +43,7 @@ export default function CashflowPage() {
       supabase.from("bank_accounts").select("*").is("deleted_at", null).order("account_name"),
       supabase.from("cash_tx_categories").select("*").is("deleted_at", null).order("sort_order"),
       supabase.from("shops").select("*").is("deleted_at", null).order("name"),
-      supabase.from("ops_suppliers").select("id,name").order("name"),
+      supabase.from("ops_suppliers").select("id,name").eq("confirm_status", "confirmed").order("name"),
     ]);
     if (e.data) setEntities(e.data as any);
     if (a.data) setAccounts(a.data as any);
