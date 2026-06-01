@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import {
-  Receipt,
+  Bot,
   Building2,
   Truck,
   Mail,
@@ -74,14 +74,14 @@ export default function Login() {
         />
         <div className="relative">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur ring-1 ring-white/20">
-            <Receipt className="h-6 w-6" />
+            <Bot className="lucide lucide-receipt h-6 w-6 text-base" />
           </div>
         </div>
 
         <div className="relative space-y-10">
           <div>
-            <h1 className="text-5xl font-bold tracking-tight leading-tight">
-              ExpenseDesk — 经营数据与自动化中心
+            <h1 className="text-5xl font-bold tracking-tight leading-tight whitespace-pre-line">
+              OpsPilots Lenakids {"\n"}经营数据与自动化中心
             </h1>
             <p className="mt-3 text-white/70 text-base">
               Business Insights &amp; Automation Hub
@@ -108,7 +108,7 @@ export default function Login() {
 
         <div className="relative flex items-center gap-2 text-xs text-white/50">
           <ShieldCheck className="h-3.5 w-3.5" />
-          <span>© {new Date().getFullYear()} ExpenseDesk · 企业级稳定与安全</span>
+          <span>© {new Date().getFullYear()} Lenakids · 企业内部协同管理系统</span>
         </div>
       </div>
 
