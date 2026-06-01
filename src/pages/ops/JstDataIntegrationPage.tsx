@@ -33,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { SalesRefundPrecheckCard, useSalesRefundPrecheck } from "@/components/ops/SalesRefundPrecheckCard";
+import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 
 // ============================================================
 // Types
