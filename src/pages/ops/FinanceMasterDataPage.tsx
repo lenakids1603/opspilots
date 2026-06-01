@@ -9,7 +9,7 @@ import { Plus, Pencil, Power, X, Download, Upload, FileSpreadsheet } from "lucid
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { fmtMoney } from "@/lib/finance";
-import { parseAccountWorkbook, downloadTemplate, exportRowsToXlsx, type ImportPreview } from "@/lib/financeImport";
+import { parseAccountWorkbook, downloadTemplate, exportRowsToXlsx, downloadErrorReport, type ImportPreview, type PreviewRow } from "@/lib/financeImport";
 
 type AnyRow = Record<string, any>;
 type FieldDef = {
