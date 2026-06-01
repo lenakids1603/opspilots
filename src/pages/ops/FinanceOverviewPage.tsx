@@ -89,7 +89,7 @@ const RANGE_TABS: { key: RangeKey; label: string }[] = [
 type Tx = {
   id: string;
   amount: number;
-  direction: "income" | "expense";
+  direction: "in" | "out";
   occurred_at: string;
   category_id: string | null;
   entity_id: string;
@@ -117,7 +117,7 @@ export default function FinanceOverviewPage() {
   const [shops, setShops] = useState<{ id: string; name: string; platform_id: string | null }[]>([]);
   const [entities, setEntities] = useState<{ id: string; name: string; annual_flow_limit: number; status: string }[]>([]);
   const [bankAccounts, setBankAccounts] = useState<{ id: string; entity_id: string; current_balance: number; status: string }[]>([]);
-  const [categories, setCategories] = useState<{ id: string; name: string; direction: "income" | "expense" }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; direction: "in" | "out" }[]>([]);
 
   const [txInPeriod, setTxInPeriod] = useState<Tx[]>([]);
   const [incomeBeforePeriod, setIncomeBeforePeriod] = useState(0);
@@ -186,10 +186,10 @@ export default function FinanceOverviewPage() {
         // Pre-period aggregates (for opening balance)
         let q2In: any = supabase.from("cash_transactions").select("amount.sum()")
           .is("deleted_at", null).neq("status", "cancelled")
-          .lt("occurred_at", start.toISOString()).eq("direction", "income");
+          .lt("occurred_at", start.toISOString()).eq("direction", "in");
         let q2Out: any = supabase.from("cash_transactions").select("amount.sum()")
           .is("deleted_at", null).neq("status", "cancelled")
-          .lt("occurred_at", start.toISOString()).eq("direction", "expense");
+          .lt("occurred_at", start.toISOString()).eq("direction", "out");
         q2In = applyFilters(q2In);
         q2Out = applyFilters(q2Out);
 
@@ -197,7 +197,7 @@ export default function FinanceOverviewPage() {
         const qYear = supabase.from("cash_transactions")
           .select("entity_id,amount")
           .is("deleted_at", null).neq("status", "cancelled")
-          .eq("direction", "income")
+          .eq("direction", "in")
           .gte("occurred_at", yearStart.toISOString())
           .limit(10000);
 
@@ -226,8 +226,8 @@ export default function FinanceOverviewPage() {
   }, [rangeKey, customStart, customEnd, platformId, shopId, entityId, shops]);
 
   /* ---------- derived ---------- */
-  const periodIncome = useMemo(() => txInPeriod.filter(t => t.direction === "income").reduce((s, t) => s + Number(t.amount), 0), [txInPeriod]);
-  const periodExpense = useMemo(() => txInPeriod.filter(t => t.direction === "expense").reduce((s, t) => s + Number(t.amount), 0), [txInPeriod]);
+  const periodIncome = useMemo(() => txInPeriod.filter(t => t.direction === "in").reduce((s, t) => s + Number(t.amount), 0), [txInPeriod]);
+  const periodExpense = useMemo(() => txInPeriod.filter(t => t.direction === "out").reduce((s, t) => s + Number(t.amount), 0), [txInPeriod]);
   const periodNet = periodIncome - periodExpense;
 
   // Current balance: aggregate from bank_accounts.current_balance (filtered by entity if selected)
@@ -242,7 +242,7 @@ export default function FinanceOverviewPage() {
 
   const inflowByCategory = useMemo(() => {
     const map = new Map<string, number>();
-    txInPeriod.filter(t => t.direction === "income").forEach(t => {
+    txInPeriod.filter(t => t.direction === "in").forEach(t => {
       const k = t.category_id || "__uncat__";
       map.set(k, (map.get(k) || 0) + Number(t.amount));
     });
@@ -255,7 +255,7 @@ export default function FinanceOverviewPage() {
 
   const outflowByCategory = useMemo(() => {
     const map = new Map<string, number>();
-    txInPeriod.filter(t => t.direction === "expense").forEach(t => {
+    txInPeriod.filter(t => t.direction === "out").forEach(t => {
       const k = t.category_id || "__uncat__";
       map.set(k, (map.get(k) || 0) + Number(t.amount));
     });
@@ -342,7 +342,7 @@ export default function FinanceOverviewPage() {
       });
     });
     // 5) Supplier payment without supplier_id
-    txInPeriod.filter(t => t.direction === "expense" && !t.supplier_id && /供应商|货款|采购/.test(t.summary || "")).slice(0, 2).forEach(t => {
+    txInPeriod.filter(t => t.direction === "out" && !t.supplier_id && /供应商|货款|采购/.test(t.summary || "")).slice(0, 2).forEach(t => {
       out.push({
         tag: "低", tagClass: "bg-sky-50 text-sky-700 border-sky-200",
         icon: Bell, iconClass: "text-sky-500",
@@ -541,7 +541,7 @@ export default function FinanceOverviewPage() {
             <CreditCard className="w-4 h-4 text-muted-foreground/60" />
           </div>
           <div className="text-[11px] text-muted-foreground mt-2">期间 direction=expense 且 supplier_id 不为空</div>
-          <div className="text-2xl font-bold font-mono mt-1">{loading ? <Skeleton className="h-7 w-36" /> : fmtCNY(txInPeriod.filter(t => t.direction === "expense" && t.supplier_id).reduce((s, t) => s + Number(t.amount), 0))}</div>
+          <div className="text-2xl font-bold font-mono mt-1">{loading ? <Skeleton className="h-7 w-36" /> : fmtCNY(txInPeriod.filter(t => t.direction === "out" && t.supplier_id).reduce((s, t) => s + Number(t.amount), 0))}</div>
           <div className="flex items-center justify-between text-[11px] mt-3">
             <Link to="/finance/cashflow?direction=expense" className="text-sky-700 hover:underline">查看已打款明细 →</Link>
           </div>
