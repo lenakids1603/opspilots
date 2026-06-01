@@ -547,6 +547,8 @@ function ShopsTab() {
   const [bindState, setBindState] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [sortKey, setSortKey] = useState<string>("jst_shop_id");
+  const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [bindOpen, setBindOpen] = useState(false);
   const [bindShop, setBindShop] = useState<AnyRow | null>(null);
   useDebouncedReset([q, pf, ent, stf, bindState, pageSize], setPage);
