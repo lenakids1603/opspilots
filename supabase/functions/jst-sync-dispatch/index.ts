@@ -322,14 +322,54 @@ async function syncShops() {
         mappingInserted++;
       }
 
-      // 3) 已映射的同步更新系统 shops 表的名称（不动 entity/platform 绑定）
-      if (matchedShopId && mappingStatus === "mapped") {
-        await admin.from("shops").update({ name: jstShopName, updated_at: nowIso })
-          .eq("id", matchedShopId);
-        shopsUpdated++;
-      } else if (mappingStatus === "unmapped") {
-        unmapped++;
+      // 3) Upsert 到统一 shops 表（以 jst_shop_id 为唯一键），不覆盖人工字段
+      const { data: existingShop } = await admin.from("shops")
+        .select("id, platform_id")
+        .eq("jst_shop_id", jstShopId)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      // 自动解析 / 创建 platform_id（仅展示和筛选用）
+      let platformId: string | null = null;
+      if (platformType) {
+        const { data: pf } = await admin.from("platforms")
+          .select("id").eq("name", platformType).is("deleted_at", null).maybeSingle();
+        if (pf) platformId = pf.id;
+        else {
+          const code = platformType.toLowerCase().replace(/\s+/g, "_");
+          const { data: ins } = await admin.from("platforms")
+            .insert({ code, name: platformType, status: "active" })
+            .select("id").maybeSingle();
+          if (ins) platformId = ins.id;
+        }
       }
+
+      const jstFields: Record<string, unknown> = {
+        name: jstShopName || "未命名店铺",
+        platform_type: platformType || null,
+        auth_status: authStatus || null,
+        shop_status_raw: shopStatus || null,
+        raw_jst_json: r,
+        last_synced_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      if (existingShop) {
+        if (!existingShop.platform_id && platformId) jstFields.platform_id = platformId;
+        await admin.from("shops").update(jstFields).eq("id", existingShop.id);
+        shopsUpdated++;
+      } else {
+        await admin.from("shops").insert({
+          jst_shop_id: jstShopId,
+          ...jstFields,
+          platform_id: platformId,
+          status: "active",
+          is_ignored: mappingStatus === "ignored",
+        });
+        shopsUpdated++;
+      }
+
+      if (mappingStatus === "unmapped") unmapped++;
     }
     if (list.length < 100) break;
     page++;
