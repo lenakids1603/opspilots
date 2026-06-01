@@ -1,0 +1,148 @@
+import { useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+type Mapping = {
+  id: string;
+  matched_shop_id: string | null;
+  matched_business_entity_id: string | null;
+  matched_platform_id: string | null;
+  mapping_status: string;
+};
+
+function useMappings() {
+  return useQuery({
+    queryKey: ["jst_shop_mappings", "precheck"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("jst_shop_mappings")
+        .select("id, matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status");
+      if (error) throw error;
+      return (data ?? []) as Mapping[];
+    },
+  });
+}
+
+export function useSalesRefundPrecheck() {
+  const q = useMappings();
+  const stats = useMemo(() => {
+    const rows = q.data ?? [];
+    const active = rows.filter((r) => r.mapping_status !== "ignored");
+    const total = rows.length;
+    const mapped = rows.filter((r) => r.mapping_status === "mapped").length;
+    const unmapped = active.filter((r) => r.mapping_status === "unmapped").length;
+    const ignored = rows.filter((r) => r.mapping_status === "ignored").length;
+    const noEntity = active.filter((r) => !r.matched_business_entity_id).length;
+    const noPlatform = active.filter((r) => !r.matched_platform_id).length;
+    const shopCount = new Map<string, number>();
+    active.forEach((r) => {
+      if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1);
+    });
+    const duplicates = Array.from(shopCount.values()).filter((n) => n > 1).length;
+    const allowSummary = unmapped === 0 && noEntity === 0 && noPlatform === 0 && duplicates === 0;
+    return { total, mapped, unmapped, ignored, noEntity, noPlatform, duplicates, allowSummary };
+  }, [q.data]);
+  return { ...q, stats };
+}
+
+export function SalesRefundPrecheckCard() {
+  const { stats, isLoading, refetch } = useSalesRefundPrecheck();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const trigger = useMutation({
+    mutationFn: async (days: number) => {
+      const { data, error } = await supabase.functions.invoke("jst-sync-dispatch", {
+        body: { module_key: "sales_refund", trigger_type: "manual_backfill", days },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (d) => {
+      toast({
+        title: d?.summary_updated ? "销售退款同步完成" : "已保存原始数据",
+        description: d?.message ?? "完成",
+      });
+      qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_metrics"] });
+      qc.invalidateQueries({ queryKey: ["jst_sales_refund_daily_summary"] });
+    },
+    onError: (e: any) => toast({ title: "同步失败", description: e.message, variant: "destructive" }),
+  });
+
+  const blocked = !stats.allowSummary;
+
+  return (
+    <Card className={blocked ? "border-amber-300 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/40"}>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {blocked
+              ? <AlertTriangle className="w-5 h-5 text-amber-600" />
+              : <ShieldCheck className="w-5 h-5 text-emerald-600" />}
+            <h3 className="text-sm font-semibold">销售同步前置检查</h3>
+            <Badge variant="secondary" className={blocked
+              ? "bg-amber-100 text-amber-700"
+              : "bg-emerald-100 text-emerald-700"}>
+              店铺映射：{blocked ? "需处理" : "通过"}
+            </Badge>
+            <Badge variant="secondary" className={blocked
+              ? "bg-rose-100 text-rose-700"
+              : "bg-emerald-100 text-emerald-700"}>
+              是否允许更新正式销售汇总：{blocked ? "否" : "是"}
+            </Badge>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isLoading ? "animate-spin" : ""}`} />刷新
+            </Button>
+            <Button size="sm" onClick={() => trigger.mutate(7)} disabled={trigger.isPending}>
+              {trigger.isPending && <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />}
+              同步最近 7 天
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => trigger.mutate(30)} disabled={trigger.isPending}>
+              同步最近 30 天
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
+          <Metric label="聚水潭店铺总数" value={stats.total} />
+          <Metric label="已映射店铺" value={stats.mapped} tone="emerald" />
+          <Metric label="未映射店铺" value={stats.unmapped} tone={stats.unmapped ? "rose" : undefined} />
+          <Metric label="已忽略店铺" value={stats.ignored} />
+          <Metric label="无主体绑定" value={stats.noEntity} tone={stats.noEntity ? "rose" : undefined} />
+          <Metric label="无平台绑定" value={stats.noPlatform} tone={stats.noPlatform ? "rose" : undefined} />
+          <Metric label="重复绑定风险" value={stats.duplicates} tone={stats.duplicates ? "rose" : undefined} />
+        </div>
+
+        {blocked ? (
+          <div className="text-xs text-amber-800 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            当前仅可保存聚水潭原始销售/退款数据，暂不更新正式经营指标。请先完成店铺映射治理。
+          </div>
+        ) : (
+          <div className="text-xs text-emerald-800 flex items-start gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            店铺映射治理通过，sales_refund 同步将自动生成每日经营汇总并刷新正式指标。
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: number; tone?: "emerald" | "rose" }) {
+  const cls = tone === "rose" ? "text-rose-600" : tone === "emerald" ? "text-emerald-600" : "";
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-xl font-semibold tabular-nums ${cls}`}>{value}</div>
+    </div>
+  );
+}
