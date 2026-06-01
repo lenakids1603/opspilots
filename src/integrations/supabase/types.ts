@@ -469,6 +469,63 @@ export type Database = {
           },
         ]
       }
+      jst_shop_mappings: {
+        Row: {
+          auth_status: string
+          created_at: string
+          id: string
+          jst_shop_id: string
+          jst_shop_name: string
+          last_sync_at: string | null
+          mapping_note: string
+          mapping_status: string
+          matched_business_entity_id: string | null
+          matched_platform_id: string | null
+          matched_shop_id: string | null
+          platform_shop_id: string
+          platform_type: string
+          raw_json: Json | null
+          shop_status: string
+          updated_at: string
+        }
+        Insert: {
+          auth_status?: string
+          created_at?: string
+          id?: string
+          jst_shop_id: string
+          jst_shop_name?: string
+          last_sync_at?: string | null
+          mapping_note?: string
+          mapping_status?: string
+          matched_business_entity_id?: string | null
+          matched_platform_id?: string | null
+          matched_shop_id?: string | null
+          platform_shop_id?: string
+          platform_type?: string
+          raw_json?: Json | null
+          shop_status?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_status?: string
+          created_at?: string
+          id?: string
+          jst_shop_id?: string
+          jst_shop_name?: string
+          last_sync_at?: string | null
+          mapping_note?: string
+          mapping_status?: string
+          matched_business_entity_id?: string | null
+          matched_platform_id?: string | null
+          matched_shop_id?: string | null
+          platform_shop_id?: string
+          platform_type?: string
+          raw_json?: Json | null
+          shop_status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       jst_sync_errors: {
         Row: {
           error_level: string

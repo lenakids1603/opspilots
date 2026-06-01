@@ -31,6 +31,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 
 // ============================================================
 // Types
@@ -429,6 +430,9 @@ export default function JstDataIntegrationPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 二点五、聚水潭店铺映射 */}
+      <ShopMappingsCard />
 
       {/* 三、自动同步计划 */}
       <Card>

@@ -142,31 +142,82 @@ const pickStr = (...vs: any[]) => {
 
 // ---------- syncers ----------
 async function syncShops() {
-  let page = 1, total = 0, updated = 0, skipped = 0;
+  let page = 1, total = 0, mappingInserted = 0, mappingUpdated = 0,
+    autoMatched = 0, shopsUpdated = 0, unmapped = 0;
+  const nowIso = new Date().toISOString();
   while (true) {
     const data = await callOpenweb("shops/query", { page_index: page, page_size: 100 });
     const list: any[] = data.shops ?? data.datas ?? data.list ?? [];
     if (list.length === 0) break;
     for (const r of list) {
-      const externalId = pickStr(r.shop_id, r.shopId, r.id);
-      const name = pickStr(r.shop_name, r.name, r.nick);
-      if (!externalId) continue;
+      const jstShopId = pickStr(r.shop_id, r.shopId, r.id);
+      const jstShopName = pickStr(r.shop_name, r.name, r.nick);
+      const platformType = pickStr(r.shop_site, r.platform, r.shop_type, r.site);
+      const platformShopId = pickStr(r.platform_shop_id, r.out_shop_id, r.shop_no, r.code);
+      const shopStatus = pickStr(r.shop_status, r.status, r.co_status);
+      const authStatus = pickStr(r.auth_status, r.authorize_status);
+      if (!jstShopId) continue;
       total++;
-      // 仅更新已存在的店铺（entity_id / platform_id 必须由人工预先建立映射）
-      const { data: existing } = await admin.from("shops").select("id")
-        .eq("external_shop_id", externalId).is("deleted_at", null).maybeSingle();
-      if (existing) {
-        await admin.from("shops").update({ name, updated_at: new Date().toISOString() }).eq("id", existing.id);
-        updated++;
+
+      // 1) upsert 到映射表
+      const { data: existingMap } = await admin.from("jst_shop_mappings")
+        .select("id, matched_shop_id, mapping_status")
+        .eq("jst_shop_id", jstShopId).maybeSingle();
+
+      // 2) 尝试自动匹配系统 shops
+      let matchedShopId: string | null = existingMap?.matched_shop_id ?? null;
+      if (!matchedShopId) {
+        const { data: shopHit } = await admin.from("shops").select("id, entity_id, platform_id")
+          .eq("external_shop_id", jstShopId).is("deleted_at", null).maybeSingle();
+        if (shopHit) {
+          matchedShopId = shopHit.id;
+          autoMatched++;
+        }
+      }
+
+      const mappingStatus = existingMap?.mapping_status === "ignored"
+        ? "ignored"
+        : (matchedShopId ? "mapped" : "unmapped");
+
+      const row = {
+        jst_shop_id: jstShopId,
+        jst_shop_name: jstShopName,
+        platform_type: platformType,
+        platform_shop_id: platformShopId,
+        shop_status: shopStatus,
+        auth_status: authStatus,
+        raw_json: r,
+        matched_shop_id: matchedShopId,
+        mapping_status: mappingStatus,
+        last_sync_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      if (existingMap) {
+        await admin.from("jst_shop_mappings").update(row).eq("id", existingMap.id);
+        mappingUpdated++;
       } else {
-        skipped++;
+        await admin.from("jst_shop_mappings").insert(row);
+        mappingInserted++;
+      }
+
+      // 3) 已映射的同步更新系统 shops 表的名称（不动 entity/platform 绑定）
+      if (matchedShopId && mappingStatus === "mapped") {
+        await admin.from("shops").update({ name: jstShopName, updated_at: nowIso })
+          .eq("id", matchedShopId);
+        shopsUpdated++;
+      } else if (mappingStatus === "unmapped") {
+        unmapped++;
       }
     }
     if (list.length < 100) break;
     page++;
     await sleep(RATE_DELAY_MS);
   }
-  return { total, updated, skipped, summary: `店铺 ${total} 条（更新 ${updated}，待建实体映射 ${skipped}）` };
+  return {
+    total, mappingInserted, mappingUpdated, autoMatched, shopsUpdated, unmapped,
+    summary: `店铺 ${total} 条（新增映射 ${mappingInserted}，更新 ${mappingUpdated}，自动绑定 ${autoMatched}，未绑定 ${unmapped}）`,
+  };
 }
 
 async function syncSuppliers() {
@@ -289,11 +340,13 @@ Deno.serve(async (req) => {
     try {
       const parts: string[] = [];
       let inserted = 0, updated = 0;
+      let shopStats: any = null;
       for (const t of targets) {
         if (t === "shops") {
           const r = await syncShops();
           parts.push(r.summary);
-          updated += r.updated;
+          inserted += r.mappingInserted; updated += r.mappingUpdated + r.shopsUpdated;
+          shopStats = r;
         } else if (t === "suppliers") {
           const r = await syncSuppliers();
           parts.push(r.summary);
@@ -320,11 +373,9 @@ Deno.serve(async (req) => {
         last_result_summary: summary, retry_count: 0,
       }).eq("module_key", "base_archive");
 
-      // 解决该模块下的开放异常
       await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: finishedAt })
         .eq("module_key", "base_archive").neq("status", "resolved");
 
-      // 更新指标
       await admin.from("jst_sync_metrics").upsert({
         metric_key: "base_archive_summary",
         metric_name: "基础档案",
@@ -336,7 +387,28 @@ Deno.serve(async (req) => {
         updated_at: finishedAt,
       }, { onConflict: "metric_key" });
 
-      return respJson({ ok: true, run_id: runId, summary, inserted, updated, duration_ms: durationMs });
+      // 店铺映射指标（从映射表实时聚合，避免只反映本次同步增量）
+      if (shopStats) {
+        const { data: allMaps } = await admin.from("jst_shop_mappings")
+          .select("mapping_status");
+        const totalAll = allMaps?.length ?? 0;
+        const mapped = (allMaps ?? []).filter((m) => m.mapping_status === "mapped").length;
+        const ignored = (allMaps ?? []).filter((m) => m.mapping_status === "ignored").length;
+        const unmappedAll = (allMaps ?? []).filter((m) => m.mapping_status === "unmapped").length;
+        await admin.from("jst_sync_metrics").upsert({
+          metric_key: "shop_mapping_summary",
+          metric_name: "店铺映射",
+          metric_value: `共 ${totalAll}，已绑 ${mapped}，未绑 ${unmappedAll}，已忽略 ${ignored}`,
+          metric_extra: { total: totalAll, mapped, unmapped: unmappedAll, ignored, ...shopStats },
+          time_range_label: "全量快照",
+          data_source_label: "聚水潭店铺",
+          last_sync_at: finishedAt,
+          updated_at: finishedAt,
+        }, { onConflict: "metric_key" });
+      }
+
+      return respJson({ ok: true, run_id: runId, summary, inserted, updated, duration_ms: durationMs, shopStats });
+
     } catch (e: any) {
       const finishedAt = new Date().toISOString();
       const errMsg = String(e?.message ?? e);
