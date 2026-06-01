@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ops/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,10 +28,12 @@ import {
   AlertTriangle, RefreshCw, ChevronDown, FileText, Boxes, Package,
   Warehouse, LineChart, Truck, Wrench, Search, Clock, Info,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 // ============================================================
-// 数据口径说明
-// 经营指标 = 今日 00:00 - 当前累计，聚水潭经营口径，非本次同步新增金额
+// Types
 // ============================================================
 
 type ModuleStatus = "ok" | "warn" | "error";
@@ -41,83 +44,41 @@ const STATUS_META: Record<ModuleStatus, { label: string; cls: string }> = {
   error: { label: "异常", cls: "bg-rose-100 text-rose-700 hover:bg-rose-100" },
 };
 
+const TRIGGER_LABEL: Record<string, string> = {
+  auto: "自动同步",
+  retry: "失败重试",
+  manual_backfill: "手动补数据",
+  manual: "手动同步",
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  base: "基础档案",
+  product: "商品与 SKU",
+  purchase: "采购与入库",
+  inventory: "库存",
+  sales: "销售经营",
+  fulfillment: "履约与售后",
+};
+
+function asStatus(s: string | null | undefined): ModuleStatus {
+  return s === "ok" || s === "warn" || s === "error" ? s : "ok";
+}
+
 function StatusBadge({ value }: { value: ModuleStatus }) {
   const m = STATUS_META[value];
   return <Badge variant="secondary" className={m.cls}>{m.label}</Badge>;
 }
 
-// ============================================================
-// MOCK 数据 — 与界面文案对应
-// ============================================================
-
-const GLOBAL = {
-  status: "部分异常",
-  auto: "已开启",
-  lastSync: "10:15",
-  nextSync: "10:25",
-  todayBatches: 42,
-  todayRecords: 1242,
-  successRecords: 1240,
-  failedRecords: 2,
-  running: 0,
-};
-
-const ABNORMAL_MODULES = ["基础库存（超时）", "发货物流（同步失败）"];
-
-const SCHEDULE: Array<{
-  module: string; content: string; freq: string;
-  last: string; next: string; status: ModuleStatus; statusNote?: string;
-}> = [
-  { module: "基础档案",    content: "店铺、供应商、仓库",       freq: "每天凌晨 02:00 全量", last: "今日 02:00", next: "明日 02:00", status: "ok" },
-  { module: "商品与 SKU",  content: "商品资料、SKU 资料、商品图片", freq: "每 30 分钟 增量",   last: "10:00",     next: "10:30",     status: "ok" },
-  { module: "采购与入库",  content: "采购单、采购入库单",       freq: "每 10 分钟 增量",   last: "10:10",     next: "10:20",     status: "ok" },
-  { module: "库存",        content: "基础库存、可用库存、锁定库存", freq: "每 10 分钟 全量",   last: "10:05（超时）", next: "自动重试中", status: "error", statusNote: "自动重试中" },
-  { module: "销售与退款",  content: "GMV、GSV、退款金额、订单数、退款率", freq: "每 10 分钟 增量", last: "10:15",     next: "10:25",     status: "ok" },
-];
-
-const SALES = {
-  range: "今日 00:00 - 当前",
-  lastSync: "10:15",
-  caliber: "聚水潭经营口径",
-  todayGmv: 12000,
-  todayGsv: 11000,
-  todayRefund: 1000,
-  todayOrders: 128,
-  refundRate: 8.3,
-  activeShops: 12,
-  syncDeltaOrders: 15,
-  syncDeltaGmv: 320,
-};
-
-const MODULES_PHASE1: Array<{
-  name: string; content: string; freq: string;
-  last: string; next: string; status: ModuleStatus; recent: string;
-}> = [
-  { name: "店铺资料 (Shop)",       content: "店铺基本信息", freq: "每天 02:00",  last: "今日 02:00", next: "明日 02:00", status: "ok",    recent: "新增 0 条，更新 2 条" },
-  { name: "商品资料 (Product)",    content: "款式档案、分类", freq: "每 30 分钟", last: "10:00",     next: "10:30",     status: "ok",    recent: "新增 15 条，更新 3 条" },
-  { name: "SKU 资料 (SKU)",        content: "条码、规格",   freq: "每 30 分钟", last: "10:00",     next: "10:30",     status: "warn",  recent: "4 条失败，原因：API Rate Limit" },
-  { name: "基础库存 (Inventory)",  content: "可用库存",     freq: "每 10 分钟", last: "10:05（超时）", next: "自动重试中", status: "error", recent: "已自动重试 1 次，等待第 2 次重试" },
-];
-
-const LOGS: Array<{
-  time: string; trigger: string; group: string; module: string;
-  status: ModuleStatus; added: string; updated: string; failed: string;
-  cumulative: string; cost: string; error: string;
-}> = [
-  { time: "10:15:22", trigger: "自动同步", group: "销售经营", module: "店铺销售汇总", status: "ok",
-    added: "15 单 / ¥320 GMV", updated: "3 单", failed: "0", cumulative: "今日 GMV ¥12,000", cost: "1.2s", error: "-" },
-  { time: "10:14:05", trigger: "失败重试", group: "基础档案", module: "SKU 资料", status: "error",
-    added: "0", updated: "0", failed: "4 条", cumulative: "SKU 总数 679", cost: "0.8s", error: "API Rate Limit Exceeded" },
-  { time: "10:10:00", trigger: "自动同步", group: "采购与入库", module: "采购单", status: "ok",
-    added: "2 单", updated: "0", failed: "0", cumulative: "今日采购单 36", cost: "0.5s", error: "-" },
-  { time: "10:05:00", trigger: "自动同步", group: "库存", module: "基础库存", status: "error",
-    added: "0", updated: "0", failed: "0", cumulative: "库存 SKU 679", cost: "30s", error: "Connection Timeout" },
-];
-
-const fmtMoney = (n: number) => "¥" + n.toLocaleString("zh-CN");
+const fmtMoney = (n: number) => "¥" + (n ?? 0).toLocaleString("zh-CN");
+const fmtTime = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDateTime = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+const fmtDuration = (ms?: number | null) =>
+  ms == null ? "—" : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 
 // ============================================================
-// 子组件
+// Subcomponents
 // ============================================================
 
 function SectionCard({
@@ -156,23 +117,150 @@ function MetricRow({ label, value, tone }: { label: string; value: React.ReactNo
 }
 
 // ============================================================
-// 主组件
+// Data hooks
+// ============================================================
+
+function useModules() {
+  return useQuery({
+    queryKey: ["jst_sync_modules"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jst_sync_modules")
+        .select("*")
+        .order("priority", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+function useMetrics() {
+  return useQuery({
+    queryKey: ["jst_sync_metrics"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("jst_sync_metrics").select("*");
+      if (error) throw error;
+      const map: Record<string, typeof data[number]> = {};
+      (data ?? []).forEach((row) => { map[row.metric_key] = row; });
+      return map;
+    },
+  });
+}
+
+function useErrors() {
+  return useQuery({
+    queryKey: ["jst_sync_errors"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jst_sync_errors")
+        .select("*")
+        .neq("status", "resolved")
+        .order("last_seen_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+function useRuns() {
+  return useQuery({
+    queryKey: ["jst_sync_runs"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jst_sync_runs")
+        .select("*")
+        .order("started_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+// ============================================================
+// Main page
 // ============================================================
 
 export default function JstDataIntegrationPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const modulesQ = useModules();
+  const metricsQ = useMetrics();
+  const errorsQ = useErrors();
+  const runsQ = useRuns();
+
   const [keyword, setKeyword] = useState("");
   const [triggerFilter, setTriggerFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const filteredLogs = LOGS.filter(l => {
-    if (triggerFilter !== "all" && l.trigger !== triggerFilter) return false;
-    if (groupFilter !== "all" && l.group !== groupFilter) return false;
-    if (statusFilter !== "all" && l.status !== statusFilter) return false;
-    if (keyword && !`${l.module} ${l.group} ${l.error}`.toLowerCase().includes(keyword.toLowerCase())) return false;
-    return true;
+  // ------------------------------------------------------------
+  // Manual "同步操作" → only creates a jst_sync_runs row (no real JST call)
+  // ------------------------------------------------------------
+  const triggerRun = useMutation({
+    mutationFn: async (input: { module_key: string; trigger_type: string; label: string }) => {
+      if (!user) throw new Error("未登录");
+      const { error } = await supabase.from("jst_sync_runs").insert({
+        module_key: input.module_key,
+        trigger_type: input.trigger_type,
+        status: "running",
+        started_at: new Date().toISOString(),
+        current_total_summary: `手动触发：${input.label}（占位，未实际调用聚水潭）`,
+        created_by: user.id,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      toast({ title: "已记录同步运行", description: `${v.label} — 仅写入日志，未真正调用聚水潭` });
+      qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+    },
+    onError: (e: any) => toast({ title: "无法记录", description: e.message, variant: "destructive" }),
   });
 
+  // ------------------------------------------------------------
+  // Derived state
+  // ------------------------------------------------------------
+  const modules = modulesQ.data ?? [];
+  const metrics = metricsQ.data ?? {};
+  const errors = errorsQ.data ?? [];
+  const runs = runsQ.data ?? [];
+
+  const globalMetric = metrics["global_status"];
+  const globalExtra = (globalMetric?.metric_extra ?? {}) as Record<string, any>;
+
+  const abnormalModules = useMemo(
+    () => modules.filter((m) => m.status === "error" || m.status === "warn"),
+    [modules],
+  );
+
+  const filteredLogs = useMemo(() => {
+    return runs.filter((l) => {
+      const mod = modules.find((m) => m.module_key === l.module_key);
+      const groupLabel = mod ? (CATEGORY_LABEL[mod.category] ?? mod.category) : "";
+      const moduleName = mod?.module_name ?? l.module_key;
+      const triggerLabel = TRIGGER_LABEL[l.trigger_type] ?? l.trigger_type;
+
+      if (triggerFilter !== "all" && triggerLabel !== triggerFilter) return false;
+      if (groupFilter !== "all" && groupLabel !== groupFilter) return false;
+      if (statusFilter !== "all" && l.status !== statusFilter) return false;
+      if (keyword) {
+        const blob = `${moduleName} ${groupLabel} ${l.error_message ?? ""}`.toLowerCase();
+        if (!blob.includes(keyword.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [runs, modules, triggerFilter, groupFilter, statusFilter, keyword]);
+
+  const isLoading = modulesQ.isLoading || metricsQ.isLoading || errorsQ.isLoading || runsQ.isLoading;
+
+  // helper to render a SectionCard from metric_extra
+  const moduleByKey = (k: string) => modules.find((m) => m.module_key === k);
+
+  // ------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------
   return (
     <div className="space-y-6">
       <PageHeader
@@ -182,47 +270,75 @@ export default function JstDataIntegrationPage() {
         actions={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
-                <RefreshCw className="w-4 h-4 mr-1.5" /> 同步操作
+              <Button disabled={triggerRun.isPending}>
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${triggerRun.isPending ? "animate-spin" : ""}`} /> 同步操作
                 <ChevronDown className="w-4 h-4 ml-1" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                人工补救入口（非日常）
+                人工补救入口（仅写入运行日志）
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>重试异常模块</DropdownMenuItem>
-              <DropdownMenuItem>同步指定模块</DropdownMenuItem>
-              <DropdownMenuItem>按款号补同步</DropdownMenuItem>
-              <DropdownMenuItem>按 SKU 补同步</DropdownMenuItem>
-              <DropdownMenuItem>按店铺补同步</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: abnormalModules[0]?.module_key ?? "inventory", trigger_type: "retry", label: "重试异常模块" })}>
+                重试异常模块
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual", label: "同步指定模块" })}>
+                同步指定模块
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual_backfill", label: "按款号补同步" })}>
+                按款号补同步
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "sku", trigger_type: "manual_backfill", label: "按 SKU 补同步" })}>
+                按 SKU 补同步
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "shop", trigger_type: "manual_backfill", label: "按店铺补同步" })}>
+                按店铺补同步
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>同步最近 7 天</DropdownMenuItem>
-              <DropdownMenuItem>同步最近 30 天</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
+                同步最近 7 天
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "同步最近 30 天" })}>
+                同步最近 30 天
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         }
       />
 
-      {/* 一、异常提示 */}
-      <Card className="border-amber-300 bg-amber-50/60">
-        <CardContent className="p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-          <div className="flex-1 space-y-1">
-            <div className="text-sm font-medium text-amber-900">
-              {ABNORMAL_MODULES.length} 个模块同步异常（自动重试中）
-            </div>
-            <div className="text-xs text-amber-800">
-              {ABNORMAL_MODULES.join("、")}。系统正在进行指数级重试，建议观察。
-            </div>
-          </div>
-          <Button variant="outline" size="sm">查看异常</Button>
-          <Button size="sm">手动重试</Button>
-        </CardContent>
-      </Card>
+      {isLoading && (
+        <div className="text-sm text-muted-foreground">加载中…</div>
+      )}
 
-      {/* 二、全局同步状态 — 重构数字含义 */}
+      {/* 一、异常提示 */}
+      {abnormalModules.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/60">
+          <CardContent className="p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1 space-y-1">
+              <div className="text-sm font-medium text-amber-900">
+                {abnormalModules.length} 个模块同步异常（自动重试中）
+              </div>
+              <div className="text-xs text-amber-800">
+                {abnormalModules.map((m) => `${m.module_name}（${m.status === "error" ? "失败" : "需维护"}）`).join("、")}
+                。系统正在进行指数级重试，建议观察。
+              </div>
+              {errors.length > 0 && (
+                <div className="text-xs text-amber-800/80">
+                  最新异常：{errors[0].error_message}
+                </div>
+              )}
+            </div>
+            <Button variant="outline" size="sm">查看异常</Button>
+            <Button size="sm" onClick={() => triggerRun.mutate({ module_key: abnormalModules[0].module_key, trigger_type: "retry", label: "手动重试异常模块" })}>
+              手动重试
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 二、全局同步状态 */}
       <Card>
         <CardContent className="p-5">
           <div className="flex flex-wrap items-start justify-between gap-6">
@@ -232,44 +348,46 @@ export default function JstDataIntegrationPage() {
                 <h3 className="text-base font-semibold">全局同步状态</h3>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <Badge variant="secondary" className="bg-amber-100 text-amber-700">{GLOBAL.status}</Badge>
-                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">自动同步：{GLOBAL.auto}</Badge>
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700">{globalMetric?.metric_value ?? "—"}</Badge>
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">
+                  自动同步：{globalExtra.auto_enabled ? "已开启" : "已关闭"}
+                </Badge>
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-3">
-                <span>最近同步：{GLOBAL.lastSync}</span>
-                <span>下次自动同步：{GLOBAL.nextSync}</span>
+                <span>最近同步：{fmtTime(globalMetric?.last_sync_at)}</span>
+                <span>下次自动同步：{globalExtra.next_sync_at ?? "—"}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-3 text-sm">
               <div>
                 <div className="text-xs text-muted-foreground">今日同步批次</div>
-                <div className="text-xl font-semibold tabular-nums">{GLOBAL.todayBatches}</div>
+                <div className="text-xl font-semibold tabular-nums">{globalExtra.today_batches ?? 0}</div>
                 <div className="text-[11px] text-muted-foreground">任务运行次数</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">今日同步记录</div>
-                <div className="text-xl font-semibold tabular-nums">{GLOBAL.todayRecords.toLocaleString()}</div>
+                <div className="text-xl font-semibold tabular-nums">{(globalExtra.today_records ?? 0).toLocaleString()}</div>
                 <div className="text-[11px] text-muted-foreground">处理数据条数</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">成功记录</div>
-                <div className="text-xl font-semibold tabular-nums text-emerald-600">{GLOBAL.successRecords.toLocaleString()}</div>
+                <div className="text-xl font-semibold tabular-nums text-emerald-600">{(globalExtra.success_records ?? 0).toLocaleString()}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">失败记录</div>
-                <div className="text-xl font-semibold tabular-nums text-rose-600">{GLOBAL.failedRecords}</div>
+                <div className="text-xl font-semibold tabular-nums text-rose-600">{globalExtra.failed_records ?? 0}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">运行中任务</div>
-                <div className="text-xl font-semibold tabular-nums">{GLOBAL.running}</div>
+                <div className="text-xl font-semibold tabular-nums">{globalExtra.running ?? 0}</div>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 三、自动同步计划 — 补上次/下次执行 */}
+      {/* 三、自动同步计划 */}
       <Card>
         <CardContent className="p-0">
           <div className="px-5 py-4 flex items-center gap-2 border-b border-border">
@@ -288,104 +406,145 @@ export default function JstDataIntegrationPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {SCHEDULE.map(row => (
-                <TableRow key={row.module}>
-                  <TableCell className="font-medium">{row.module}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.content}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.freq}</TableCell>
-                  <TableCell className={row.status === "error" ? "text-rose-600" : ""}>{row.last}</TableCell>
-                  <TableCell className={row.status === "error" ? "text-rose-600" : ""}>{row.next}</TableCell>
-                  <TableCell><StatusBadge value={row.status} /></TableCell>
-                </TableRow>
-              ))}
+              {modules.map((row) => {
+                const s = asStatus(row.status);
+                return (
+                  <TableRow key={row.module_key}>
+                    <TableCell className="font-medium">{row.module_name}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.sync_content}</TableCell>
+                    <TableCell className="text-muted-foreground">{row.sync_frequency}</TableCell>
+                    <TableCell className={s === "error" ? "text-rose-600" : ""}>{fmtTime(row.last_sync_at)}</TableCell>
+                    <TableCell className={s === "error" ? "text-rose-600" : ""}>
+                      {s === "error" ? "自动重试中" : fmtTime(row.next_sync_at)}
+                    </TableCell>
+                    <TableCell><StatusBadge value={s} /></TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      {/* 四、核心数据概览 — 每张卡都标明最近同步时间 */}
+      {/* 四、核心数据概览 */}
       <div>
         <h3 className="text-sm font-semibold mb-3">核心数据概览</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {(() => {
+            const base = (metrics["base_archive_summary"]?.metric_extra ?? {}) as any;
+            const baseMod = moduleByKey("base_archive");
+            return (
+              <SectionCard
+                icon={<FileText className="w-4 h-4 text-muted-foreground" />}
+                title="基础档案"
+                status={asStatus(base.status)}
+                footer={<div>最近同步：{fmtTime(baseMod?.last_sync_at)}（{baseMod?.sync_frequency}）</div>}
+              >
+                <MetricRow label="店铺" value={base.shops ?? 0} />
+                <MetricRow label="供应商" value={base.suppliers ?? 0} />
+                <MetricRow label="仓库" value={base.warehouses ?? 0} />
+              </SectionCard>
+            );
+          })()}
 
-          <SectionCard
-            icon={<FileText className="w-4 h-4 text-muted-foreground" />}
-            title="基础档案"
-            status="warn"
-            footer={<div>最近同步：今日 02:00（每日全量）</div>}
-          >
-            <MetricRow label="店铺" value={36} />
-            <MetricRow label="供应商" value={6} />
-            <MetricRow label="仓库" value={2} />
-          </SectionCard>
+          {(() => {
+            const p = (metrics["product_summary"]?.metric_extra ?? {}) as any;
+            const mod = moduleByKey("product");
+            return (
+              <SectionCard
+                icon={<Package className="w-4 h-4 text-muted-foreground" />}
+                title="商品与 SKU"
+                status={asStatus(p.status)}
+                footer={<div>最近同步：{fmtTime(mod?.last_sync_at)}（{mod?.sync_frequency}）</div>}
+              >
+                <MetricRow label="商品" value={p.products ?? 0} />
+                <MetricRow label="SKU" value={p.skus ?? 0} />
+                <MetricRow label="图片缓存" value={p.image_cache ?? "—"} />
+              </SectionCard>
+            );
+          })()}
 
-          <SectionCard
-            icon={<Package className="w-4 h-4 text-muted-foreground" />}
-            title="商品与 SKU"
-            status="ok"
-            footer={<div>最近同步：10:15（每 30 分钟）</div>}
-          >
-            <MetricRow label="商品" value={680} />
-            <MetricRow label="SKU" value={679} />
-            <MetricRow label="图片缓存" value="100%" />
-          </SectionCard>
+          {(() => {
+            const p = (metrics["purchase_summary"]?.metric_extra ?? {}) as any;
+            const mod = moduleByKey("purchase");
+            return (
+              <SectionCard
+                icon={<Boxes className="w-4 h-4 text-muted-foreground" />}
+                title="采购与入库"
+                status={asStatus(p.status)}
+                footer={<div>最近同步：{fmtTime(mod?.last_sync_at)}（{mod?.sync_frequency}）</div>}
+              >
+                <MetricRow label="今日采购单" value={p.today_po ?? 0} />
+                <MetricRow label="今日入库单" value={p.today_io ?? 0} />
+                <MetricRow label="入库异常" value={p.io_errors ?? 0} />
+              </SectionCard>
+            );
+          })()}
 
-          <SectionCard
-            icon={<Boxes className="w-4 h-4 text-muted-foreground" />}
-            title="采购与入库"
-            status="ok"
-            footer={<div>最近同步：10:10（每 10 分钟）</div>}
-          >
-            <MetricRow label="今日采购单" value={36} />
-            <MetricRow label="今日入库单" value={22} />
-            <MetricRow label="入库异常" value={0} />
-          </SectionCard>
+          {(() => {
+            const p = (metrics["inventory_summary"]?.metric_extra ?? {}) as any;
+            const mod = moduleByKey("inventory");
+            const s = asStatus(p.status);
+            return (
+              <SectionCard
+                icon={<Warehouse className="w-4 h-4 text-muted-foreground" />}
+                title="库存情况"
+                status={s}
+                footer={
+                  <>
+                    <div>最近同步：{fmtTime(mod?.last_sync_at)}{s === "error" ? "（超时）" : ""}</div>
+                    {s === "error" && <div className="text-amber-700">当前状态：自动重试中</div>}
+                  </>
+                }
+              >
+                <MetricRow label="库存 SKU" value={p.stock_skus ?? 0} />
+                <MetricRow label="异常记录" value={p.errors ?? 0} tone={p.errors ? "destructive" : "default"} />
+              </SectionCard>
+            );
+          })()}
 
-          <SectionCard
-            icon={<Warehouse className="w-4 h-4 text-muted-foreground" />}
-            title="库存情况"
-            status="error"
-            footer={
-              <>
-                <div>最近同步：10:05（超时）</div>
-                <div className="text-amber-700">当前状态：自动重试中</div>
-              </>
-            }
-          >
-            <MetricRow label="库存 SKU" value={679} />
-            <MetricRow label="异常记录" value={1} tone="destructive" />
-          </SectionCard>
+          {(() => {
+            const sales = metrics["sales_summary"];
+            const p = (sales?.metric_extra ?? {}) as any;
+            return (
+              <SectionCard
+                icon={<LineChart className="w-4 h-4 text-muted-foreground" />}
+                title="销售与退款"
+                status={asStatus(p.status)}
+                footer={
+                  <>
+                    <div>统计范围：{sales?.time_range_label}｜最近同步：{fmtTime(sales?.last_sync_at)}</div>
+                    <div>口径：{sales?.data_source_label}</div>
+                    <div className="text-muted-foreground/80">
+                      本次同步新增：{p.sync_delta_orders ?? 0} 单 / {fmtMoney(p.sync_delta_gmv ?? 0)} GMV
+                    </div>
+                  </>
+                }
+              >
+                <MetricRow label="今日 GMV" value={fmtMoney(p.today_gmv ?? 0)} />
+                <MetricRow label="今日 GSV" value={fmtMoney(p.today_gsv ?? 0)} />
+                <MetricRow label="今日退款金额" value={fmtMoney(p.today_refund ?? 0)} />
+                <MetricRow label="今日退款率" value={`${p.refund_rate ?? 0}%`} />
+              </SectionCard>
+            );
+          })()}
 
-          <SectionCard
-            icon={<LineChart className="w-4 h-4 text-muted-foreground" />}
-            title="销售与退款"
-            status="ok"
-            footer={
-              <>
-                <div>统计范围：{SALES.range}｜最近同步：{SALES.lastSync}</div>
-                <div>口径：{SALES.caliber}</div>
-                <div className="text-muted-foreground/80">
-                  本次同步新增：{SALES.syncDeltaOrders} 单 / {fmtMoney(SALES.syncDeltaGmv)} GMV
-                </div>
-              </>
-            }
-          >
-            <MetricRow label="今日 GMV" value={fmtMoney(SALES.todayGmv)} />
-            <MetricRow label="今日 GSV" value={fmtMoney(SALES.todayGsv)} />
-            <MetricRow label="今日退款金额" value={fmtMoney(SALES.todayRefund)} />
-            <MetricRow label="今日退款率" value={`${SALES.refundRate}%`} />
-          </SectionCard>
-
-          <SectionCard
-            icon={<Truck className="w-4 h-4 text-muted-foreground" />}
-            title="履约与售后"
-            status="ok"
-            footer={<div>最近同步：10:10（每 10 分钟）</div>}
-          >
-            <MetricRow label="待发货" value={116} />
-            <MetricRow label="超时未发货" value={8} tone="destructive" />
-            <MetricRow label="今日售后单" value={12} />
-          </SectionCard>
+          {(() => {
+            const p = (metrics["fulfillment_summary"]?.metric_extra ?? {}) as any;
+            const mod = moduleByKey("purchase");
+            return (
+              <SectionCard
+                icon={<Truck className="w-4 h-4 text-muted-foreground" />}
+                title="履约与售后"
+                status={asStatus(p.status)}
+                footer={<div>最近同步：{fmtTime(metrics["fulfillment_summary"]?.last_sync_at ?? mod?.last_sync_at)}</div>}
+              >
+                <MetricRow label="待发货" value={p.pending_shipment ?? 0} />
+                <MetricRow label="超时未发货" value={p.overdue_shipment ?? 0} tone={p.overdue_shipment ? "destructive" : "default"} />
+                <MetricRow label="今日售后单" value={p.today_aftersales ?? 0} />
+              </SectionCard>
+            );
+          })()}
         </div>
       </div>
 
@@ -418,69 +577,65 @@ export default function JstDataIntegrationPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {MODULES_PHASE1.map(m => (
-                      <TableRow key={m.name}>
-                        <TableCell className="font-medium">{m.name}</TableCell>
-                        <TableCell className="text-muted-foreground">{m.content}</TableCell>
-                        <TableCell className="text-muted-foreground">{m.freq}</TableCell>
-                        <TableCell className={m.status === "error" ? "text-rose-600" : ""}>{m.last}</TableCell>
-                        <TableCell className={m.status === "error" ? "text-rose-600" : ""}>{m.next}</TableCell>
-                        <TableCell><StatusBadge value={m.status} /></TableCell>
-                        <TableCell className="text-xs text-muted-foreground max-w-[260px]">{m.recent}</TableCell>
-                        <TableCell className="text-right space-x-2">
-                          {m.status === "error"
-                            ? <Button variant="ghost" size="sm">重试</Button>
-                            : <Button variant="ghost" size="sm">配置</Button>}
-                          <Button variant="ghost" size="sm">日志</Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {modules
+                      .filter((m) => m.category !== "sales")
+                      .map((m) => {
+                        const s = asStatus(m.status);
+                        return (
+                          <TableRow key={m.module_key}>
+                            <TableCell className="font-medium">{m.module_name}</TableCell>
+                            <TableCell className="text-muted-foreground">{m.sync_content}</TableCell>
+                            <TableCell className="text-muted-foreground">{m.sync_frequency}</TableCell>
+                            <TableCell className={s === "error" ? "text-rose-600" : ""}>{fmtTime(m.last_sync_at)}</TableCell>
+                            <TableCell className={s === "error" ? "text-rose-600" : ""}>
+                              {s === "error" ? "自动重试中" : fmtTime(m.next_sync_at)}
+                            </TableCell>
+                            <TableCell><StatusBadge value={s} /></TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[260px]">{m.last_result_summary}</TableCell>
+                            <TableCell className="text-right space-x-2">
+                              {s === "error"
+                                ? <Button variant="ghost" size="sm" onClick={() => triggerRun.mutate({ module_key: m.module_key, trigger_type: "retry", label: `重试 ${m.module_name}` })}>重试</Button>
+                                : <Button variant="ghost" size="sm">配置</Button>}
+                              <Button variant="ghost" size="sm">日志</Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                   </TableBody>
                 </Table>
               </TabsContent>
 
               <TabsContent value="sales" className="m-0 p-5 space-y-4">
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground leading-relaxed">
-                  当前销售与退款数据采用<strong className="text-foreground">聚水潭经营口径</strong>，用于日常经营监控，
-                  解决多店铺每天手动拉表问题。这里展示的是<strong className="text-foreground">今日累计数据</strong>，
-                  不是本次同步新增数据。月底财务核账时，可结合平台导入表格进行复核。
-                </div>
-
-                <div className="rounded-md border border-border p-4 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <div>统计范围：{SALES.range}</div>
-                    <div>最近同步：{SALES.lastSync}</div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <div>
-                      <div className="text-xs text-muted-foreground">今日 GMV</div>
-                      <div className="text-xl font-semibold tabular-nums">{fmtMoney(SALES.todayGmv)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">今日 GSV</div>
-                      <div className="text-xl font-semibold tabular-nums">{fmtMoney(SALES.todayGsv)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">今日退款金额</div>
-                      <div className="text-xl font-semibold tabular-nums">{fmtMoney(SALES.todayRefund)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">今日订单数</div>
-                      <div className="text-xl font-semibold tabular-nums">{SALES.todayOrders}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">今日退款率</div>
-                      <div className="text-xl font-semibold tabular-nums">{SALES.refundRate}%</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">活跃店铺</div>
-                      <div className="text-xl font-semibold tabular-nums">{SALES.activeShops} 家</div>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-                    {SALES.caliber}｜本次同步新增：{SALES.syncDeltaOrders} 单 / {fmtMoney(SALES.syncDeltaGmv)} GMV
-                  </div>
-                </div>
+                {(() => {
+                  const sales = metrics["sales_summary"];
+                  const p = (sales?.metric_extra ?? {}) as any;
+                  return (
+                    <>
+                      <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground leading-relaxed">
+                        当前销售与退款数据采用<strong className="text-foreground">{sales?.data_source_label ?? "聚水潭经营口径"}</strong>，
+                        用于日常经营监控，解决多店铺每天手动拉表问题。这里展示的是<strong className="text-foreground">今日累计数据</strong>，
+                        不是本次同步新增数据。月底财务核账时，可结合平台导入表格进行复核。
+                      </div>
+                      <div className="rounded-md border border-border p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <div>统计范围：{sales?.time_range_label}</div>
+                          <div>最近同步：{fmtTime(sales?.last_sync_at)}</div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                          <div><div className="text-xs text-muted-foreground">今日 GMV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_gmv ?? 0)}</div></div>
+                          <div><div className="text-xs text-muted-foreground">今日 GSV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_gsv ?? 0)}</div></div>
+                          <div><div className="text-xs text-muted-foreground">今日退款金额</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_refund ?? 0)}</div></div>
+                          <div><div className="text-xs text-muted-foreground">今日订单数</div><div className="text-xl font-semibold tabular-nums">{p.today_orders ?? 0}</div></div>
+                          <div><div className="text-xs text-muted-foreground">今日退款率</div><div className="text-xl font-semibold tabular-nums">{p.refund_rate ?? 0}%</div></div>
+                          <div><div className="text-xs text-muted-foreground">活跃店铺</div><div className="text-xl font-semibold tabular-nums">{p.active_shops ?? 0} 家</div></div>
+                        </div>
+                        <div className="text-xs text-muted-foreground pt-2 border-t border-border">
+                          {sales?.data_source_label}｜本次同步新增：{p.sync_delta_orders ?? 0} 单 / {fmtMoney(p.sync_delta_gmv ?? 0)} GMV
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </TabsContent>
 
               <TabsContent value="future" className="m-0 p-8 text-center text-sm text-muted-foreground">
@@ -491,7 +646,7 @@ export default function JstDataIntegrationPage() {
         </Card>
       </div>
 
-      {/* 六、补数据工具 — 折叠 + 提示 */}
+      {/* 六、补数据工具 */}
       <Collapsible>
         <Card>
           <CollapsibleTrigger asChild>
@@ -511,10 +666,10 @@ export default function JstDataIntegrationPage() {
           <CollapsibleContent>
             <CardContent className="pt-0 pb-5 px-5 space-y-3 border-t border-border">
               <div className="flex flex-wrap gap-2 pt-4">
-                <Button variant="outline" size="sm">按时间窗补同步</Button>
-                <Button variant="outline" size="sm">按款号补同步</Button>
-                <Button variant="outline" size="sm">按 SKU 补同步</Button>
-                <Button variant="outline" size="sm">按店铺补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "按时间窗补同步" })}>按时间窗补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual_backfill", label: "按款号补同步" })}>按款号补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "sku", trigger_type: "manual_backfill", label: "按 SKU 补同步" })}>按 SKU 补同步</Button>
+                <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ module_key: "shop", trigger_type: "manual_backfill", label: "按店铺补同步" })}>按店铺补同步</Button>
 
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -533,7 +688,9 @@ export default function JstDataIntegrationPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction>确认执行</AlertDialogAction>
+                      <AlertDialogAction onClick={() => triggerRun.mutate({ module_key: "base_archive", trigger_type: "manual_backfill", label: "全量同步全部数据" })}>
+                        确认执行
+                      </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -546,7 +703,7 @@ export default function JstDataIntegrationPage() {
         </Card>
       </Collapsible>
 
-      {/* 七、同步日志 — 区分「本次新增」和「当前累计」 */}
+      {/* 七、同步日志 */}
       <Card>
         <CardContent className="p-0">
           <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-border">
@@ -559,16 +716,16 @@ export default function JstDataIntegrationPage() {
                   <SelectItem value="自动同步">自动同步</SelectItem>
                   <SelectItem value="失败重试">失败重试</SelectItem>
                   <SelectItem value="手动补数据">手动补数据</SelectItem>
+                  <SelectItem value="手动同步">手动同步</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={groupFilter} onValueChange={setGroupFilter}>
                 <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="模块分类" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部模块分类</SelectItem>
-                  <SelectItem value="基础档案">基础档案</SelectItem>
-                  <SelectItem value="采购与入库">采购与入库</SelectItem>
-                  <SelectItem value="库存">库存</SelectItem>
-                  <SelectItem value="销售经营">销售经营</SelectItem>
+                  {Object.values(CATEGORY_LABEL).map((v) => (
+                    <SelectItem key={v} value={v}>{v}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -578,13 +735,14 @@ export default function JstDataIntegrationPage() {
                   <SelectItem value="ok">成功</SelectItem>
                   <SelectItem value="warn">部分失败</SelectItem>
                   <SelectItem value="error">失败</SelectItem>
+                  <SelectItem value="running">运行中</SelectItem>
                 </SelectContent>
               </Select>
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={keyword}
-                  onChange={e => setKeyword(e.target.value)}
+                  onChange={(e) => setKeyword(e.target.value)}
                   placeholder="搜索关键词"
                   className="h-9 pl-7 w-[180px]"
                 />
@@ -617,26 +775,37 @@ export default function JstDataIntegrationPage() {
                       没有匹配的日志
                     </TableCell>
                   </TableRow>
-                ) : filteredLogs.map((l, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">{l.time}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-normal">{l.trigger}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{l.group}</TableCell>
-                    <TableCell>{l.module}</TableCell>
-                    <TableCell><StatusBadge value={l.status} /></TableCell>
-                    <TableCell className="text-xs">{l.added}</TableCell>
-                    <TableCell className="text-xs">{l.updated}</TableCell>
-                    <TableCell className={`text-xs ${l.failed !== "0" ? "text-rose-600" : ""}`}>{l.failed}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{l.cumulative}</TableCell>
-                    <TableCell className="text-xs">{l.cost}</TableCell>
-                    <TableCell className="text-xs text-rose-600 max-w-[200px] truncate" title={l.error}>{l.error}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm">{l.status === "error" ? "重试" : "详情"}</Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                ) : filteredLogs.map((l) => {
+                  const mod = modules.find((m) => m.module_key === l.module_key);
+                  const groupLabel = mod ? (CATEGORY_LABEL[mod.category] ?? mod.category) : "—";
+                  const s = asStatus(l.status === "running" ? "ok" : l.status);
+                  return (
+                    <TableRow key={l.id}>
+                      <TableCell className="font-mono text-xs whitespace-nowrap">{fmtDateTime(l.started_at)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-normal">{TRIGGER_LABEL[l.trigger_type] ?? l.trigger_type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{groupLabel}</TableCell>
+                      <TableCell>{mod?.module_name ?? l.module_key}</TableCell>
+                      <TableCell>
+                        {l.status === "running"
+                          ? <Badge variant="secondary" className="bg-sky-100 text-sky-700">运行中</Badge>
+                          : <StatusBadge value={s} />}
+                      </TableCell>
+                      <TableCell className="text-xs">{l.inserted_count}</TableCell>
+                      <TableCell className="text-xs">{l.updated_count}</TableCell>
+                      <TableCell className={`text-xs ${l.failed_count > 0 ? "text-rose-600" : ""}`}>{l.failed_count}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{l.current_total_summary || "—"}</TableCell>
+                      <TableCell className="text-xs">{fmtDuration(l.duration_ms)}</TableCell>
+                      <TableCell className="text-xs text-rose-600 max-w-[200px] truncate" title={l.error_message ?? ""}>
+                        {l.error_message || "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm">{l.status === "error" ? "重试" : "详情"}</Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -647,13 +816,12 @@ export default function JstDataIntegrationPage() {
         </CardContent>
       </Card>
 
-      {/* 十、全局说明 */}
+      {/* 全局说明 */}
       <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground leading-relaxed">
         <Info className="w-4 h-4 mt-0.5 shrink-0" />
         <div>
           系统以<strong className="text-foreground">自动同步</strong>为主，人工同步仅用于异常重试和补数据。
-          页面中的 GMV、GSV、退款金额等经营指标均为<strong className="text-foreground">指定时间范围内的累计值</strong>，
-          <strong className="text-foreground">不代表本次同步新增金额</strong>。
+          页面中的 GMV、GSV、退款金额等经营指标均为指定时间范围内的累计值，不代表本次同步新增金额。
         </div>
       </div>
     </div>

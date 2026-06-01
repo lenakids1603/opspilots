@@ -469,6 +469,42 @@ export type Database = {
           },
         ]
       }
+      jst_sync_errors: {
+        Row: {
+          error_level: string
+          error_message: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          module_key: string
+          resolved_at: string | null
+          retry_count: number
+          status: string
+        }
+        Insert: {
+          error_level?: string
+          error_message?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          module_key: string
+          resolved_at?: string | null
+          retry_count?: number
+          status?: string
+        }
+        Update: {
+          error_level?: string
+          error_message?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          module_key?: string
+          resolved_at?: string | null
+          retry_count?: number
+          status?: string
+        }
+        Relationships: []
+      }
       jst_sync_logs: {
         Row: {
           cursor_from: string | null
@@ -511,6 +547,147 @@ export type Database = {
           started_at?: string
           status?: string
           sync_type?: string
+        }
+        Relationships: []
+      }
+      jst_sync_metrics: {
+        Row: {
+          data_source_label: string
+          id: string
+          last_sync_at: string | null
+          metric_extra: Json
+          metric_key: string
+          metric_name: string
+          metric_value: string
+          time_range_label: string
+          updated_at: string
+        }
+        Insert: {
+          data_source_label?: string
+          id?: string
+          last_sync_at?: string | null
+          metric_extra?: Json
+          metric_key: string
+          metric_name: string
+          metric_value?: string
+          time_range_label?: string
+          updated_at?: string
+        }
+        Update: {
+          data_source_label?: string
+          id?: string
+          last_sync_at?: string | null
+          metric_extra?: Json
+          metric_key?: string
+          metric_name?: string
+          metric_value?: string
+          time_range_label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jst_sync_modules: {
+        Row: {
+          category: string
+          created_at: string
+          enabled: boolean
+          id: string
+          last_result_summary: string
+          last_sync_at: string | null
+          module_key: string
+          module_name: string
+          next_sync_at: string | null
+          priority: number
+          retry_count: number
+          status: string
+          sync_content: string
+          sync_frequency: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_result_summary?: string
+          last_sync_at?: string | null
+          module_key: string
+          module_name: string
+          next_sync_at?: string | null
+          priority?: number
+          retry_count?: number
+          status?: string
+          sync_content?: string
+          sync_frequency?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_result_summary?: string
+          last_sync_at?: string | null
+          module_key?: string
+          module_name?: string
+          next_sync_at?: string | null
+          priority?: number
+          retry_count?: number
+          status?: string
+          sync_content?: string
+          sync_frequency?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jst_sync_runs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          current_total_summary: string
+          duration_ms: number | null
+          error_message: string
+          failed_count: number
+          finished_at: string | null
+          id: string
+          inserted_count: number
+          module_key: string
+          started_at: string
+          status: string
+          trigger_type: string
+          updated_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          current_total_summary?: string
+          duration_ms?: number | null
+          error_message?: string
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          inserted_count?: number
+          module_key: string
+          started_at?: string
+          status?: string
+          trigger_type?: string
+          updated_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          current_total_summary?: string
+          duration_ms?: number | null
+          error_message?: string
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          inserted_count?: number
+          module_key?: string
+          started_at?: string
+          status?: string
+          trigger_type?: string
+          updated_count?: number
         }
         Relationships: []
       }
