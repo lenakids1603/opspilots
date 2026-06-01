@@ -654,36 +654,8 @@ export default function JstDataIntegrationPage() {
               </TabsContent>
 
               <TabsContent value="sales" className="m-0 p-5 space-y-4">
-                {(() => {
-                  const sales = metrics["sales_summary"];
-                  const p = (sales?.metric_extra ?? {}) as any;
-                  return (
-                    <>
-                      <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground leading-relaxed">
-                        当前销售与退款数据采用<strong className="text-foreground">{sales?.data_source_label ?? "聚水潭经营口径"}</strong>，
-                        用于日常经营监控，解决多店铺每天手动拉表问题。这里展示的是<strong className="text-foreground">今日累计数据</strong>，
-                        不是本次同步新增数据。月底财务核账时，可结合平台导入表格进行复核。
-                      </div>
-                      <div className="rounded-md border border-border p-4 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <div>统计范围：{sales?.time_range_label}</div>
-                          <div>最近同步：{fmtTime(sales?.last_sync_at)}</div>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                          <div><div className="text-xs text-muted-foreground">今日 GMV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_gmv ?? 0)}</div></div>
-                          <div><div className="text-xs text-muted-foreground">今日 GSV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_gsv ?? 0)}</div></div>
-                          <div><div className="text-xs text-muted-foreground">今日退款金额</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(p.today_refund ?? 0)}</div></div>
-                          <div><div className="text-xs text-muted-foreground">今日订单数</div><div className="text-xl font-semibold tabular-nums">{p.today_orders ?? 0}</div></div>
-                          <div><div className="text-xs text-muted-foreground">今日退款率</div><div className="text-xl font-semibold tabular-nums">{p.refund_rate ?? 0}%</div></div>
-                          <div><div className="text-xs text-muted-foreground">活跃店铺</div><div className="text-xl font-semibold tabular-nums">{p.active_shops ?? 0} 家</div></div>
-                        </div>
-                        <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-                          {sales?.data_source_label}｜本次同步新增：{p.sync_delta_orders ?? 0} 单 / {fmtMoney(p.sync_delta_gmv ?? 0)} GMV
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
+                <SalesRefundPrecheckCard />
+                <SalesRefundTodayPanel />
               </TabsContent>
 
               <TabsContent value="future" className="m-0 p-8 text-center text-sm text-muted-foreground">
