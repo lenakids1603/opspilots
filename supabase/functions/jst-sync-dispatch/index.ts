@@ -414,7 +414,7 @@ async function syncSuppliers() {
     apiTotal += finalList.length;
     if (finalList.length === 0) break;
 
-    for (const r of list) {
+    for (const r of finalList) {
       const jstId = pickStr(r.supplier_id, r.supplierId, r.supplier_co_id, r.co_id, r.id);
       const name = pickStr(r.name, r.supplier_name, r.co_name, r.full_name);
       const supplierCode = pickStr(r.supplier_code, r.code, r.co_code);
