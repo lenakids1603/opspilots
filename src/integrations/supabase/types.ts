@@ -1457,9 +1457,11 @@ export type Database = {
           email: string | null
           id: string
           jst_supplier_id: string | null
+          last_synced_at: string | null
           name: string
           owner_user_id: string | null
           phone: string | null
+          raw_jst_json: Json | null
           remark: string | null
           status: string
           updated_at: string
@@ -1472,9 +1474,11 @@ export type Database = {
           email?: string | null
           id?: string
           jst_supplier_id?: string | null
+          last_synced_at?: string | null
           name: string
           owner_user_id?: string | null
           phone?: string | null
+          raw_jst_json?: Json | null
           remark?: string | null
           status?: string
           updated_at?: string
@@ -1487,9 +1491,11 @@ export type Database = {
           email?: string | null
           id?: string
           jst_supplier_id?: string | null
+          last_synced_at?: string | null
           name?: string
           owner_user_id?: string | null
           phone?: string | null
+          raw_jst_json?: Json | null
           remark?: string | null
           status?: string
           updated_at?: string

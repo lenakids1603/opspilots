@@ -341,18 +341,66 @@ async function syncShops() {
   };
 }
 
+// 已通过权限：/open/api/drp/inneropen/partner/channel/querymysupplier （查询我的供应商列表 - 新）
+const SUPPLIERS_ENDPOINT = "api/drp/inneropen/partner/channel/querymysupplier";
+
 async function syncSuppliers() {
-  // 用小 page_size，避免单次 fetch 太大导致 AbortSignal（之前 100 命中 30s 超时）
   const PAGE_SIZE = 50;
-  const MAX_PAGES = 200; // 安全上限
+  const MAX_PAGES = 200;
   let page = 1, total = 0, inserted = 0, updated = 0;
+  const diagnostics: any[] = [];
   while (page <= MAX_PAGES) {
-    const data = await callOpenweb("suppliers/query", { page_index: page, page_size: PAGE_SIZE });
-    const list: any[] = data.suppliers ?? data.datas ?? data.list ?? data.rows ?? [];
-    if (list.length === 0) break;
-    for (const r of list) {
-      const jstId = pickStr(r.supplier_id, r.supplierId, r.id);
-      const name = pickStr(r.supplier_name, r.name);
+    const bizParams = { page_index: page, page_size: PAGE_SIZE };
+    // 诊断：先用 diagnostic 包装拿一次完整结构（仅首页），后续页用普通 call
+    let listPayload: any;
+    let rawData: any;
+    if (page === 1) {
+      const diag = await callOpenwebDiagnostic(SUPPLIERS_ENDPOINT, bizParams);
+      rawData = diag.json?.data ?? diag.json ?? null;
+      const detected = detectSupplierList(rawData ?? diag.json);
+      const firstSample = detected.list[0] ? maskSensitive(detected.list[0]) : null;
+      diagnostics.push({
+        page,
+        request_endpoint: `/open/${SUPPLIERS_ENDPOINT}`,
+        request_params_summary: bizParams,
+        http_status: diag.httpStatus,
+        response_code: diag.json?.code ?? diag.json?.errCode ?? null,
+        response_msg: diag.json?.msg ?? diag.json?.message ?? "",
+        response_root_keys: keysOf(diag.json),
+        response_data_keys: keysOf(diag.json?.data),
+        detected_list_path: detected.path,
+        detected_record_count: detected.list.length,
+        first_record_sample: firstSample,
+        list_path_candidates: detected.candidates,
+      });
+      // 转抛：若接口返回非 0
+      const code = diag.json?.code ?? diag.json?.errCode;
+      const isOk = code === 0 || code === "0" || diag.json?.issuccess === true;
+      if (!isOk) {
+        const msg = diag.json?.msg ?? diag.json?.message ?? "";
+        const err = new Error(`JST ${SUPPLIERS_ENDPOINT} 失败 code=${code} msg=${msg}`);
+        (err as any).diagnostics = diagnostics;
+        throw err;
+      }
+      listPayload = detected.list;
+    } else {
+      const data = await callOpenweb(SUPPLIERS_ENDPOINT, bizParams);
+      rawData = data;
+      const detected = detectSupplierList({ data });
+      listPayload = detected.list.length ? detected.list : detectSupplierList(data).list;
+    }
+    if (!listPayload || listPayload.length === 0) break;
+    for (const r of listPayload) {
+      // querymysupplier 返回的常见字段：supplier_co_id / co_id / supplier_id / id / channel_id；
+      // 名称：name / co_name / supplier_name / channel_name
+      const jstId = pickStr(
+        r.supplier_co_id, r.supplierCoId, r.co_id, r.coId,
+        r.supplier_id, r.supplierId, r.channel_id, r.channelId, r.id,
+      );
+      const name = pickStr(
+        r.name, r.co_name, r.coName, r.supplier_name, r.supplierName,
+        r.channel_name, r.channelName, r.full_name,
+      );
       if (!jstId || !name) continue;
       total++;
       const { data: existing } = await admin.from("ops_suppliers").select("id")
@@ -360,11 +408,13 @@ async function syncSuppliers() {
       const row = {
         jst_supplier_id: jstId,
         name,
-        code: pickStr(r.code, r.supplier_code, jstId),
-        contact: pickStr(r.contact, r.contact_name),
+        code: pickStr(r.code, r.supplier_code, r.co_code, jstId),
+        contact: pickStr(r.contact, r.contact_name, r.linkman),
         phone: pickStr(r.phone, r.mobile, r.tel),
         email: pickStr(r.email),
         address: pickStr(r.address),
+        raw_jst_json: r,
+        last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       if (existing) {
@@ -375,11 +425,31 @@ async function syncSuppliers() {
         inserted++;
       }
     }
-    if (list.length < PAGE_SIZE) break;
+    if (listPayload.length < PAGE_SIZE) break;
     page++;
     await sleep(RATE_DELAY_MS);
   }
-  return { total, inserted, updated, summary: `供应商 ${total} 条（新增 ${inserted}，更新 ${updated}）` };
+  console.log("[syncSuppliers diagnostics]", JSON.stringify(diagnostics));
+  return {
+    total, inserted, updated,
+    summary: `供应商 ${total} 条（新增 ${inserted}，更新 ${updated}）`,
+    diagnostics,
+  };
+}
+
+function detectSupplierList(raw: any) {
+  const paths = [
+    "data.datas", "data.list", "data.suppliers", "data.channels", "data.items", "data.rows", "data.data",
+    "datas", "list", "suppliers", "channels", "items", "rows",
+  ];
+  const candidates = paths.map((path) => {
+    const value = getPath(raw, path);
+    return { path, exists: value !== undefined, is_array: Array.isArray(value), count: Array.isArray(value) ? value.length : null };
+  });
+  if (Array.isArray(raw?.data)) candidates.unshift({ path: "data", exists: true, is_array: true, count: raw.data.length });
+  const hit = candidates.find((c) => c.is_array);
+  const list = hit ? getPath(raw, hit.path) : [];
+  return { list: Array.isArray(list) ? list : [], path: hit?.path ?? "", candidates };
 }
 
 async function syncWarehouses() {
