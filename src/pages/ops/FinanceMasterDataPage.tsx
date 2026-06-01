@@ -687,9 +687,9 @@ function ShopsTab() {
               const platformName = r.platform_type || platformMap.get(r.platform_id)?.name || "-";
               return (
                 <tr key={r.id} className="border-t hover:bg-muted/30">
+                  <td className="px-3 py-2.5 font-mono text-[11.5px] text-muted-foreground">{r.jst_shop_id ?? "-"}</td>
                   <td className="px-3 py-2.5"><div className="font-medium">{r.name}</div></td>
                   <td className="px-3 py-2.5">{platformName}</td>
-                  <td className="px-3 py-2.5 font-mono text-[11.5px] text-muted-foreground">{r.jst_shop_id ?? "-"}</td>
                   <td className="px-3 py-2.5">{entity ? entity.name : <span className="text-amber-600">未绑定</span>}</td>
                   <td className="px-3 py-2.5 text-[12px] text-muted-foreground">{bankSummary}</td>
                   <td className="px-3 py-2.5">{r.auth_status || "-"}</td>
