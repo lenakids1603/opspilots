@@ -197,26 +197,53 @@ export default function JstDataIntegrationPage() {
   const [statusFilter, setStatusFilter] = useState("all");
 
   // ------------------------------------------------------------
-  // Manual "同步操作" → only creates a jst_sync_runs row (no real JST call)
+  // 触发同步：base_archive / shop / supplier / warehouse 走真实 Edge Function；
+  // 其他模块暂为占位（写日志 + 提示未接入）。
   // ------------------------------------------------------------
+  const REAL_BASE_ARCHIVE = new Set(["base_archive", "shop", "supplier", "warehouse"]);
+
   const triggerRun = useMutation({
     mutationFn: async (input: { module_key: string; trigger_type: string; label: string }) => {
       if (!user) throw new Error("未登录");
+      if (REAL_BASE_ARCHIVE.has(input.module_key)) {
+        // 真实 base_archive 同步
+        const scopeMap: Record<string, string[] | undefined> = {
+          shop: ["shops"], supplier: ["suppliers"], warehouse: ["warehouses"],
+        };
+        const { data, error } = await supabase.functions.invoke("jst-sync-dispatch", {
+          body: {
+            module_key: "base_archive",
+            trigger_type: input.trigger_type,
+            scope: scopeMap[input.module_key],
+          },
+        });
+        if (error) throw new Error(error.message);
+        if (data?.error) throw new Error(data.error);
+        return { real: true, summary: data?.summary ?? "已完成", label: input.label };
+      }
+      // 其余模块：占位写日志（保留原有行为）
       const { error } = await supabase.from("jst_sync_runs").insert({
         module_key: input.module_key,
         trigger_type: input.trigger_type,
         status: "running",
         started_at: new Date().toISOString(),
-        current_total_summary: `手动触发：${input.label}（占位，未实际调用聚水潭）`,
+        current_total_summary: `手动触发：${input.label}（该模块尚未接入真实聚水潭 API）`,
         created_by: user.id,
       });
       if (error) throw error;
+      return { real: false, summary: "已写入运行日志（未真正调用）", label: input.label };
     },
-    onSuccess: (_d, v) => {
-      toast({ title: "已记录同步运行", description: `${v.label} — 仅写入日志，未真正调用聚水潭` });
+    onSuccess: (d) => {
+      toast({
+        title: d.real ? "同步完成" : "已记录运行",
+        description: `${d.label} — ${d.summary}`,
+      });
       qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_modules"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_metrics"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_errors"] });
     },
-    onError: (e: any) => toast({ title: "无法记录", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "同步失败", description: e.message, variant: "destructive" }),
   });
 
   // ------------------------------------------------------------
