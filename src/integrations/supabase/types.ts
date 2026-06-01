@@ -469,11 +469,69 @@ export type Database = {
           },
         ]
       }
+      jst_shop_mapping_audit_logs: {
+        Row: {
+          action_type: string
+          id: string
+          jst_shop_id: string
+          mapping_id: string
+          new_business_entity_id: string | null
+          new_platform_id: string | null
+          new_shop_id: string | null
+          new_status: string | null
+          old_business_entity_id: string | null
+          old_platform_id: string | null
+          old_shop_id: string | null
+          old_status: string | null
+          operated_at: string
+          operated_by: string | null
+          reason: string
+        }
+        Insert: {
+          action_type: string
+          id?: string
+          jst_shop_id?: string
+          mapping_id: string
+          new_business_entity_id?: string | null
+          new_platform_id?: string | null
+          new_shop_id?: string | null
+          new_status?: string | null
+          old_business_entity_id?: string | null
+          old_platform_id?: string | null
+          old_shop_id?: string | null
+          old_status?: string | null
+          operated_at?: string
+          operated_by?: string | null
+          reason?: string
+        }
+        Update: {
+          action_type?: string
+          id?: string
+          jst_shop_id?: string
+          mapping_id?: string
+          new_business_entity_id?: string | null
+          new_platform_id?: string | null
+          new_shop_id?: string | null
+          new_status?: string | null
+          old_business_entity_id?: string | null
+          old_platform_id?: string | null
+          old_shop_id?: string | null
+          old_status?: string | null
+          operated_at?: string
+          operated_by?: string | null
+          reason?: string
+        }
+        Relationships: []
+      }
       jst_shop_mappings: {
         Row: {
           auth_status: string
+          bind_reason: string
           created_at: string
           id: string
+          ignore_reason: string
+          ignored_at: string | null
+          ignored_by: string | null
           jst_shop_id: string
           jst_shop_name: string
           last_sync_at: string | null
@@ -490,8 +548,12 @@ export type Database = {
         }
         Insert: {
           auth_status?: string
+          bind_reason?: string
           created_at?: string
           id?: string
+          ignore_reason?: string
+          ignored_at?: string | null
+          ignored_by?: string | null
           jst_shop_id: string
           jst_shop_name?: string
           last_sync_at?: string | null
@@ -508,8 +570,12 @@ export type Database = {
         }
         Update: {
           auth_status?: string
+          bind_reason?: string
           created_at?: string
           id?: string
+          ignore_reason?: string
+          ignored_at?: string | null
+          ignored_by?: string | null
           jst_shop_id?: string
           jst_shop_name?: string
           last_sync_at?: string | null
