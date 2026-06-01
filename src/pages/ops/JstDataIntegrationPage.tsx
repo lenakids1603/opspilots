@@ -744,18 +744,19 @@ export default function JstDataIntegrationPage() {
               {/* —— 销售与退款同步 —— */}
               <TabsContent value="sales" className="m-0 p-5 space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual", label: "同步今日销售与退款" })}>
+                  <Button size="sm" onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 1, trigger_type: "manual", label: "同步今日销售与退款" })}>
                     同步今日销售与退款
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual", label: "同步指定店铺" })}>
-                    同步指定店铺
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
+                  <Button size="sm" variant="outline" onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
                     同步最近 7 天
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => triggerRun.mutate({ module_key: "sales_refund", trigger_type: "manual_backfill", label: "同步最近 30 天" })}>
+                  <Button size="sm" variant="outline" onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 30, trigger_type: "manual_backfill", label: "同步最近 30 天" })}>
                     同步最近 30 天
                   </Button>
+                  <Button size="sm" variant="outline" disabled title="需要先在店铺映射页选择已映射店铺，暂未接入" onClick={() => notWired("按店铺同步销售与退款")}>
+                    按店铺同步（暂未接入）
+                  </Button>
+                  <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 ml-1">已接入真实同步</Badge>
                   <span className="text-xs text-amber-700 ml-2 inline-flex items-center gap-1">
                     <Info className="w-3.5 h-3.5" />
                     店铺映射未完成时，只允许同步 raw 原始数据，不更新正式 GMV / GSV 汇总。
