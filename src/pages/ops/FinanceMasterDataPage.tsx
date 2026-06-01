@@ -9,7 +9,7 @@ import { Plus, Pencil, Power, X, Download, Upload, FileSpreadsheet } from "lucid
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { fmtMoney } from "@/lib/finance";
-import { parseAccountWorkbook, downloadTemplate, exportRowsToXlsx, type ImportPreview } from "@/lib/financeImport";
+import { parseAccountWorkbook, downloadTemplate, exportRowsToXlsx, downloadErrorReport, type ImportPreview, type PreviewRow } from "@/lib/financeImport";
 
 type AnyRow = Record<string, any>;
 type FieldDef = {
@@ -759,30 +759,43 @@ function CategoriesTab() {
 
 /* ============================== Import Dialog ============================== */
 
+type ImportError = { sheet: string; rowNum: number; field?: string; message: string; raw?: any };
+
 function ImportDialog({
   open, onOpenChange, onImported,
 }: { open: boolean; onOpenChange: (v: boolean) => void; onImported: () => void }) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [lastErrors, setLastErrors] = useState<ImportError[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (!open) { setPreview(null); } }, [open]);
+  useEffect(() => { if (!open) { setPreview(null); setLastErrors([]); } }, [open]);
 
   const handleFile = async (file: File) => {
     setParsing(true);
+    setLastErrors([]);
     try {
       const [{ data: ents }, { data: bks }, { data: shs }, { data: pls }, { data: cats }] = await Promise.all([
-        supabase.from("business_entities").select("id,name,legal_person,entity_type").is("deleted_at", null),
+        supabase.from("business_entities").select("id,name,code,legal_person,entity_type").is("deleted_at", null),
         supabase.from("bank_accounts").select("id,entity_id,account_no_masked,bank_name").is("deleted_at", null),
-        supabase.from("shops").select("id,name,platform_id").is("deleted_at", null),
+        supabase.from("shops").select("id,name,platform_id,entity_id").is("deleted_at", null),
         supabase.from("platforms").select("id,name,code").is("deleted_at", null),
-        supabase.from("cash_tx_categories").select("id,direction,parent_id,name").is("deleted_at", null),
+        supabase.from("cash_tx_categories").select("id,direction,name").is("deleted_at", null),
       ]);
       const buf = await file.arrayBuffer();
       const p = parseAccountWorkbook(buf, {
-        entities: ents ?? [], banks: bks ?? [], shops: shs ?? [], platforms: pls ?? [], categories: cats ?? [],
+        entities: (ents ?? []) as any, banks: (bks ?? []) as any, shops: (shs ?? []) as any,
+        platforms: (pls ?? []) as any, categories: (cats ?? []) as any,
       });
+      const total = p.entities.length + p.banks.length + p.shops.length + p.categories.length;
+      if (total === 0) {
+        toast({
+          title: "未识别到任何数据",
+          description: "请检查 Sheet 名是否为：经营主体 / 银行账户 / 店铺 / 收支分类，且包含表头",
+          variant: "destructive",
+        });
+      }
       setPreview(p);
     } catch (e: any) {
       toast({ title: "解析失败", description: String(e?.message ?? e), variant: "destructive" });
@@ -794,73 +807,95 @@ function ImportDialog({
   const commit = async () => {
     if (!preview) return;
     setCommitting(true);
+    const errors: ImportError[] = [];
+    let nCount = 0, uCount = 0;
+
+    const pushErr = (r: PreviewRow, msg: string) =>
+      errors.push({ sheet: r.sheet, rowNum: r.rowNum, message: msg, raw: r.raw });
+
     try {
-      // 1) Insert new entities
-      const newEnts = preview.entities.filter(r => r.status === "new");
-      if (newEnts.length) {
-        const payload = newEnts.map(r => ({
-          name: r.data.name, legal_person: r.data.legal_person, entity_type: r.data.entity_type,
-          annual_flow_limit: r.data.annual_flow_limit ?? 5_000_000, status: "active",
-        }));
-        const { error } = await supabase.from("business_entities").insert(payload);
-        if (error) throw new Error(`经营主体写入失败: ${error.message}`);
+      /* 1) 经营主体 */
+      for (const r of preview.entities) {
+        if (r.status === "error") { pushErr(r, r.message ?? "解析错误"); continue; }
+        const { __id, ...payload } = r.data as any;
+        if (r.status === "update") {
+          const { error } = await supabase.from("business_entities").update(payload).eq("id", __id);
+          if (error) pushErr(r, `更新失败: ${error.message}`); else uCount++;
+        } else {
+          const { error } = await supabase.from("business_entities").insert(payload);
+          if (error) pushErr(r, `新增失败: ${error.message}`); else nCount++;
+        }
       }
-      // refetch entities to resolve ids by name
+
+      /* Refetch entities to resolve names -> ids for banks/shops */
       const { data: allEnts } = await supabase.from("business_entities").select("id,name").is("deleted_at", null);
-      const entIdByName = new Map((allEnts ?? []).map(e => [e.name, e.id]));
+      const entIdByName = new Map((allEnts ?? []).map(e => [e.name as string, e.id as string]));
 
-      // 2) Insert banks
-      const newBanks = preview.banks.filter(r => r.status === "new");
-      if (newBanks.length) {
-        const payload: any[] = [];
-        for (const r of newBanks) {
-          const eid = entIdByName.get(r.data.entityName);
-          if (!eid) continue;
-          payload.push({
-            entity_id: eid, account_name: r.data.account_name ?? r.data.entityName,
-            bank_name: r.data.bank_name, account_no_masked: r.data.account_no_masked,
-            purpose: r.data.purpose ?? "收款", status: "active",
-          });
-        }
-        if (payload.length) {
+      /* 2) 银行账户 */
+      for (const r of preview.banks) {
+        if (r.status === "error") { pushErr(r, r.message ?? "解析错误"); continue; }
+        const { __id, entityName, ...rest } = r.data as any;
+        const entity_id = entIdByName.get(entityName);
+        if (!entity_id) { pushErr(r, `经营主体【${entityName}】未找到，请确认其在经营主体 Sheet 中或数据库已存在`); continue; }
+        const payload = { ...rest, entity_id };
+        if (r.status === "update") {
+          const { error } = await supabase.from("bank_accounts").update(payload).eq("id", __id);
+          if (error) pushErr(r, `更新失败: ${error.message}`); else uCount++;
+        } else {
           const { error } = await supabase.from("bank_accounts").insert(payload);
-          if (error) throw new Error(`银行账户写入失败: ${error.message}`);
+          if (error) pushErr(r, `新增失败: ${error.message}`); else nCount++;
         }
       }
 
-      // 3) Insert shops
-      const newShops = preview.shops.filter(r => r.status === "new");
-      if (newShops.length) {
-        const payload: any[] = [];
-        for (const r of newShops) {
-          const eid = entIdByName.get(r.data.company);
-          if (!eid || !r.data.platform_id) continue;
-          payload.push({
-            name: r.data.name, entity_id: eid, platform_id: r.data.platform_id, status: "active",
-          });
-        }
-        if (payload.length) {
+      /* Refetch banks to resolve account_no -> id for shops.default_bank_account_id */
+      const { data: allBanks } = await supabase.from("bank_accounts").select("id,account_no_masked").is("deleted_at", null);
+      const bankIdByAcc = new Map((allBanks ?? []).filter(b => b.account_no_masked).map(b => [b.account_no_masked as string, b.id as string]));
+
+      /* 3) 店铺 */
+      for (const r of preview.shops) {
+        if (r.status === "error") { pushErr(r, r.message ?? "解析错误"); continue; }
+        const { __id, entityName, platformName, defaultAccountNo, ...rest } = r.data as any;
+        const entity_id = entIdByName.get(entityName);
+        if (!entity_id) { pushErr(r, `经营主体【${entityName}】未找到`); continue; }
+        const default_bank_account_id = defaultAccountNo ? bankIdByAcc.get(defaultAccountNo) ?? null : null;
+        const payload = { ...rest, entity_id, default_bank_account_id };
+        if (r.status === "update") {
+          const { error } = await supabase.from("shops").update(payload).eq("id", __id);
+          if (error) pushErr(r, `更新失败: ${error.message}`); else uCount++;
+        } else {
           const { error } = await supabase.from("shops").insert(payload);
-          if (error) throw new Error(`店铺写入失败: ${error.message}`);
+          if (error) pushErr(r, `新增失败: ${error.message}`); else nCount++;
         }
       }
 
-      // 4) Categories
-      const newCats = preview.categories.filter(r => r.status === "new");
-      if (newCats.length) {
-        const payload = newCats.map(r => ({
-          code: r.data.code, name: r.data.name, direction: r.data.direction,
-          sort_order: r.data.sort_order ?? 100, status: "active",
-        }));
-        const { error } = await supabase.from("cash_tx_categories").insert(payload);
-        if (error) throw new Error(`收支分类写入失败: ${error.message}`);
+      /* 4) 收支分类 */
+      for (const r of preview.categories) {
+        if (r.status === "error") { pushErr(r, r.message ?? "解析错误"); continue; }
+        const { __id, ...payload } = r.data as any;
+        if (r.status === "update") {
+          const { error } = await supabase.from("cash_tx_categories").update(payload).eq("id", __id);
+          if (error) pushErr(r, `更新失败: ${error.message}`); else uCount++;
+        } else {
+          const { error } = await supabase.from("cash_tx_categories").insert(payload);
+          if (error) pushErr(r, `新增失败: ${error.message}`); else nCount++;
+        }
       }
 
-      toast({ title: "导入完成" });
-      onImported();
-      onOpenChange(false);
+      setLastErrors(errors);
+      if (errors.length === 0) {
+        toast({ title: "导入完成", description: `新增 ${nCount} 条，更新 ${uCount} 条` });
+        onImported();
+        onOpenChange(false);
+      } else {
+        toast({
+          title: "导入部分失败",
+          description: `成功 ${nCount + uCount} 条，失败 ${errors.length} 条。可在对话框底部下载错误报告。`,
+          variant: "destructive",
+        });
+        onImported();
+      }
     } catch (e: any) {
-      toast({ title: "导入失败", description: String(e?.message ?? e), variant: "destructive" });
+      toast({ title: "导入异常", description: String(e?.message ?? e), variant: "destructive" });
     } finally {
       setCommitting(false);
     }
@@ -869,7 +904,6 @@ function ImportDialog({
   const stat = (rows: PreviewRow[]) => ({
     n: rows.filter(r => r.status === "new").length,
     u: rows.filter(r => r.status === "update").length,
-    s: rows.filter(r => r.status === "skip").length,
     e: rows.filter(r => r.status === "error").length,
   });
 
@@ -882,9 +916,10 @@ function ImportDialog({
 
         {!preview && (
           <div className="py-6 space-y-3">
-            <div className="text-[13px] text-muted-foreground">
-              支持上传账户明细表（含 Sheet1/Sheet2 的店铺与运营公司信息），或下载的标准模板。
-              解析后会展示预览，确认无误再写入数据库。
+            <div className="text-[13px] text-muted-foreground space-y-1">
+              <div>请使用【下载模板】生成的 .xlsx 文件，包含 Sheet：经营主体 / 银行账户 / 店铺 / 收支分类。</div>
+              <div>也支持账户明细两表格式（Sheet1 店铺/公司/银行/账号/法人，Sheet2 运营单位/银行/账号/法人代表）。</div>
+              <div>解析后会展示新增 / 更新 / 错误预览，点击【确认导入】才会写入数据库。</div>
             </div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
@@ -898,8 +933,12 @@ function ImportDialog({
             <PreviewSection title="经营主体" rows={preview.entities} stat={stat(preview.entities)} />
             <PreviewSection title="银行账户" rows={preview.banks} stat={stat(preview.banks)} />
             <PreviewSection title="店铺" rows={preview.shops} stat={stat(preview.shops)} />
-            {preview.categories.length > 0 && (
-              <PreviewSection title="收支分类" rows={preview.categories} stat={stat(preview.categories)} />
+            <PreviewSection title="收支分类" rows={preview.categories} stat={stat(preview.categories)} />
+            {lastErrors.length > 0 && (
+              <div className="border border-rose-200 bg-rose-50 rounded-md p-3 text-[12px] text-rose-700">
+                上次提交失败 {lastErrors.length} 条。
+                <button onClick={() => downloadErrorReport(lastErrors)} className="ml-2 underline">下载错误报告</button>
+              </div>
             )}
           </div>
         )}
@@ -907,7 +946,7 @@ function ImportDialog({
         <DialogFooter>
           {preview && (
             <>
-              <Button variant="ghost" onClick={() => { setPreview(null); if (fileRef.current) fileRef.current.value = ""; }}>重新选择</Button>
+              <Button variant="ghost" onClick={() => { setPreview(null); setLastErrors([]); if (fileRef.current) fileRef.current.value = ""; }}>重新选择</Button>
               <Button onClick={commit} disabled={committing}>{committing ? "导入中..." : "确认导入"}</Button>
             </>
           )}
@@ -918,17 +957,15 @@ function ImportDialog({
   );
 }
 
-type PreviewRow = ImportPreview["entities"][number];
-function PreviewSection({ title, rows, stat }: { title: string; rows: PreviewRow[]; stat: { n: number; u: number; s: number; e: number } }) {
+function PreviewSection({ title, rows, stat }: { title: string; rows: PreviewRow[]; stat: { n: number; u: number; e: number } }) {
   if (rows.length === 0) return null;
   return (
     <div className="border rounded-md overflow-hidden">
       <div className="px-3 py-2 bg-muted/40 flex items-center justify-between">
-        <div className="font-medium text-[13px]">{title}</div>
+        <div className="font-medium text-[13px]">{title} · {rows.length} 行</div>
         <div className="flex gap-3 text-[12px]">
           <span className="text-emerald-600">新增 {stat.n}</span>
           <span className="text-blue-600">更新 {stat.u}</span>
-          <span className="text-zinc-500">跳过 {stat.s}</span>
           <span className="text-rose-600">错误 {stat.e}</span>
         </div>
       </div>
@@ -937,22 +974,22 @@ function PreviewSection({ title, rows, stat }: { title: string; rows: PreviewRow
           <tbody>
             {rows.slice(0, 100).map((r, i) => (
               <tr key={i} className="border-t">
-                <td className="px-3 py-1.5 w-16">
+                <td className="px-3 py-1.5 w-20 align-top">
                   <span className={`text-[11px] px-1.5 py-0.5 rounded ${
                     r.status === "new" ? "bg-emerald-50 text-emerald-700"
                     : r.status === "update" ? "bg-blue-50 text-blue-700"
-                    : r.status === "skip" ? "bg-zinc-100 text-zinc-500"
                     : "bg-rose-50 text-rose-700"
                   }`}>
-                    {r.status === "new" ? "新增" : r.status === "update" ? "更新" : r.status === "skip" ? "跳过" : "错误"}
+                    {r.status === "new" ? "新增" : r.status === "update" ? "更新" : "错误"}
                   </span>
                 </td>
-                <td className="px-3 py-1.5 text-muted-foreground">{r.message ?? ""}</td>
-                <td className="px-3 py-1.5">{JSON.stringify(r.data ?? r.raw)}</td>
+                <td className="px-3 py-1.5 w-32 text-muted-foreground align-top">{r.sheet} · 第 {r.rowNum} 行</td>
+                <td className="px-3 py-1.5 text-rose-600 align-top">{r.status === "error" ? r.message : ""}</td>
+                <td className="px-3 py-1.5 align-top truncate max-w-md">{JSON.stringify(r.raw)}</td>
               </tr>
             ))}
             {rows.length > 100 && (
-              <tr><td colSpan={3} className="px-3 py-2 text-[11px] text-muted-foreground">仅显示前 100 行</td></tr>
+              <tr><td colSpan={4} className="px-3 py-2 text-[11px] text-muted-foreground">仅显示前 100 行（共 {rows.length} 行）</td></tr>
             )}
           </tbody>
         </table>
@@ -960,3 +997,4 @@ function PreviewSection({ title, rows, stat }: { title: string; rows: PreviewRow
     </div>
   );
 }
+
