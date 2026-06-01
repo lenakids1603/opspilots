@@ -1022,7 +1022,7 @@ Deno.serve(async (req) => {
             shopStats = r;
           } else if (t === "suppliers") {
             const r = await syncSuppliers();
-            subResults.suppliers = { status: "ok", summary: r.summary, inserted: r.inserted, updated: r.updated };
+            subResults.suppliers = { status: "ok", summary: r.summary, inserted: r.inserted, updated: r.updated, extra: { api_total: r.total, parsed: r.parsed, skipped: r.skipped, skip_reasons: r.skip_reasons, diagnostics: r.diagnostics, parsed_samples: r.parsed_samples } } as any;
           } else if (t === "warehouses") {
             const r = await syncWarehouses();
             subResults.warehouses = { status: "ok", summary: r.summary, inserted: r.inserted, updated: r.updated };
