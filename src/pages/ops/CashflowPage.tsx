@@ -1,350 +1,264 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
+import { Plus, Search, Pencil, Trash2, Paperclip, TrendingUp, TrendingDown, Wallet, FileText } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { CashflowDrawer } from "@/components/ops/CashflowDrawers";
 import {
-  Plus, Grid3x3, FileSpreadsheet, FileDown, Search, RotateCcw,
-  Filter, Eye, Pencil, Lock, Trash2, Paperclip, TrendingUp, TrendingDown,
-  ChevronLeft, ChevronRight, Building2, ChevronDown, Activity, Wallet,
-} from "lucide-react";
-import { NewCashflowDrawer, BatchCashflowDrawer } from "@/components/ops/CashflowDrawers";
+  CashTransaction, BusinessEntity, BankAccount, CashTxCategory, Shop,
+  CashDirection, DIRECTION_LABEL, DIRECTION_COLOR, fmtMoney,
+} from "@/lib/finance";
 
-/* ---------- data ---------- */
-type Row = {
-  date: string;
-  account: string;
-  direction: "支出" | "收入" | "内部转账";
-  amount: number;
-  category: string;
-  party: string;
-  summary: string;
-  hasAttach?: boolean;
-  status: "已归档锁定" | "已确认" | "草稿" | "异常";
-  operator: string;
-};
+type SupplierLite = { id: string; name: string };
 
-const ROWS: Row[] = [
-  { date: "2026-05-23", account: "公司建设银行", direction: "支出", amount: -18500, category: "供应商付款", party: "盛大商科织造厂", summary: "给盛大预付2026早秋弹力梭织面料款", hasAttach: true, status: "已归档锁定", operator: "陈瑞园" },
-  { date: "2026-05-22", account: "公司支付宝", direction: "收入", amount: 128450, category: "销售收入", party: "天猫基础流结算", summary: "5月21日天猫直营店货款结算自动归集", status: "已确认", operator: "财务结算系统" },
-  { date: "2026-05-21", account: "公司工商银行", direction: "支出", amount: -12000, category: "工资支出", party: "技术研发组李明等5人", summary: "发放2026年4月份外流技术顾问研发包资", hasAttach: true, status: "已确认", operator: "李泽宁" },
-  { date: "2026-05-21", account: "公司微信", direction: "收入", amount: 1250, category: "退款退回", party: "顺丰速运物流公司", summary: "4月份超量退款退赔费用结算回账", status: "已确认", operator: "王海玲" },
-  { date: "2026-05-20", account: "公司微信", direction: "支出", amount: -450, category: "办公费用", party: "京东自营办公耗材", summary: "采购办公室A4复印纸与晨光考试性签备件", status: "草稿", operator: "黄琼" },
-  { date: "2026-05-19", account: "公司支付宝", direction: "支出", amount: -8000, category: "广告推广", party: "宁节晓动千川广告", summary: "抖音巨量盘鞋千川引流知视频推广充值", hasAttach: true, status: "异常", operator: "赵丹妮" },
-  { date: "2026-05-18", account: "现金账户", direction: "内部转账", amount: 5000, category: "账户内部转账", party: "日常综合行政备用金", summary: "从工商银行提取备用金至办公室现钞提管箱", hasAttach: true, status: "已确认", operator: "丁海玲" },
-  { date: "2026-05-18", account: "公司建设银行", direction: "支出", amount: -32000, category: "物流费用", party: "极兔速递集团", summary: "2026年4月份江浙沪华中区运费回结算", hasAttach: true, status: "已归档锁定", operator: "陈瑞园" },
-];
-
-const STATUS_STYLE: Record<Row["status"], string> = {
-  "已归档锁定": "bg-sky-50 text-sky-700 border-sky-200",
-  "已确认": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "草稿": "bg-slate-100 text-slate-600 border-slate-200",
-  "异常": "bg-rose-50 text-rose-700 border-rose-200",
-};
-
-const DIR_STYLE: Record<Row["direction"], string> = {
-  "支出": "text-rose-600",
-  "收入": "text-emerald-600",
-  "内部转账": "text-violet-600",
-};
-
-const fmt = (n: number) => (n < 0 ? "-" : "") + "¥" + Math.abs(n).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/* ---------- page ---------- */
 export default function CashflowPage() {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const allChecked = selected.size === ROWS.length;
-  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(ROWS.map((_, i) => i)));
-  const toggleOne = (i: number) => {
-    const next = new Set(selected);
-    next.has(i) ? next.delete(i) : next.add(i);
-    setSelected(next);
+  const [rows, setRows] = useState<CashTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [entities, setEntities] = useState<BusinessEntity[]>([]);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [categories, setCategories] = useState<CashTxCategory[]>([]);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierLite[]>([]);
+
+  // Filters
+  const [keyword, setKeyword] = useState("");
+  const [fEntity, setFEntity] = useState("");
+  const [fBank, setFBank] = useState("");
+  const [fDir, setFDir] = useState<"" | CashDirection>("");
+  const [fCategory, setFCategory] = useState("");
+  const [fSupplier, setFSupplier] = useState("");
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
+
+  // Drawer
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState<CashTransaction | null>(null);
+
+  const loadMasterData = useCallback(async () => {
+    const [e, a, c, s, sup] = await Promise.all([
+      supabase.from("business_entities").select("*").is("deleted_at", null).order("name"),
+      supabase.from("bank_accounts").select("*").is("deleted_at", null).order("account_name"),
+      supabase.from("cash_tx_categories").select("*").is("deleted_at", null).order("sort_order"),
+      supabase.from("shops").select("*").is("deleted_at", null).order("name"),
+      supabase.from("ops_suppliers").select("id,name").order("name"),
+    ]);
+    if (e.data) setEntities(e.data as any);
+    if (a.data) setAccounts(a.data as any);
+    if (c.data) setCategories(c.data as any);
+    if (s.data) setShops(s.data as any);
+    if (sup.data) setSuppliers(sup.data as any);
+  }, []);
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    let q = supabase.from("cash_transactions").select("*").is("deleted_at", null)
+      .order("occurred_at", { ascending: false }).limit(500);
+    if (fEntity) q = q.eq("entity_id", fEntity);
+    if (fBank) q = q.eq("bank_account_id", fBank);
+    if (fDir) q = q.eq("direction", fDir);
+    if (fCategory) q = q.eq("category_id", fCategory);
+    if (fSupplier) q = q.eq("supplier_id", fSupplier);
+    if (fFrom) q = q.gte("occurred_at", new Date(fFrom).toISOString());
+    if (fTo) q = q.lte("occurred_at", new Date(fTo + "T23:59:59").toISOString());
+    const { data, error } = await q;
+    setLoading(false);
+    if (error) { toast({ title: "查询失败", description: error.message, variant: "destructive" }); return; }
+    let list = (data ?? []) as CashTransaction[];
+    if (keyword.trim()) {
+      const kw = keyword.trim().toLowerCase();
+      list = list.filter(r =>
+        (r.summary ?? "").toLowerCase().includes(kw)
+        || (r.counterparty ?? "").toLowerCase().includes(kw)
+        || (r.remark ?? "").toLowerCase().includes(kw),
+      );
+    }
+    setRows(list);
+  }, [fEntity, fBank, fDir, fCategory, fSupplier, fFrom, fTo, keyword]);
+
+  useEffect(() => { loadMasterData(); }, [loadMasterData]);
+  useEffect(() => { loadRows(); }, [loadRows]);
+
+  const accountMap = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts]);
+  const entityMap = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities]);
+  const catMap = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
+  const supMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers]);
+
+  const totalIn = rows.filter(r => r.direction === "in").reduce((a, b) => a + Number(b.amount), 0);
+  const totalOut = rows.filter(r => r.direction === "out").reduce((a, b) => a + Number(b.amount), 0);
+  const net = totalIn - totalOut;
+
+  const handleDelete = async (r: CashTransaction) => {
+    if (!confirm(`确认删除流水「${r.summary ?? r.id}」？`)) return;
+    const { error } = await supabase.from("cash_transactions")
+      .update({ deleted_at: new Date().toISOString() }).eq("id", r.id);
+    if (error) { toast({ title: "删除失败", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "已删除" });
+    loadRows();
   };
 
-  const totalIn = ROWS.filter(r => r.amount > 0 && r.direction !== "内部转账").reduce((s, r) => s + r.amount, 0);
-  const totalOut = ROWS.filter(r => r.amount < 0).reduce((s, r) => s + r.amount, 0);
-  const net = totalIn + totalOut;
-
-  const [newOpen, setNewOpen] = useState(false);
-  const [batchOpen, setBatchOpen] = useState(false);
-
-
+  const openAttachment = async (path: string) => {
+    const { data, error } = await supabase.storage.from("cash-tx-attachments").createSignedUrl(path, 300);
+    if (error) { toast({ title: "无法打开附件", description: error.message, variant: "destructive" }); return; }
+    window.open(data.signedUrl, "_blank");
+  };
 
   return (
     <div className="space-y-5">
-      {/* Top header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-lg bg-ops-navy/5 text-ops-navy flex items-center justify-center">
-            <Building2 className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">公司资金流水对账系统</h1>
-            <p className="text-[12px] text-muted-foreground mt-1">
-              精细化核算及记录公司银行卡、支付宝、微信以及现钞等全渠道账户核销结算明细，提供批量过账审计支持。
-            </p>
-          </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">公司资金流水</h1>
+          <p className="text-[12px] text-muted-foreground mt-1">登记收入、支出、内部转账，关联店铺与供应商</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" className="gap-1.5" onClick={() => setNewOpen(true)}><Plus className="w-4 h-4" />登记新流水</Button>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setBatchOpen(true)}><Grid3x3 className="w-4 h-4" />网格式批量录入</Button>
-          <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"><FileSpreadsheet className="w-4 h-4" />导入账单表格</Button>
-          <Button size="sm" variant="outline" className="gap-1.5"><FileDown className="w-4 h-4" />审计导出</Button>
-        </div>
+        <Button size="sm" onClick={() => { setEditing(null); setDrawerOpen(true); }}>
+          <Plus className="w-4 h-4 mr-1" /> 新增流水
+        </Button>
       </div>
 
-      {/* Filter card */}
-      <Card className="p-5 border border-border bg-white rounded-xl shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2 text-[13px] font-medium">
-            <Filter className="w-4 h-4 text-sky-600" /> 资金流水精细化全局检索
-          </div>
-          <button className="text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1">
-            基本收起 <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+      {/* Filters */}
+      <Card className="p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Input placeholder="搜索摘要 / 对方 / 备注" value={keyword} onChange={e => setKeyword(e.target.value)} className="h-9" />
+          <FilterSelect value={fEntity} onChange={setFEntity} placeholder="全部主体"
+            options={entities.map(e => ({ value: e.id, label: e.name }))} />
+          <FilterSelect value={fBank} onChange={setFBank} placeholder="全部账户"
+            options={accounts.map(a => ({ value: a.id, label: a.account_name }))} />
+          <FilterSelect value={fDir} onChange={v => setFDir(v as any)} placeholder="全部方向"
+            options={[{ value: "in", label: "收入" }, { value: "out", label: "支出" }, { value: "transfer", label: "内部转账" }]} />
+          <FilterSelect value={fCategory} onChange={setFCategory} placeholder="全部分类"
+            options={categories.map(c => ({ value: c.id, label: c.name }))} />
+          <FilterSelect value={fSupplier} onChange={setFSupplier} placeholder="全部供应商"
+            options={suppliers.map(s => ({ value: s.id, label: s.name }))} />
+          <Input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} className="h-9" />
+          <Input type="date" value={fTo} onChange={e => setFTo(e.target.value)} className="h-9" />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <Field label="关键词综合模糊匹配">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="检索摘要、内部备注、批号…" className="h-9 pl-8" />
-            </div>
-          </Field>
-          <Field label="结算资金收发账户">
-            <SelectBox defaultValue="全部资金账户" options={["全部资金账户", "公司建设银行", "公司工商银行", "公司支付宝", "公司微信", "现金账户"]} />
-          </Field>
-          <Field label="收支运作方向">
-            <SelectBox defaultValue="全部运作方向" options={["全部运作方向", "收入 (+)", "支出 (-)", "内部转账"]} />
-          </Field>
-          <Field label="流水科目归类">
-            <SelectBox defaultValue="全部科目分类" options={["全部科目分类", "销售收入", "供应商付款", "工资支出", "广告推广", "办公费用", "物流费用", "退款退回", "账户内部转账"]} />
-          </Field>
-
-          <Field label="交易对象 / 对方户名">
-            <Input placeholder="对方公司、员工或承运商…" className="h-9" />
-          </Field>
-          <Field label="财务入账对账状态">
-            <SelectBox defaultValue="全部状态" options={["全部状态", "已归档锁定", "已确认", "草稿", "异常"]} />
-          </Field>
-          <Field label="流水发生区间">
-            <div className="flex items-center gap-2">
-              <Input type="date" className="h-9 flex-1" />
-              <span className="text-xs text-muted-foreground">至</span>
-              <Input type="date" className="h-9 flex-1" />
-            </div>
-          </Field>
-          <Field label=" ">
-            <label className="flex items-center gap-2 h-9 text-[12.5px] text-muted-foreground">
-              <Checkbox /> 仅筛选含电子凭证附件
-            </label>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-border">
-          <Button size="sm" variant="outline" className="gap-1.5"><RotateCcw className="w-3.5 h-3.5" />清空参数</Button>
-          <Button size="sm" className="gap-1.5 bg-ops-navy hover:bg-ops-navy/90"><Search className="w-3.5 h-3.5" />快速查询</Button>
+        <div className="flex justify-end gap-2 mt-3">
+          <Button variant="outline" size="sm" onClick={() => {
+            setKeyword(""); setFEntity(""); setFBank(""); setFDir(""); setFCategory(""); setFSupplier(""); setFFrom(""); setFTo("");
+          }}>清空</Button>
+          <Button size="sm" onClick={loadRows}><Search className="w-3.5 h-3.5 mr-1" /> 查询</Button>
         </div>
       </Card>
 
-      {/* Table card */}
-      <Card className="border border-border bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div className="text-[12.5px]">
-            <span className="text-muted-foreground">已检索出账金流水</span>
-            <span className="font-semibold mx-1.5">{ROWS.length}</span>
-            <span className="text-muted-foreground">笔明细</span>
-          </div>
-          <div className="text-[11px] text-muted-foreground font-mono tracking-wider">PRESET_UTC: 2026-05-23</div>
-        </div>
+      {/* Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <SummaryTile label="收入合计" value={fmtMoney(totalIn)} icon={<TrendingUp className="w-4 h-4" />} tone="emerald" />
+        <SummaryTile label="支出合计" value={fmtMoney(totalOut)} icon={<TrendingDown className="w-4 h-4" />} tone="rose" />
+        <SummaryTile label="净现金流" value={(net >= 0 ? "+" : "") + fmtMoney(net)} icon={<Wallet className="w-4 h-4" />} tone="sky" />
+      </div>
 
+      {/* Table */}
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-[12.5px]">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr className="text-left">
-                <th className="px-4 py-2.5 w-10"><Checkbox checked={allChecked} onCheckedChange={toggleAll} /></th>
-                <th className="px-3 py-2.5 font-normal">发生日期</th>
-                <th className="px-3 py-2.5 font-normal">资金账户</th>
-                <th className="px-3 py-2.5 font-normal">收支方向</th>
-                <th className="px-3 py-2.5 font-normal text-right">交易金额</th>
-                <th className="px-3 py-2.5 font-normal">账户科目分类</th>
-                <th className="px-3 py-2.5 font-normal">来往交易对象</th>
-                <th className="px-3 py-2.5 font-normal">摘要摘要</th>
-                <th className="px-3 py-2.5 font-normal text-center">凭证</th>
-                <th className="px-3 py-2.5 font-normal">入账状态</th>
-                <th className="px-3 py-2.5 font-normal">经办人</th>
-                <th className="px-4 py-2.5 font-normal text-right">操作指令列</th>
+                <Th>日期</Th><Th>主体</Th><Th>账户</Th><Th>方向</Th>
+                <Th className="text-right">金额</Th><Th>分类</Th><Th>对方</Th>
+                <Th>摘要</Th><Th>凭证</Th><Th className="text-right">操作</Th>
               </tr>
             </thead>
             <tbody>
-              {ROWS.map((r, i) => {
-                const isSel = selected.has(i);
+              {loading && <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
+              {!loading && rows.length === 0 && (
+                <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">
+                  暂无数据。点击右上角"新增流水"开始登记。
+                </td></tr>
+              )}
+              {rows.map(r => {
+                const acc = accountMap.get(r.bank_account_id);
+                const ent = entityMap.get(r.entity_id);
+                const cat = r.category_id ? catMap.get(r.category_id) : null;
+                const sup = r.supplier_id ? supMap.get(r.supplier_id) : null;
                 return (
-                  <tr key={i} className={`border-t border-border transition ${isSel ? "bg-sky-50/40" : "hover:bg-muted/30"}`}>
-                    <td className="px-4 py-3"><Checkbox checked={isSel} onCheckedChange={() => toggleOne(i)} /></td>
-                    <td className="px-3 py-3 font-mono text-[12px] text-muted-foreground">{r.date}</td>
-                    <td className="px-3 py-3 font-medium">{r.account}</td>
-                    <td className="px-3 py-3">
-                      <span className={`text-[12px] font-medium ${DIR_STYLE[r.direction]}`}>
-                        {r.direction} {r.direction === "支出" ? "(-)" : r.direction === "收入" ? "(+)" : "(=)"}
-                      </span>
-                    </td>
-                    <td className={`px-3 py-3 text-right font-mono font-semibold ${r.amount < 0 ? "text-rose-600" : r.direction === "内部转账" ? "text-violet-600" : "text-emerald-600"}`}>
-                      {r.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">{r.category}</td>
-                    <td className="px-3 py-3">{r.party}</td>
-                    <td className="px-3 py-3 text-muted-foreground max-w-[260px] truncate" title={r.summary}>{r.summary}</td>
-                    <td className="px-3 py-3 text-center">
-                      {r.hasAttach ? <Paperclip className="w-3.5 h-3.5 inline text-sky-600" /> : <span className="text-muted-foreground/50">—</span>}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] border ${STATUS_STYLE[r.status]}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          r.status === "已确认" ? "bg-emerald-500" :
-                          r.status === "已归档锁定" ? "bg-sky-500" :
-                          r.status === "异常" ? "bg-rose-500" : "bg-slate-400"
-                        }`} />
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">{r.operator}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1.5 text-muted-foreground">
-                        <IconBtn><Eye className="w-3.5 h-3.5" /></IconBtn>
-                        <IconBtn><Pencil className="w-3.5 h-3.5" /></IconBtn>
-                        <IconBtn><Lock className="w-3.5 h-3.5" /></IconBtn>
-                        <IconBtn className="hover:text-rose-600"><Trash2 className="w-3.5 h-3.5" /></IconBtn>
-                      </div>
-                    </td>
+                  <tr key={r.id} className="border-t hover:bg-muted/30">
+                    <Td className="font-mono text-[12px]">{r.occurred_at.slice(0, 10)}</Td>
+                    <Td>{ent?.name ?? "-"}</Td>
+                    <Td>{acc?.account_name ?? "-"}</Td>
+                    <Td><span className={`font-medium ${DIRECTION_COLOR[r.direction]}`}>{DIRECTION_LABEL[r.direction]}</span></Td>
+                    <Td className={`text-right font-mono font-semibold ${DIRECTION_COLOR[r.direction]}`}>
+                      {fmtMoney(Number(r.amount))}
+                    </Td>
+                    <Td className="text-muted-foreground">{cat?.name ?? "-"}</Td>
+                    <Td>{sup?.name ?? r.counterparty ?? "-"}</Td>
+                    <Td className="max-w-[260px] truncate" title={r.summary ?? ""}>{r.summary}</Td>
+                    <Td>
+                      {r.attachment_path ? (
+                        <button onClick={() => openAttachment(r.attachment_path!)} className="text-sky-600 inline-flex items-center gap-1">
+                          <Paperclip className="w-3.5 h-3.5" /> 查看
+                        </button>
+                      ) : <span className="text-muted-foreground/50">—</span>}
+                    </Td>
+                    <Td className="text-right">
+                      <button onClick={() => { setEditing(r); setDrawerOpen(true); }} className="w-7 h-7 rounded-md hover:bg-muted inline-flex items-center justify-center">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDelete(r)} className="w-7 h-7 rounded-md hover:bg-muted text-rose-500 inline-flex items-center justify-center">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-
-        <div className="flex items-center justify-between px-5 py-3 border-t border-border text-[12px] text-muted-foreground">
-          <div className="flex items-center gap-2">
-            每页行数：
-            <select className="h-7 rounded-md border border-border bg-white px-2 text-foreground">
-              <option>20 条</option><option>50 条</option><option>100 条</option>
-            </select>
-            <span className="ml-2">共 {ROWS.length} 条记录</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <IconBtn><ChevronLeft className="w-3.5 h-3.5" /></IconBtn>
-            <span className="text-foreground">1 / 1 页</span>
-            <IconBtn><ChevronRight className="w-3.5 h-3.5" /></IconBtn>
-          </div>
-        </div>
+        <div className="px-4 py-2 text-[12px] text-muted-foreground border-t">共 {rows.length} 条</div>
       </Card>
 
-      {/* Summary card */}
-      <Card className="border border-border bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div>
-            <div className="flex items-center gap-2 text-[13px] font-medium">
-              <Activity className="w-4 h-4 text-sky-600" /> 等值流水数据核算统计 (当前列表)
-            </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              数据基于当前筛选器检索出的 {ROWS.length} 笔流水细项进行智能实时归集核算
-            </div>
-          </div>
-          <Badge variant="outline" className="bg-slate-900 text-white border-slate-900 font-mono text-[10px] tracking-widest">LIVE DATA SUMMARY</Badge>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 p-5">
-          <SummaryTile
-            tone="emerald"
-            label="累计总收入 (+)"
-            value={fmt(totalIn)}
-            sub={`共 ${ROWS.filter(r => r.amount > 0 && r.direction !== "内部转账").length} 笔收入 · 平均单笔 ${fmt(totalIn / Math.max(1, ROWS.filter(r => r.amount > 0 && r.direction !== "内部转账").length))}`}
-            icon={<TrendingUp className="w-4 h-4" />}
-          />
-          <SummaryTile
-            tone="rose"
-            label="累计总支出 (-)"
-            value={fmt(totalOut)}
-            sub={`共 ${ROWS.filter(r => r.amount < 0).length} 笔支出 · 平均单笔 ${fmt(totalOut / Math.max(1, ROWS.filter(r => r.amount < 0).length))}`}
-            icon={<TrendingDown className="w-4 h-4" />}
-          />
-          <SummaryTile
-            tone="sky"
-            label="区间收支差额 / 盈余"
-            value={(net >= 0 ? "+" : "") + fmt(net)}
-            sub={`累计内部转账 ${ROWS.filter(r => r.direction === "内部转账").length} 笔`}
-            icon={<Wallet className="w-4 h-4" />}
-          />
-          <div className="rounded-lg border border-border p-4">
-            <div className="text-[11.5px] text-muted-foreground mb-3">入账对账状态归集</div>
-            {(["已确认", "已归档锁定", "草稿", "异常"] as Row["status"][]).map(s => {
-              const list = ROWS.filter(r => r.status === s);
-              const sum = list.reduce((a, b) => a + Math.abs(b.amount), 0);
-              return (
-                <div key={s} className="flex items-center justify-between text-[12px] py-1">
-                  <span className="flex items-center gap-2 text-muted-foreground">
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      s === "已确认" ? "bg-emerald-500" :
-                      s === "已归档锁定" ? "bg-sky-500" :
-                      s === "异常" ? "bg-rose-500" : "bg-slate-400"
-                    }`} />
-                    {s}
-                  </span>
-                  <span className="font-mono text-foreground/80">{list.length} 笔 <span className="text-muted-foreground">({fmt(sum)})</span></span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </Card>
+      <CashflowDrawer open={drawerOpen} onOpenChange={setDrawerOpen} initial={editing}
+        entities={entities} accounts={accounts} categories={categories} shops={shops} suppliers={suppliers}
+        onSaved={loadRows} />
 
-      <NewCashflowDrawer open={newOpen} onOpenChange={setNewOpen} />
-      <BatchCashflowDrawer open={batchOpen} onOpenChange={setBatchOpen} />
+      {entities.length === 0 && (
+        <Card className="p-4 bg-amber-50 border-amber-200 text-[13px] text-amber-800">
+          <div className="flex items-start gap-2">
+            <FileText className="w-4 h-4 mt-0.5" />
+            <div>
+              还没有创建经营主体。请先到 <a href="/finance/master-data" className="underline font-medium">财务基础资料</a> 创建主体和银行账户。
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
 
-/* ---------- atoms ---------- */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-[11.5px] text-muted-foreground mb-1.5">{label}</label>
-      {children}
-    </div>
-  );
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <th className={`px-3 py-2.5 font-normal ${className}`}>{children}</th>;
+}
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <td className={`px-3 py-2.5 ${className}`}>{children}</td>;
 }
 
-function SelectBox({ defaultValue, options }: { defaultValue: string; options: string[] }) {
+function FilterSelect({ value, onChange, placeholder, options }: {
+  value: string; onChange: (v: string) => void; placeholder: string;
+  options: { value: string; label: string }[];
+}) {
   return (
-    <select defaultValue={defaultValue} className="h-9 w-full rounded-md border border-border bg-white px-3 text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-      {options.map(o => <option key={o}>{o}</option>)}
+    <select value={value} onChange={e => onChange(e.target.value)}
+      className="h-9 w-full rounded-md border border-border bg-white px-3 text-[13px]">
+      <option value="">{placeholder}</option>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }
 
-function IconBtn({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <button className={`w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-muted hover:text-foreground transition ${className}`}>
-      {children}
-    </button>
-  );
-}
-
-function SummaryTile({ tone, label, value, sub, icon }: { tone: "emerald" | "rose" | "sky"; label: string; value: string; sub: string; icon: React.ReactNode }) {
-  const toneMap = {
+function SummaryTile({ label, value, icon, tone }: { label: string; value: string; icon: React.ReactNode; tone: "emerald" | "rose" | "sky" }) {
+  const map = {
     emerald: { bg: "bg-emerald-50/60 border-emerald-200", text: "text-emerald-700", pill: "bg-emerald-100 text-emerald-600" },
     rose: { bg: "bg-rose-50/60 border-rose-200", text: "text-rose-700", pill: "bg-rose-100 text-rose-600" },
     sky: { bg: "bg-sky-50/60 border-sky-200", text: "text-sky-700", pill: "bg-sky-100 text-sky-600" },
   }[tone];
   return (
-    <div className={`rounded-lg border p-4 ${toneMap.bg}`}>
+    <Card className={`p-4 ${map.bg}`}>
       <div className="flex items-start justify-between">
-        <div className="text-[11.5px] text-muted-foreground">{label}</div>
-        <span className={`w-7 h-7 rounded-full flex items-center justify-center ${toneMap.pill}`}>{icon}</span>
+        <div className="text-[12px] text-muted-foreground">{label}</div>
+        <span className={`w-7 h-7 rounded-full flex items-center justify-center ${map.pill}`}>{icon}</span>
       </div>
-      <div className={`text-2xl font-bold font-mono mt-2 ${toneMap.text}`}>{value}</div>
-      <div className="text-[11px] text-muted-foreground mt-1.5">{sub}</div>
-    </div>
+      <div className={`text-2xl font-bold font-mono mt-2 ${map.text}`}>{value}</div>
+    </Card>
   );
 }
