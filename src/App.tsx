@@ -23,6 +23,7 @@ import CashflowPage from "./pages/ops/CashflowPage";
 import FinanceMasterDataPage from "./pages/ops/FinanceMasterDataPage";
 import JstSyncPage from "./pages/ops/JstSyncPage";
 import JstProductSyncPage from "./pages/ops/JstProductSyncPage";
+import JstDataIntegrationPage from "./pages/ops/JstDataIntegrationPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
 import SupplierPlaceholder from "./pages/supplier/SupplierPlaceholder";
