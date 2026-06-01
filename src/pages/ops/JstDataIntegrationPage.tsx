@@ -183,6 +183,60 @@ function useRuns() {
 // Main page
 // ============================================================
 
+// ============================================================
+// SalesRefundTodayPanel — 今日销售卡片(来自 jst_sales_refund_daily_summary)
+// ============================================================
+function SalesRefundTodayPanel() {
+  const { stats } = useSalesRefundPrecheck();
+  const todayQ = useQuery({
+    queryKey: ["jst_sales_refund_daily_summary", "today"],
+    queryFn: async () => {
+      const today = new Date().toISOString().substring(0, 10);
+      const { data, error } = await supabase
+        .from("jst_sales_refund_daily_summary")
+        .select("*")
+        .eq("summary_date", today);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const rows = todayQ.data ?? [];
+  const gmv = rows.reduce((s, r: any) => s + Number(r.gmv_amount ?? 0), 0);
+  const gsv = rows.reduce((s, r: any) => s + Number(r.gsv_amount ?? 0), 0);
+  const refund = rows.reduce((s, r: any) => s + Number(r.refund_amount ?? 0), 0);
+  const orderCount = rows.reduce((s, r: any) => s + Number(r.order_count ?? 0), 0);
+  const refundCount = rows.reduce((s, r: any) => s + Number(r.refund_count ?? 0), 0);
+  const refundRate = gmv > 0 ? Number(((refund / gmv) * 100).toFixed(2)) : 0;
+  const lastGenerated = rows.reduce<string | null>(
+    (m, r: any) => (!m || (r.generated_at && r.generated_at > m) ? r.generated_at : m), null);
+  const hasSummary = rows.length > 0;
+
+  return (
+    <div className="rounded-md border border-border p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div>统计来源：jst_sales_refund_daily_summary｜口径：聚水潭经营口径</div>
+        <div>最近生成：{fmtTime(lastGenerated)}</div>
+      </div>
+      {!hasSummary && !stats.allowSummary && (
+        <div className="rounded-md border border-amber-300 bg-amber-50/60 p-3 text-xs text-amber-800">
+          已同步原始销售数据，但因店铺映射未完成，暂未更新正式经营指标。
+        </div>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div><div className="text-xs text-muted-foreground">今日 GMV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(gmv)}</div></div>
+        <div><div className="text-xs text-muted-foreground">今日 GSV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(gsv)}</div></div>
+        <div><div className="text-xs text-muted-foreground">今日退款金额</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(refund)}</div></div>
+        <div><div className="text-xs text-muted-foreground">今日订单数</div><div className="text-xl font-semibold tabular-nums">{orderCount}</div></div>
+        <div><div className="text-xs text-muted-foreground">今日退款数</div><div className="text-xl font-semibold tabular-nums">{refundCount}</div></div>
+        <div><div className="text-xs text-muted-foreground">今日退款率</div><div className="text-xl font-semibold tabular-nums">{refundRate}%</div></div>
+      </div>
+      <div className="text-xs text-muted-foreground pt-2 border-t border-border">
+        进入正式汇总店铺数：{rows.length}｜仅展示通过映射治理的店铺数据。
+      </div>
+    </div>
+  );
+}
+
 export default function JstDataIntegrationPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -843,60 +897,6 @@ export default function JstDataIntegrationPage() {
           系统以<strong className="text-foreground">自动同步</strong>为主，人工同步仅用于异常重试和补数据。
           页面中的 GMV、GSV、退款金额等经营指标均为指定时间范围内的累计值，不代表本次同步新增金额。
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// SalesRefundTodayPanel — 今日销售卡片(来自 jst_sales_refund_daily_summary)
-// ============================================================
-function SalesRefundTodayPanel() {
-  const { stats } = useSalesRefundPrecheck();
-  const todayQ = useQuery({
-    queryKey: ["jst_sales_refund_daily_summary", "today"],
-    queryFn: async () => {
-      const today = new Date().toISOString().substring(0, 10);
-      const { data, error } = await supabase
-        .from("jst_sales_refund_daily_summary")
-        .select("*")
-        .eq("summary_date", today);
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-  const rows = todayQ.data ?? [];
-  const gmv = rows.reduce((s, r: any) => s + Number(r.gmv_amount ?? 0), 0);
-  const gsv = rows.reduce((s, r: any) => s + Number(r.gsv_amount ?? 0), 0);
-  const refund = rows.reduce((s, r: any) => s + Number(r.refund_amount ?? 0), 0);
-  const orderCount = rows.reduce((s, r: any) => s + Number(r.order_count ?? 0), 0);
-  const refundCount = rows.reduce((s, r: any) => s + Number(r.refund_count ?? 0), 0);
-  const refundRate = gmv > 0 ? Number(((refund / gmv) * 100).toFixed(2)) : 0;
-  const lastGenerated = rows.reduce<string | null>(
-    (m, r: any) => (!m || (r.generated_at && r.generated_at > m) ? r.generated_at : m), null);
-  const hasSummary = rows.length > 0;
-
-  return (
-    <div className="rounded-md border border-border p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <div>统计来源：jst_sales_refund_daily_summary｜口径：聚水潭经营口径</div>
-        <div>最近生成：{fmtTime(lastGenerated)}</div>
-      </div>
-      {!hasSummary && !stats.allowSummary && (
-        <div className="rounded-md border border-amber-300 bg-amber-50/60 p-3 text-xs text-amber-800">
-          已同步原始销售数据，但因店铺映射未完成，暂未更新正式经营指标。
-        </div>
-      )}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div><div className="text-xs text-muted-foreground">今日 GMV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(gmv)}</div></div>
-        <div><div className="text-xs text-muted-foreground">今日 GSV</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(gsv)}</div></div>
-        <div><div className="text-xs text-muted-foreground">今日退款金额</div><div className="text-xl font-semibold tabular-nums">{fmtMoney(refund)}</div></div>
-        <div><div className="text-xs text-muted-foreground">今日订单数</div><div className="text-xl font-semibold tabular-nums">{orderCount}</div></div>
-        <div><div className="text-xs text-muted-foreground">今日退款数</div><div className="text-xl font-semibold tabular-nums">{refundCount}</div></div>
-        <div><div className="text-xs text-muted-foreground">今日退款率</div><div className="text-xl font-semibold tabular-nums">{refundRate}%</div></div>
-      </div>
-      <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-        进入正式汇总店铺数：{rows.length}｜仅展示通过映射治理的店铺数据。
       </div>
     </div>
   );
