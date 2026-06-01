@@ -855,29 +855,10 @@ export default function JstDataIntegrationPage() {
                 <Button variant="outline" size="sm" disabled title="按 SKU 补同步暂未接入" onClick={() => notWired("按 SKU 补同步")}>按 SKU 补同步</Button>
                 <Button variant="outline" size="sm" onClick={() => triggerRun.mutate({ kind: "base_archive", scope: ["shops"], trigger_type: "manual_backfill", label: "按店铺补同步（重新拉取店铺资料）" })}>按店铺补同步（基础档案）</Button>
 
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm">
-                      <AlertTriangle className="w-3.5 h-3.5 mr-1" />
-                      全量同步商品资料
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>确认全量同步商品资料？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        全量同步商品资料会重新拉取聚水潭所有商品与 SKU，
-                        耗时较长且占用 API 配额，请确认继续。
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => triggerRun.mutate({ module_key: "product", trigger_type: "manual_backfill", label: "全量同步商品资料" })}>
-                        确认执行
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <Button variant="outline" size="sm" disabled title="商品/SKU 同步还未接入到本调度，按钮已禁用" onClick={() => notWired("全量同步商品资料")}>
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                  全量同步商品资料（暂未接入）
+                </Button>
 
 
                 <AlertDialog>
