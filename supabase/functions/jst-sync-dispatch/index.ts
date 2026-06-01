@@ -135,6 +135,115 @@ async function callOpenweb(path: string, biz: Record<string, unknown>, attempt =
   return json.data ?? json;
 }
 
+const SENSITIVE_KEY_RE = /(access[_-]?token|refresh[_-]?token|app[_-]?secret|secret|token|password|passwd|pass|proxy[_-]?pass|sign)/i;
+function maskSensitive(value: any, depth = 0): any {
+  if (value === null || value === undefined) return value;
+  if (depth > 4) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 3).map((v) => maskSensitive(v, depth + 1));
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = SENSITIVE_KEY_RE.test(k) ? "***MASKED***" : maskSensitive(v, depth + 1);
+    return out;
+  }
+  return value;
+}
+const keysOf = (v: any) => v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v) : [];
+function getPath(obj: any, path: string) {
+  return path.split(".").reduce((cur, key) => cur?.[key], obj);
+}
+function detectListPayload(raw: any) {
+  const paths = ["data.shops", "data.datas", "data.list", "data.rows", "data.data", "data.items", "shops", "datas", "list", "rows", "items"];
+  const candidates = paths.map((path) => {
+    const value = getPath(raw, path);
+    return { path, exists: value !== undefined, is_array: Array.isArray(value), count: Array.isArray(value) ? value.length : null };
+  });
+  if (Array.isArray(raw?.data)) candidates.unshift({ path: "data", exists: true, is_array: true, count: raw.data.length });
+  const hit = candidates.find((c) => c.is_array);
+  const list = hit ? getPath(raw, hit.path) : [];
+  return {
+    list: Array.isArray(list) ? list : [],
+    path: hit?.path ?? "",
+    candidates,
+    rootKeys: keysOf(raw),
+    dataKeys: keysOf(raw?.data),
+    fieldPresence: {
+      root: ["data", "datas", "shops", "list", "rows", "items"].filter((k) => raw && Object.prototype.hasOwnProperty.call(raw, k)),
+      data: ["data", "datas", "shops", "list", "rows", "items"].filter((k) => raw?.data && Object.prototype.hasOwnProperty.call(raw.data, k)),
+    },
+  };
+}
+async function callOpenwebDiagnostic(path: string, biz: Record<string, unknown>, attempt = 1): Promise<any> {
+  const accessToken = await getValidAccessToken();
+  const ts = String(Math.floor(Date.now() / 1000));
+  const params: Record<string, string> = { access_token: accessToken, app_key: JST_APP_KEY, biz: JSON.stringify(biz), charset: "utf-8", timestamp: ts, version: "2" };
+  params.sign = signOpenweb(params, JST_APP_SECRET);
+  const endpoint = `/open/${path.replace(/^\/+/, "")}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30_000);
+  let httpStatus = 0, text = "", json: any = null, parseError = "";
+  try {
+    const resp = await proxyFetch(`${OPENWEB_BASE}${endpoint}`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(), signal: ctrl.signal,
+    });
+    httpStatus = resp.status;
+    text = await resp.text();
+  } finally { clearTimeout(timer); }
+  try { json = JSON.parse(text); } catch (e: any) { parseError = String(e?.message ?? e); json = {}; }
+  const code = json?.code ?? json?.errCode;
+  const msg = json?.msg ?? json?.message ?? "";
+  const isApiOk = code === 0 || code === "0" || json?.issuccess === true;
+  if (!isApiOk && attempt === 1 && /token|授权|access_token|令牌/i.test(String(msg))) {
+    const seed = (await loadToken())?.refreshToken || JST_REFRESH_TOKEN_SEED;
+    if (seed) {
+      await refreshAccessToken(seed);
+      const retry = await callOpenwebDiagnostic(path, biz, 2);
+      return { ...retry, diagnostics: { ...retry.diagnostics, retried_after_token_refresh: true } };
+    }
+  }
+  const detected = detectListPayload(json);
+  const diagnostics = {
+    request_endpoint: endpoint,
+    request_params_summary: {
+      biz,
+      app_key: JST_APP_KEY ? "***CONFIGURED***" : "missing",
+      access_token: accessToken ? "***CONFIGURED***" : "missing",
+      charset: "utf-8",
+      version: "2",
+      timestamp_present: true,
+      sign_present: true,
+      proxy_enabled: !!JST_PROXY_URL,
+      proxy_auth_configured: !!(JST_PROXY_USER && JST_PROXY_PASS),
+    },
+    http_status: httpStatus,
+    response_code: code ?? null,
+    response_msg: msg || null,
+    response_root_keys: detected.rootKeys,
+    response_data_keys: detected.dataKeys,
+    response_field_presence: detected.fieldPresence,
+    candidate_list_paths: detected.candidates,
+    detected_list_path: detected.path || null,
+    detected_record_count: detected.list.length,
+    first_record_sample: detected.list[0] ? maskSensitive(detected.list[0]) : null,
+    parse_error: parseError || null,
+  };
+  console.log("JST connection_test diagnostic", diagnostics);
+  return { ok: httpStatus >= 200 && httpStatus < 300 && isApiOk, httpStatus, code, msg, json: maskSensitive(json), list: detected.list, diagnostics };
+}
+async function resolveOldCredentialErrors(resolvedAt: string) {
+  const { data } = await admin.from("jst_sync_errors").select("id,error_message,module_key").neq("status", "resolved");
+  const ids = (data ?? []).filter((r: any) => /credential_missing|missing secret|缺少.*JST_|缺少.*凭证|缺少必要凭证|Token 种子|JST_APP_KEY|JST_APP_SECRET|JST_ACCESS_TOKEN|JST_REFRESH_TOKEN/i.test(String(r.error_message ?? ""))).map((r: any) => r.id);
+  if (ids.length) await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: resolvedAt }).in("id", ids);
+}
+function classifyConnectionError(msg: string, code?: unknown) {
+  const text = `${String(code ?? "")} ${msg}`;
+  if (/权限|permission|forbidden|无权|access denied/i.test(text)) return "shops/query 无接口权限";
+  if (/ip|白名单|whitelist/i.test(text)) return "聚水潭 IP 白名单拒绝";
+  if (/token|授权|access_token|令牌|invalid_grant/i.test(text)) return "token 无效或已过期";
+  if (/proxy|ECONN|timeout|abort|network|fetch/i.test(text)) return "代理连接失败或网络超时";
+  return "其他 API 错误";
+}
+
 const pickStr = (...vs: any[]) => {
   for (const v of vs) if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
   return "";
@@ -555,39 +664,85 @@ Deno.serve(async (req) => {
         JST_ACCESS_TOKEN: !!JST_ACCESS_TOKEN_SEED,
         JST_REFRESH_TOKEN: !!JST_REFRESH_TOKEN_SEED,
         JST_PROXY_URL: !!JST_PROXY_URL,
+        JST_PROXY_USER: !!JST_PROXY_USER,
+        JST_PROXY_PASS: !!JST_PROXY_PASS,
       };
       const missing = ["JST_APP_KEY", "JST_APP_SECRET"].filter((k) => !(present as any)[k]);
       const tokRow = await loadToken();
       const hasTokenSource = !!(JST_ACCESS_TOKEN_SEED || JST_REFRESH_TOKEN_SEED || tokRow?.accessToken);
+      const checkedAt = new Date().toISOString();
+      const createConnectionRun = async (status: "ok" | "warn" | "error", summary: string, durationMs?: number, errorMessage = "") => {
+        await admin.from("jst_sync_runs").insert({
+          module_key: "connection", trigger_type: "manual", status,
+          started_at: checkedAt, finished_at: new Date().toISOString(), duration_ms: durationMs,
+          current_total_summary: summary, error_message: errorMessage, created_by: user.id,
+        });
+      };
       if (missing.length || !hasTokenSource) {
         const reason = missing.length
           ? `缺少必要凭证: ${missing.join(", ")}`
           : "缺少 JST_ACCESS_TOKEN 或 JST_REFRESH_TOKEN（任意其一作为初始种子）";
+        await createConnectionRun("error", "连接检测失败", undefined, reason);
         await admin.from("jst_sync_errors").insert({
           module_key: "connection", error_level: "error", status: "open",
-          error_message: reason,
+          error_message: reason, first_seen_at: checkedAt, last_seen_at: checkedAt,
         });
-        return respJson({ ok: false, present, checked_at: new Date().toISOString(), error: reason });
+        return respJson({ ok: false, status: "error", present, checked_at: checkedAt, error: reason });
       }
+      await resolveOldCredentialErrors(checkedAt);
       const t0 = Date.now();
       try {
-        const data = await callOpenweb("shops/query", { page_index: 1, page_size: 1 });
-        const shopCount = Array.isArray(data?.shops) ? data.shops.length : (data?.data_count ?? 0);
+        const probe = await callOpenwebDiagnostic("shops/query", { page_index: 1, page_size: 10 });
+        const durationMs = Date.now() - t0;
+        if (!probe.ok) {
+          const reason = classifyConnectionError(String(probe.msg ?? ""), probe.code);
+          const errMsg = `${reason}: shops/query 接口错误 code=${probe.code ?? ""} msg=${probe.msg ?? ""}`.trim();
+          await createConnectionRun("error", "连接检测失败", durationMs, errMsg);
+          await admin.from("jst_sync_errors").insert({
+            module_key: "connection", error_level: "error", status: "open",
+            error_message: errMsg, first_seen_at: checkedAt, last_seen_at: checkedAt,
+          });
+          return respJson({ ok: false, status: "error", present, checked_at: checkedAt, duration_ms: durationMs, error: errMsg, diagnostics: probe.diagnostics, sanitized_response: probe.json });
+        }
+        const shopCount = probe.list.length;
+        if (shopCount === 0) {
+          const warning = probe.diagnostics.detected_list_path
+            ? `shops/query 返回空列表，读取路径 ${probe.diagnostics.detected_list_path}`
+            : "shops/query 返回结构无法识别，未找到 shops/list/rows/datas 数组";
+          await createConnectionRun("warn", "连接可达，但未获取到店铺数据", durationMs, warning);
+          await admin.from("jst_sync_errors").insert({
+            module_key: "connection", error_level: "warn", status: "open",
+            error_message: warning, first_seen_at: checkedAt, last_seen_at: checkedAt,
+          });
+          return respJson({
+            ok: false, status: "warning", present, checked_at: checkedAt, duration_ms: durationMs,
+            sample_shop_count: 0, message: "连接可达，但未获取到店铺数据", error: warning,
+            hint: "可能是 shops/query 权限不足、请求参数不符合该 App 要求、账号确实未返回店铺，或返回结构需要调整解析。请查看脱敏响应诊断。",
+            diagnostics: probe.diagnostics, sanitized_response: probe.json,
+          });
+        }
+        await createConnectionRun("ok", `聚水潭 API 连接正常，样本店铺 ${shopCount} 条`, durationMs);
         return respJson({
-          ok: true, present, checked_at: new Date().toISOString(),
-          duration_ms: Date.now() - t0,
+          ok: true, status: "success", present, checked_at: checkedAt,
+          duration_ms: durationMs,
           sample_shop_count: shopCount,
           message: "聚水潭 API 连接正常",
+          diagnostics: probe.diagnostics,
+          sanitized_response: probe.json,
         });
       } catch (e: any) {
         const errMsg = String(e?.message ?? e);
+        const durationMs = Date.now() - t0;
+        const reason = classifyConnectionError(errMsg);
+        const fullErrMsg = `${reason}: ${errMsg}`;
+        await createConnectionRun("error", "连接检测失败", durationMs, fullErrMsg);
         await admin.from("jst_sync_errors").insert({
           module_key: "connection", error_level: "error", status: "open",
-          error_message: `连接检测失败: ${errMsg}`,
+          error_message: `连接检测失败: ${fullErrMsg}`, first_seen_at: checkedAt, last_seen_at: checkedAt,
         });
         return respJson({
-          ok: false, present, checked_at: new Date().toISOString(),
-          duration_ms: Date.now() - t0, error: errMsg,
+          ok: false, status: "error", present, checked_at: checkedAt,
+          duration_ms: durationMs, error: fullErrMsg,
           hint: /timeout|abort|fetch|proxy|ECONN|network/i.test(errMsg)
             ? "可能为网络/代理/IP 白名单问题，请检查 JST_PROXY_URL 与聚水潭白名单"
             : "请检查凭证是否正确，或 Access Token 是否过期",

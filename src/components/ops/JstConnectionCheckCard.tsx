@@ -3,12 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertCircle, CheckCircle2, Loader2, Plug } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2, Loader2, Plug, Search } from "lucide-react";
 
 type CheckResult = {
   ok: boolean;
+  status?: "success" | "warning" | "error";
   present?: Record<string, boolean>;
   checked_at?: string;
   duration_ms?: number;
@@ -16,14 +19,17 @@ type CheckResult = {
   message?: string;
   error?: string;
   hint?: string;
+  diagnostics?: Record<string, unknown>;
+  sanitized_response?: unknown;
 };
 
 const REQUIRED = ["JST_APP_KEY", "JST_APP_SECRET"];
-const OPTIONAL = ["JST_ACCESS_TOKEN", "JST_REFRESH_TOKEN", "JST_PROXY_URL"];
+const OPTIONAL = ["JST_ACCESS_TOKEN", "JST_REFRESH_TOKEN", "JST_PROXY_URL", "JST_PROXY_USER", "JST_PROXY_PASS"];
 
 export function JstConnectionCheckCard() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
+  const qc = useQueryClient();
 
   const run = async () => {
     setLoading(true);
@@ -36,8 +42,12 @@ export function JstConnectionCheckCard() {
         toast.error("连接检测失败");
       } else {
         setResult(data as CheckResult);
-        if ((data as CheckResult).ok) toast.success("聚水潭连接正常");
+        const res = data as CheckResult;
+        if (res.status === "success") toast.success("聚水潭连接正常");
+        else if (res.status === "warning") toast.warning("连接可达，但未获取到店铺数据");
         else toast.error("聚水潭连接异常");
+        qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+        qc.invalidateQueries({ queryKey: ["jst_sync_errors"] });
       }
     } catch (e: any) {
       setResult({ ok: false, error: String(e?.message ?? e) });
@@ -49,6 +59,10 @@ export function JstConnectionCheckCard() {
   const present = result?.present ?? {};
   const missingRequired = REQUIRED.filter((k) => result && !present[k]);
   const credsMissing = !result ? false : missingRequired.length > 0;
+  const isWarning = result?.status === "warning" || (!!result && !result.ok && !credsMissing && result.sample_shop_count === 0);
+  const diagnosticsPayload = result?.diagnostics
+    ? { diagnostics: result.diagnostics, sanitized_response: result.sanitized_response }
+    : null;
 
   return (
     <Card>
@@ -79,7 +93,7 @@ export function JstConnectionCheckCard() {
           </Alert>
         )}
 
-        {result && !credsMissing && !result.ok && (
+        {result && !credsMissing && !result.ok && !isWarning && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>接口请求失败</AlertTitle>
@@ -90,7 +104,18 @@ export function JstConnectionCheckCard() {
           </Alert>
         )}
 
-        {result?.ok && (
+        {result && !credsMissing && isWarning && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>连接可达，但未获取到店铺数据</AlertTitle>
+            <AlertDescription>
+              <div className="break-all">{result.error ?? result.message ?? "shops/query 返回空列表"}</div>
+              {result.hint && <div className="mt-1 text-xs opacity-80">{result.hint}</div>}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {result?.status === "success" && (
           <Alert>
             <CheckCircle2 className="h-4 w-4" />
             <AlertTitle>连接正常</AlertTitle>
@@ -102,7 +127,29 @@ export function JstConnectionCheckCard() {
 
         {result && (
           <div>
-            <div className="text-xs text-muted-foreground mb-1">凭证配置状态</div>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-xs text-muted-foreground">凭证配置状态</div>
+              {diagnosticsPayload && (
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <Search className="h-3 w-3 mr-1" /> 查看脱敏响应
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                      <DialogTitle>聚水潭连接检测脱敏响应</DialogTitle>
+                      <DialogDescription>
+                        仅展示接口路径、参数摘要、响应字段与样本结构；token、secret、代理密码等敏感字段已脱敏。
+                      </DialogDescription>
+                    </DialogHeader>
+                    <pre className="max-h-[60vh] overflow-auto rounded-md border bg-muted p-3 text-xs whitespace-pre-wrap break-all">
+                      {JSON.stringify(diagnosticsPayload, null, 2)}
+                    </pre>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               {[...REQUIRED, ...OPTIONAL].map((k) => {
                 const has = !!present[k];
