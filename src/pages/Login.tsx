@@ -62,7 +62,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <main className="flex min-h-screen">
       {/* Left brand panel */}
       <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12 text-white overflow-hidden bg-[hsl(220_60%_10%)]">
         <div
@@ -81,7 +81,7 @@ export default function Login() {
         <div className="relative space-y-10">
           <div>
             <h1 className="text-5xl font-bold tracking-tight leading-tight">
-              ExpenseDesk
+              ExpenseDesk — 经营数据与自动化中心
             </h1>
             <p className="mt-3 text-white/70 text-base">
               Business Insights &amp; Automation Hub
@@ -223,6 +223,6 @@ export default function Login() {
           </form>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

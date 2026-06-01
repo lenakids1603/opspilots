@@ -62,13 +62,13 @@ export default function Signup() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
             <Receipt className="h-6 w-6 text-primary-foreground" />
           </div>
-          <CardTitle className="text-2xl">创建账号</CardTitle>
+          <h1 className="text-2xl font-semibold tracking-tight">创建账号</h1>
           <CardDescription>加入 ExpenseDesk 管理你的费用</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
