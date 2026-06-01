@@ -874,60 +874,104 @@ Deno.serve(async (req) => {
     if (runErr) return respJson({ error: runErr.message }, 500);
     const runId = runRow.id;
 
+    // 子任务隔离执行：单个失败不影响其它子任务，最终聚合状态
+    const subResults: Record<string, { status: "ok" | "error" | "skipped"; summary: string; inserted: number; updated: number; error?: string }> = {
+      shops: { status: "skipped", summary: "未执行", inserted: 0, updated: 0 },
+      suppliers: { status: "skipped", summary: "未执行", inserted: 0, updated: 0 },
+      warehouses: { status: "skipped", summary: "未执行", inserted: 0, updated: 0 },
+    };
+    let shopStats: any = null;
+    let runFinalized = false;
+
     try {
-      const parts: string[] = [];
-      let inserted = 0, updated = 0;
-      let shopStats: any = null;
       for (const t of targets) {
-        if (t === "shops") {
-          const r = await syncShops();
-          parts.push(r.summary);
-          inserted += r.mappingInserted; updated += r.mappingUpdated + r.shopsUpdated;
-          shopStats = r;
-        } else if (t === "suppliers") {
-          const r = await syncSuppliers();
-          parts.push(r.summary);
-          inserted += r.inserted; updated += r.updated;
-        } else if (t === "warehouses") {
-          const r = await syncWarehouses();
-          parts.push(r.summary);
-          inserted += r.inserted; updated += r.updated;
+        try {
+          if (t === "shops") {
+            const r = await syncShops();
+            subResults.shops = { status: "ok", summary: r.summary, inserted: r.mappingInserted, updated: r.mappingUpdated + r.shopsUpdated };
+            shopStats = r;
+          } else if (t === "suppliers") {
+            const r = await syncSuppliers();
+            subResults.suppliers = { status: "ok", summary: r.summary, inserted: r.inserted, updated: r.updated };
+          } else if (t === "warehouses") {
+            const r = await syncWarehouses();
+            subResults.warehouses = { status: "ok", summary: r.summary, inserted: r.inserted, updated: r.updated };
+          }
+        } catch (subErr: any) {
+          const em = String(subErr?.message ?? subErr);
+          subResults[t] = { status: "error", summary: `${t} 同步失败`, inserted: 0, updated: 0, error: em };
+          // 写入子任务错误，便于页面区分
+          await admin.from("jst_sync_errors").insert({
+            module_key: `base_archive:${t}`, error_level: "error", status: "open",
+            error_message: `[${t}] ${em}`,
+          });
         }
       }
+
       const finishedAt = new Date().toISOString();
       const durationMs = Date.now() - t0;
-      const summary = parts.join("；");
+      const executed = targets.filter((t) => subResults[t]?.status !== "skipped");
+      const okSubs = executed.filter((t) => subResults[t].status === "ok");
+      const failSubs = executed.filter((t) => subResults[t].status === "error");
+      const inserted = executed.reduce((s, t) => s + subResults[t].inserted, 0);
+      const updated = executed.reduce((s, t) => s + subResults[t].updated, 0);
+      const summaryParts = executed.map((t) =>
+        subResults[t].status === "ok"
+          ? subResults[t].summary
+          : `${t}: 失败(${subResults[t].error?.slice(0, 80) ?? ""})`
+      );
+      const summary = summaryParts.join("；");
+      const overallStatus =
+        failSubs.length === 0 ? "ok" :
+        okSubs.length === 0 ? "error" : "partial";
       const nextSync = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
       await admin.from("jst_sync_runs").update({
-        status: "ok", finished_at: finishedAt, duration_ms: durationMs,
+        status: overallStatus === "partial" ? "ok" : overallStatus, // run 表只支持 ok/error/aborted，partial 计为 ok
+        finished_at: finishedAt, duration_ms: durationMs,
         inserted_count: inserted, updated_count: updated,
-        current_total_summary: summary,
+        failed_count: failSubs.length,
+        current_total_summary: overallStatus === "partial" ? `部分成功：${summary}` : summary,
+        error_message: failSubs.length ? failSubs.map((t) => `[${t}] ${subResults[t].error}`).join(" | ") : "",
       }).eq("id", runId);
+      runFinalized = true;
 
       await admin.from("jst_sync_modules").update({
-        status: "ok", last_sync_at: finishedAt, next_sync_at: nextSync,
-        last_result_summary: summary, retry_count: 0,
+        status: overallStatus === "ok" ? "ok" : (overallStatus === "partial" ? "partial" : "error"),
+        last_sync_at: finishedAt, next_sync_at: nextSync,
+        last_result_summary: summary.slice(0, 400),
+        retry_count: 0,
       }).eq("module_key", "base_archive");
 
-      await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: finishedAt })
-        .eq("module_key", "base_archive").neq("status", "resolved");
+      // 仅在该子任务成功时清理对应子任务旧错误；不要全清
+      for (const t of okSubs) {
+        await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: finishedAt })
+          .eq("module_key", `base_archive:${t}`).neq("status", "resolved");
+      }
+      // 全部成功才清 base_archive 父键错误
+      if (overallStatus === "ok") {
+        await admin.from("jst_sync_errors").update({ status: "resolved", resolved_at: finishedAt })
+          .eq("module_key", "base_archive").neq("status", "resolved");
+      }
 
       await admin.from("jst_sync_metrics").upsert({
         metric_key: "base_archive_summary",
         metric_name: "基础档案",
         metric_value: summary,
-        metric_extra: { parts, inserted, updated },
+        metric_extra: {
+          parts: summaryParts, inserted, updated,
+          sub_results: subResults,
+          overall_status: overallStatus,
+          executed,
+        },
         time_range_label: "全量快照",
         data_source_label: "聚水潭基础档案",
         last_sync_at: finishedAt,
         updated_at: finishedAt,
       }, { onConflict: "metric_key" });
 
-      // 店铺映射指标（从映射表实时聚合，避免只反映本次同步增量）
       if (shopStats) {
-        const { data: allMaps } = await admin.from("jst_shop_mappings")
-          .select("mapping_status");
+        const { data: allMaps } = await admin.from("jst_shop_mappings").select("mapping_status");
         const totalAll = allMaps?.length ?? 0;
         const mapped = (allMaps ?? []).filter((m) => m.mapping_status === "mapped").length;
         const ignored = (allMaps ?? []).filter((m) => m.mapping_status === "ignored").length;
@@ -944,37 +988,36 @@ Deno.serve(async (req) => {
         }, { onConflict: "metric_key" });
       }
 
-      return respJson({ ok: true, run_id: runId, summary, inserted, updated, duration_ms: durationMs, shopStats });
+      return respJson({ ok: failSubs.length === 0, run_id: runId, status: overallStatus, summary, inserted, updated, duration_ms: durationMs, sub_results: subResults, shopStats });
 
     } catch (e: any) {
+      // 兜底：理论上不会到这里（子任务已 try/catch），但只要发生就保证 run 收尾
       const finishedAt = new Date().toISOString();
       const errMsg = String(e?.message ?? e);
       await admin.from("jst_sync_runs").update({
         status: "error", finished_at: finishedAt, duration_ms: Date.now() - t0,
-        error_message: errMsg, current_total_summary: "同步失败",
+        error_message: errMsg, current_total_summary: "同步失败（dispatcher 异常）",
       }).eq("id", runId);
-
-      // 累计 retry_count
-      const { data: existingErr } = await admin.from("jst_sync_errors").select("id, retry_count")
-        .eq("module_key", "base_archive").neq("status", "resolved").maybeSingle();
-      if (existingErr) {
-        await admin.from("jst_sync_errors").update({
-          error_message: errMsg, retry_count: (existingErr.retry_count ?? 0) + 1,
-          last_seen_at: finishedAt, status: "retrying",
-        }).eq("id", existingErr.id);
-      } else {
-        await admin.from("jst_sync_errors").insert({
-          module_key: "base_archive", error_level: "error",
-          error_message: errMsg, status: "open",
-          first_seen_at: finishedAt, last_seen_at: finishedAt,
-        });
-      }
+      runFinalized = true;
+      await admin.from("jst_sync_errors").insert({
+        module_key: "base_archive", error_level: "error", status: "open",
+        error_message: errMsg,
+      });
       await admin.from("jst_sync_modules").update({
         status: "error", last_result_summary: errMsg.slice(0, 200),
-        retry_count: 0, last_sync_at: finishedAt,
+        last_sync_at: finishedAt,
       }).eq("module_key", "base_archive");
-
       return respJson({ ok: false, run_id: runId, error: errMsg }, 200);
+    } finally {
+      // ★ 终极兜底：无论如何，确保 run 不会停留在 running
+      if (!runFinalized) {
+        const finishedAt = new Date().toISOString();
+        await admin.from("jst_sync_runs").update({
+          status: "aborted", finished_at: finishedAt, duration_ms: Date.now() - t0,
+          error_message: "Edge Function 未正常返回（可能为 timeout / OOM / 进程终止），由 finally 兜底标记 aborted",
+          current_total_summary: "同步中断（finally 兜底）",
+        }).eq("id", runId).eq("status", "running");
+      }
     }
   } catch (e: any) {
     return respJson({ error: String(e?.message ?? e) }, 500);
