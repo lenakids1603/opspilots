@@ -59,8 +59,9 @@ const GROUPS: Group[] = [
     title: "数据中心", icon: Database,
     items: [
       { title: "数据中心", url: "/data-center" },
-      { title: "聚水潭同步", url: "/data-center/jst-sync" },
-      { title: "聚水潭商品同步", url: "/data-center/jst-product-sync" },
+      { title: "聚水潭数据接入详情", url: "/data-center/jst-integration" },
+      { title: "聚水潭同步（开发）", url: "/data-center/jst-sync" },
+      { title: "聚水潭商品同步（开发）", url: "/data-center/jst-product-sync" },
     ],
   },
   {
