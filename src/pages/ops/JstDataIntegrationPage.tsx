@@ -487,6 +487,9 @@ export default function JstDataIntegrationPage() {
         </CardContent>
       </Card>
 
+      {/* 二点二、聚水潭连接检测 */}
+      <JstConnectionCheckCard />
+
       {/* 二点五、聚水潭店铺映射 */}
       <ShopMappingsCard />
 
