@@ -99,6 +99,8 @@ export type Database = {
           deleted_at: string | null
           entity_id: string
           id: string
+          is_default: boolean
+          purpose: string
           remark: string | null
           status: string
           updated_at: string
@@ -114,6 +116,8 @@ export type Database = {
           deleted_at?: string | null
           entity_id: string
           id?: string
+          is_default?: boolean
+          purpose?: string
           remark?: string | null
           status?: string
           updated_at?: string
@@ -129,6 +133,8 @@ export type Database = {
           deleted_at?: string | null
           entity_id?: string
           id?: string
+          is_default?: boolean
+          purpose?: string
           remark?: string | null
           status?: string
           updated_at?: string
@@ -2055,6 +2061,7 @@ export type Database = {
         Row: {
           code: string | null
           created_at: string
+          default_bank_account_id: string | null
           deleted_at: string | null
           entity_id: string
           external_shop_id: string | null
@@ -2068,6 +2075,7 @@ export type Database = {
         Insert: {
           code?: string | null
           created_at?: string
+          default_bank_account_id?: string | null
           deleted_at?: string | null
           entity_id: string
           external_shop_id?: string | null
@@ -2081,6 +2089,7 @@ export type Database = {
         Update: {
           code?: string | null
           created_at?: string
+          default_bank_account_id?: string | null
           deleted_at?: string | null
           entity_id?: string
           external_shop_id?: string | null
