@@ -1490,10 +1490,46 @@ export type Database = {
           },
         ]
       }
+      ops_supplier_confirm_audit_logs: {
+        Row: {
+          id: string
+          new_confirm_status: string
+          old_confirm_status: string
+          operated_at: string
+          operated_by: string | null
+          reason: string
+          supplier_id: string
+        }
+        Insert: {
+          id?: string
+          new_confirm_status: string
+          old_confirm_status?: string
+          operated_at?: string
+          operated_by?: string | null
+          reason?: string
+          supplier_id: string
+        }
+        Update: {
+          id?: string
+          new_confirm_status?: string
+          old_confirm_status?: string
+          operated_at?: string
+          operated_by?: string | null
+          reason?: string
+          supplier_id?: string
+        }
+        Relationships: []
+      }
       ops_suppliers: {
         Row: {
           address: string | null
+          archived_at: string | null
+          archived_by: string | null
+          archived_reason: string
           code: string
+          confirm_status: string
+          confirmed_at: string | null
+          confirmed_by: string | null
           contact: string | null
           created_at: string
           email: string | null
@@ -1510,7 +1546,13 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string
           code: string
+          confirm_status?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
           contact?: string | null
           created_at?: string
           email?: string | null
@@ -1527,7 +1569,13 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string
           code?: string
+          confirm_status?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
           contact?: string | null
           created_at?: string
           email?: string | null
