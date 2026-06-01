@@ -695,7 +695,8 @@ Deno.serve(async (req) => {
         const probe = await callOpenwebDiagnostic("shops/query", { page_index: 1, page_size: 10 });
         const durationMs = Date.now() - t0;
         if (!probe.ok) {
-          const errMsg = `shops/query 接口错误 code=${probe.code ?? ""} msg=${probe.msg ?? ""}`.trim();
+          const reason = classifyConnectionError(String(probe.msg ?? ""), probe.code);
+          const errMsg = `${reason}: shops/query 接口错误 code=${probe.code ?? ""} msg=${probe.msg ?? ""}`.trim();
           await createConnectionRun("error", "连接检测失败", durationMs, errMsg);
           await admin.from("jst_sync_errors").insert({
             module_key: "connection", error_level: "error", status: "open",
@@ -732,14 +733,16 @@ Deno.serve(async (req) => {
       } catch (e: any) {
         const errMsg = String(e?.message ?? e);
         const durationMs = Date.now() - t0;
-        await createConnectionRun("error", "连接检测失败", durationMs, errMsg);
+        const reason = classifyConnectionError(errMsg);
+        const fullErrMsg = `${reason}: ${errMsg}`;
+        await createConnectionRun("error", "连接检测失败", durationMs, fullErrMsg);
         await admin.from("jst_sync_errors").insert({
           module_key: "connection", error_level: "error", status: "open",
-          error_message: `连接检测失败: ${errMsg}`, first_seen_at: checkedAt, last_seen_at: checkedAt,
+          error_message: `连接检测失败: ${fullErrMsg}`, first_seen_at: checkedAt, last_seen_at: checkedAt,
         });
         return respJson({
           ok: false, status: "error", present, checked_at: checkedAt,
-          duration_ms: durationMs, error: errMsg,
+          duration_ms: durationMs, error: fullErrMsg,
           hint: /timeout|abort|fetch|proxy|ECONN|network/i.test(errMsg)
             ? "可能为网络/代理/IP 白名单问题，请检查 JST_PROXY_URL 与聚水潭白名单"
             : "请检查凭证是否正确，或 Access Token 是否过期",
