@@ -1,125 +1,88 @@
-## 目标
+# 验证 + 接入 base_archive 真实同步
 
-把当前项目从 Lovable Cloud 自带的 Supabase 项目，迁移到你自己新建的 Supabase 项目，确保新项目里数据库结构、RLS、Auth、Storage、Edge Function 都对齐。
-
-> 重要前置说明：当前项目使用的是 Lovable Cloud（内置 Supabase），如果你切换到自建 Supabase 项目，需要在 Lovable 端 **Connectors → 断开 Lovable Cloud → 接入外部 Supabase**。`src/integrations/supabase/client.ts` 和 `.env` 由 Lovable 自动管理，你不要手动改，连接外部 Supabase 后 Lovable 会重写它们。
+分两步走：先做链路验证（不改代码），再接入真实的 base_archive 同步。
 
 ---
 
-## 一、需要复制到新 Supabase 的内容总览
+## 第一步：验证当前数据链路（只读检查，无代码改动）
 
-### 1. 数据库结构（15 个迁移，1204 行 SQL）
+针对你列的 5 点，我会用 `psql` + 代码审计直接验证：
 
-按时间顺序逐个执行 `supabase/migrations/` 下的所有 `.sql` 文件，**严格按文件名时间戳顺序**：
+1. **页面无 mock**：`grep` 已确认 `JstDataIntegrationPage.tsx` 中所有渲染源都来自 `useModules / useMetrics / useErrors / useRuns` 四个 hook，无写死数组。✅
+2. **同步触发会写 jst_sync_runs**：现有 `triggerRun` mutation 直接 `insert` 到 `jst_sync_runs`，右上角下拉、行内"重试"、补数据工具按钮（共 14 处 onClick）全部走它。我会在验证阶段实际触发一次并查表确认。
+3. **日志实时刷新**：mutation `onSuccess` 调 `qc.invalidateQueries(["jst_sync_runs"])`，会重新拉取并显示。
+4. **errors → 顶部异常 + 模块状态**：`jst_sync_errors` 驱动顶部 `abnormalModules` 横幅；`jst_sync_modules.status` 驱动各行状态徽章。两者目前是**两套独立字段**，我会在第二步把 edge function 写入 errors 时同步更新 modules.status，保证一致。
+5. **供应商账号无权访问**：4 张表的 RLS 都是 `is_ops_internal(auth.uid())`，supplier 账号 `account_type='supplier'` 会被全部拒绝。我会用 supplier 账号做一次 `SELECT` 验证返回 0 行。
 
+验证结果会在执行后用一两行文字汇报，不阻塞第二步。
+
+---
+
+## 第二步：接入真实 base_archive 同步
+
+### 范围（第一批，仅基础档案）
+- 店铺资料 → `shops`
+- 供应商资料 → `ops_suppliers`
+- 仓库资料 → **新表 `jst_warehouses`**（当前无对应业务表）
+
+商品/SKU 已有独立 edge function (`jst-sync-products`)，本批不动；后续验证字段稳定后再合并到 base_archive 调度里。
+
+### 架构
+
+```text
+前端按钮
+   │
+   ▼
+supabase.functions.invoke("jst-sync-dispatch", { module_key, trigger_type, scope })
+   │
+   ▼
+jst-sync-dispatch (新 edge function)
+   ├─ 校验 ops_internal + admin
+   ├─ INSERT jst_sync_runs(status=running, created_by=auth.uid)
+   ├─ 按 module_key 调用对应 syncer（本批仅 base_archive）
+   │     ├─ shops:      /open/shops/query
+   │     ├─ suppliers:  /open/suppliers/query
+   │     └─ warehouses: /open/wms/partner/query
+   ├─ 成功 → UPDATE runs(status=ok, counts, finished_at, duration_ms)
+   │       → UPDATE jst_sync_modules(last_sync_at, next_sync_at, status='ok', last_result_summary)
+   │       → UPSERT jst_sync_metrics(base_archive_summary)
+   │       → UPDATE jst_sync_errors SET status='resolved' WHERE module_key=...
+   └─ 失败 → UPDATE runs(status=error, error_message)
+           → UPSERT jst_sync_errors(open, retry_count++)
+           → UPDATE jst_sync_modules(status='error', last_result_summary)
 ```
-20260313005537_  报销系统初始（profiles, user_roles, expenses, expense_categories,
-                 expense_receipts, approval_actions, audit_logs + 全部 RLS + 触发器
-                 + handle_new_user + has_role + is_manager_of + receipts bucket）
-20260313005553_  receipts storage 策略
-20260313021505_  expense_categories 种子数据（这步走 INSERT，新库需要重跑）
-20260325004758_  profiles 扩展 username/phone
-20260528115813_  ops 系统：ops_role_code 枚举、ops_user_roles、ops_roles、
-                 ops_suppliers、ops_products、ops_skus、ops_arrivals、
-                 ops_supplier_bills 及 RLS + has_ops_role/is_ops_internal/supplier_id_of
-20260528125436_  供应商账号：user_type, account_type, supplier_id 等 + 相关 RLS
-20260528130049_  profiles 字段保护触发器 prevent_profile_privilege_change
-20260529045629_  聚水潭采购单：purchase_orders / purchase_order_items /
-                 purchase_receipts / purchase_receipt_items / jst_tokens /
-                 jst_sync_logs / jst_sync_state + recalc_purchase_order_aggregates
-20260529045647_  小补丁
-20260529053158_  小补丁
-20260529084631_  jst_sync 字段补充
-20260529084829_  小补丁
-20260529130851_  商品资料/SKU 同步扩展：ops_products / ops_skus 加字段，
-                 新建 ops_sku_aliases，product-images bucket + storage 策略，
-                 视图 v_purchase_order_items_with_image
-20260529131403_  安全补丁 1（RLS / search_path）
-20260529131435_  安全补丁 2
+
+### 数据库迁移
+
+新增 `jst_warehouses`（仓库主数据）：
+
+```text
+id, jst_wms_co_id (unique), name, type, status,
+remark, raw_jst_json, last_synced_at, created_at, updated_at
 ```
 
-执行方式（任选一种）：
+RLS：`is_ops_internal` 读；`admin` 写；service_role 全权。
 
-- **推荐**：在新 Supabase 项目里用 Supabase CLI `supabase db push` 直接推送 `supabase/migrations/`，顺序、幂等都帮你处理好。
-- **如果你坚持用 SQL Editor**：让我在 build 模式下生成一个合并后的 `bootstrap.sql`（约 1200 行），你一次性粘进 SQL Editor 执行即可。
+修改 `jst_sync_runs` 的 INSERT 策略：允许 `created_by IS NULL` 当调用方是 service_role（edge function 走 service role 不会走 RLS，所以现状已 ok，无需改）。
 
-### 2. RLS 策略
-全部已包含在上述 migrations 里，无需额外处理。覆盖的核心规则：
-- `profiles` / `user_roles` / 报销系列：本人 + 经理 + finance 分层
-- `ops_*` 系列：内部员工 (`is_ops_internal`) 全权 + 供应商账号 (`supplier_id_of`) 只读自己
-- `purchase_orders` / `purchase_*_items` / `purchase_receipts`：内部全权 + 供应商只读自家
-- `ops_sku_aliases`：仅内部
-- `jst_sync_logs` / `jst_sync_state` / `jst_tokens`：仅内部可读，写入走 service_role
-- Storage：`receipts`（私有，按 user_id 文件夹）+ `product-images`（公开读，内部写）
+### 前端改动
 
-### 3. Auth 配置（在新 Supabase Dashboard → Authentication 里操作）
-- Providers → **Email**：开启；建议开启 **Confirm email**（生产环境）
-- Providers → **Google**：开启，填入 Google OAuth Client ID / Secret，并把新项目回调 URL 加到 Google Console
-- URL Configuration → **Site URL** / **Redirect URLs**：加入
-  - `http://localhost:5173`
-  - `https://opspilots.lovable.app`
-  - `https://erp.lenakids.xyz`
-  - `https://id-preview--c1f600eb-6199-4436-b61a-bd921c25bbc8.lovable.app`
-- Auth → Policies → **Leaked Password Protection (HIBP)**：建议开启
-- ⚠️ **不要**开启 Anonymous sign-ins
+- 把 `triggerRun.mutationFn` 改为：对 `base_archive`/`shop`/`supplier`/`warehouse` 走 `supabase.functions.invoke("jst-sync-dispatch", ...)`；其他模块（product/sku/inventory/sales_refund/purchase）**保留旧的 mock-insert 行为并加 toast 提示"暂未接入"**，直到逐一上线。
+- 不在前端直接调用聚水潭，符合要求 #1。
+- mutation 完成后 `invalidateQueries(["jst_sync_runs","jst_sync_modules","jst_sync_metrics","jst_sync_errors"])` 一次性刷新所有看板。
 
-### 4. Edge Functions（4 个，需要部署到新项目）
-路径：`supabase/functions/`
-- `admin-supplier-accounts`
-- `ask-ai`
-- `jst-sync-products`
-- `jst-sync-purchase-orders`
-- `supplier-purchase-orders`
-- `supplier-purchase-order-detail`
+### 边界与不做的事
 
-部署：`supabase functions deploy <name> --project-ref <新ref>`。`supabase/config.toml` 里的 `project_id` 也要改成你新项目的 ref。
+- ❌ 不接 sales_refund、inventory、purchase、商品/SKU
+- ❌ 不实现自动定时调度（cron）。本步只做"手动按钮 → 真实接口"链路。后续接 `pg_cron` 再说。
+- ❌ 不引入 webhook 回调
+- ✅ Edge function 使用现有 JST secrets（`JST_APP_KEY` / `JST_APP_SECRET` / `JST_ACCESS_TOKEN`），与 `jst-sync-products` 共用 token 刷新逻辑
 
-### 5. Secrets（Edge Function 环境变量，在新 Supabase Project Settings → Edge Functions → Secrets 配置）
+### 交付物
 
-**Supabase 自动注入，不用手填**：
-`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_DB_URL` / `SUPABASE_PUBLISHABLE_KEY`
+1. 数据库迁移：`jst_warehouses` 表 + RLS + GRANT
+2. 新 edge function：`supabase/functions/jst-sync-dispatch/index.ts`
+3. 修改 `JstDataIntegrationPage.tsx`：`triggerRun` 改走 invoke
+4. 验证 checklist 的简短汇报
 
-**需要你手动新建**：
-- 聚水潭：`JST_API_BASE`, `JST_APP_KEY`, `JST_APP_SECRET`, `JST_ACCESS_TOKEN`, `JST_REFRESH_TOKEN`, `JST_PARTNER_ID`, `JST_PARTNER_KEY`, `JST_AUTH_MODE`, `JST_TOKEN`
-- 代理（如有）：`JST_PROXY_URL`, `JST_PROXY_USER`, `JST_PROXY_PASS`
-- 定时任务：`JST_SYNC_CRON_SECRET`, `JST_SYNC_START_DATE`
-- AI：`LOVABLE_API_KEY`（如要继续用 Lovable AI Gateway；自建 Supabase 后这个 Key 仍然有效，需新生成）
-
-### 6. 前端环境变量
-`.env` 由 Lovable 在重连 Supabase 后自动写入，你不需要手填。涉及：
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPABASE_PROJECT_ID`
-
-### 7. Storage Bucket
-迁移里会自动创建：
-- `receipts`（私有）
-- `product-images`（公开）
-
-### 8. 历史数据
-迁移只创建结构，不搬数据。如果你要把现有 Supabase 的业务数据（聚水潭采购单、商品、供应商、用户等）一并迁过去，需要单独跑一次 `pg_dump --data-only` + `psql` 导入，**这一步不在本计划范围内**，需要时再单独处理。
-
----
-
-## 二、执行顺序
-
-1. 在新 Supabase 项目里：Settings 拿到 `Project ref` / `URL` / `anon key` / `service_role key`
-2. 配置 Auth（Email + Google + Site URL + Redirect URLs）
-3. 跑 SQL（CLI `db push` 或粘合并后的 `bootstrap.sql`）
-4. Project Settings → Edge Functions → Secrets 配置上面列出的所有 JST_* 和 LOVABLE_API_KEY
-5. `supabase functions deploy` 部署 6 个 edge functions（或用 Lovable 自动部署）
-6. 回 Lovable：Connectors → 断开 Lovable Cloud → 接入 Supabase（粘 URL + anon key）
-7. 在登录页注册第一个用户 → 在 SQL Editor 手动给它加 `ops_user_roles` (role_code='admin') 和把 `profiles.account_type` 改为 `internal`
-8. 测试：登录 → 数据中心 → 聚水潭同步 → 跑一次最小连通性测试
-
----
-
-## 三、确认问题
-
-请确认两件事，我就进入 build 模式开干：
-
-1. **你希望我怎么交付 SQL？**
-   - A. 生成一个合并后的 `bootstrap.sql`（推荐，方便你粘到 SQL Editor 一次执行）
-   - B. 保持现有 15 个 migration 文件不动，你自己用 Supabase CLI `db push`
-
-2. **是否需要我同时生成「首个 admin 账号开通」的 SQL 模板**（包含 `ops_user_roles` 和 `profiles.account_type` 升级语句）？
+确认后我会：先执行第一步验证（产出一段汇报），然后申请数据库迁移并写代码。
