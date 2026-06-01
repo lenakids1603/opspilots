@@ -302,9 +302,25 @@ export default function JstDataIntegrationPage() {
                 <ChevronDown className="w-4 h-4 ml-1" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                人工补救入口（仅写入运行日志）
+                真实同步（已接入聚水潭）
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "base_archive", trigger_type: "manual", label: "同步基础档案（店铺/供应商/仓库）" })}>
+                同步基础档案
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "shop", trigger_type: "manual", label: "仅同步店铺" })}>
+                仅同步店铺
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "supplier", trigger_type: "manual", label: "仅同步供应商" })}>
+                仅同步供应商
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: "warehouse", trigger_type: "manual", label: "仅同步仓库" })}>
+                仅同步仓库
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                其他模块（占位，仅写日志）
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => triggerRun.mutate({ module_key: abnormalModules[0]?.module_key ?? "inventory", trigger_type: "retry", label: "重试异常模块" })}>
