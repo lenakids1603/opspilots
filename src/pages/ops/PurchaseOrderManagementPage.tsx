@@ -185,17 +185,19 @@ function usePoItems(poId: string | null) {
   });
 }
 
-function useStyleAggregation(filters: Filters, page: number) {
+function useStyleAggregation(filters: Filters, page: number, sortKey: StyleSortKey, sortDir: SortDir) {
   return useQuery({
-    queryKey: ["po_items_by_style", filters, page],
+    queryKey: ["po_items_by_style", filters, page, sortKey, sortDir],
     queryFn: async () => {
       // 取所有项目(受筛选影响)
       let q = supabase.from("purchase_order_items").select(
-        "style_no, product_name, purchase_qty, received_qty, unreceived_qty, amount, purchase_order_id, purchase_orders!inner(supplier_name, po_date, status, warehouse_status, external_po_id)"
+        "style_no, sku_no, product_name, purchase_qty, received_qty, unreceived_qty, amount, purchase_order_id, purchase_orders!inner(supplier_name, po_date, status, warehouse_status, external_po_id)"
       ).limit(5000);
       if (filters.styleNo) q = q.ilike("style_no", `%${filters.styleNo}%`);
       if (filters.skuNo) q = q.ilike("sku_no", `%${filters.skuNo}%`);
       if (filters.productName) q = q.ilike("product_name", `%${filters.productName}%`);
+      // 默认排除聚水潭已删除采购单(通过 inner join 的 purchase_orders.status)
+      q = q.not("purchase_orders.status", "in", DELETED_STATUSES);
       const { data, error } = await q;
       if (error) throw error;
       const rows = data ?? [];
@@ -203,7 +205,10 @@ function useStyleAggregation(filters: Filters, page: number) {
       // 应用 PO 维度筛选(在前端)
       const filtered = rows.filter((r: any) => {
         const po = r.purchase_orders;
-        if (!po) return true;
+        if (!po) return false;
+        // 二次防御:剔除已删除采购单
+        const st = String(po.status ?? "").toLowerCase();
+        if (st === "delete" || st === "deleted" || po.status === "已删除") return false;
         if (filters.supplier && !(po.supplier_name ?? "").includes(filters.supplier)) return false;
         if (filters.poNo && !(po.external_po_id ?? "").includes(filters.poNo)) return false;
         if (filters.status !== "all" && po.status !== filters.status) return false;
@@ -222,7 +227,9 @@ function useStyleAggregation(filters: Filters, page: number) {
           product_name: r.product_name ?? "",
           suppliers: new Set<string>(),
           po_ids: new Set<string>(),
+          sku_set: new Set<string>(),
           purchase_qty: 0, received_qty: 0, unreceived_qty: 0, amount: 0,
+          latest_po_ts: 0,
         };
         cur.purchase_qty += Number(r.purchase_qty ?? 0);
         cur.received_qty += Number(r.received_qty ?? 0);
@@ -230,13 +237,48 @@ function useStyleAggregation(filters: Filters, page: number) {
         cur.amount += Number(r.amount ?? 0);
         if (r.purchase_orders?.supplier_name) cur.suppliers.add(r.purchase_orders.supplier_name);
         if (r.purchase_order_id) cur.po_ids.add(r.purchase_order_id);
+        if (r.sku_no) cur.sku_set.add(r.sku_no);
+        const ts = r.purchase_orders?.po_date ? new Date(r.purchase_orders.po_date).getTime() : 0;
+        if (ts > cur.latest_po_ts) cur.latest_po_ts = ts;
         map.set(key, cur);
       }
-      const aggregated = Array.from(map.values()).map((c: any) => ({
-        ...c,
-        suppliers: Array.from(c.suppliers).join("、"),
-        po_count: c.po_ids.size,
-      })).sort((a, b) => b.amount - a.amount);
+      const aggregated = Array.from(map.values()).map((c: any) => {
+        // 入库状态聚合:全部已入库 / 部分入库 / 未入库
+        let warehouse_status: "not_received" | "partial" | "received" = "not_received";
+        if (c.purchase_qty > 0 && c.received_qty >= c.purchase_qty) warehouse_status = "received";
+        else if (c.received_qty > 0) warehouse_status = "partial";
+        return {
+          style_no: c.style_no,
+          product_name: c.product_name,
+          suppliers: Array.from(c.suppliers).join("、"),
+          po_count: c.po_ids.size,
+          sku_count: c.sku_set.size,
+          purchase_qty: c.purchase_qty,
+          received_qty: c.received_qty,
+          unreceived_qty: c.unreceived_qty,
+          amount: c.amount,
+          latest_po_ts: c.latest_po_ts,
+          latest_po_date: c.latest_po_ts ? new Date(c.latest_po_ts).toISOString() : null,
+          warehouse_status,
+        };
+      });
+
+      // 排序(纯数字按数字,日期按时间戳,字符串按 localeCompare)
+      const numKeys = new Set<string>(["po_count", "sku_count", "purchase_qty", "received_qty", "unreceived_qty", "amount"]);
+      aggregated.sort((a: any, b: any) => {
+        let va: any, vb: any;
+        if (sortKey === "latest_po_date") { va = a.latest_po_ts; vb = b.latest_po_ts; }
+        else { va = a[sortKey]; vb = b[sortKey]; }
+        if (numKeys.has(sortKey) || sortKey === "latest_po_date") {
+          const diff = (Number(va) || 0) - (Number(vb) || 0);
+          if (diff !== 0) return sortDir === "asc" ? diff : -diff;
+        } else {
+          const cmp = String(va ?? "").localeCompare(String(vb ?? ""), "zh-CN");
+          if (cmp !== 0) return sortDir === "asc" ? cmp : -cmp;
+        }
+        // 平局:按采购件数降序
+        return (b.purchase_qty || 0) - (a.purchase_qty || 0);
+      });
 
       const total = aggregated.length;
       const paged = aggregated.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
