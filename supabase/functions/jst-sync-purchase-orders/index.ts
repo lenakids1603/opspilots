@@ -763,26 +763,49 @@ async function syncPurchaseInSegment(
 
 async function syncRange(fromIso: string, toIso: string, logId: string) {
   let ordersCount = 0, itemsCount = 0, receiptsCount = 0;
-  const affectedPoIds = new Set<string>();
   const errors: string[] = [];
+  let lastSuccessfulTo: string | null = null;
 
   for (const [winFrom, winTo] of timeWindows(new Date(fromIso), new Date(toIso), 1)) {
+    const segAffected = new Set<string>();
+    let poOk = false, inOk = false;
     try {
-      const r = await syncPurchaseOrdersSegment(winFrom, winTo, logId, affectedPoIds);
+      const r = await syncPurchaseOrdersSegment(winFrom, winTo, logId, segAffected);
       ordersCount += r.orders; itemsCount += r.items;
+      poOk = true;
     } catch (e) {
       errors.push(`PO ${fmt(winFrom)}: ${(e as Error).message}`);
     }
     try {
-      const r = await syncPurchaseInSegment(winFrom, winTo, logId, affectedPoIds);
+      const r = await syncPurchaseInSegment(winFrom, winTo, logId, segAffected);
       receiptsCount += r.receipts;
+      inOk = true;
     } catch (e) {
       errors.push(`IN ${fmt(winFrom)}: ${(e as Error).message}`);
     }
-  }
 
-  for (const poId of affectedPoIds) {
-    await admin.rpc("recalc_purchase_order_aggregates", { _po_id: poId });
+    // 每段结束后立即对本段涉及的 PO 做聚合刷新,避免主表 total_* 字段长期为 0
+    for (const poId of segAffected) {
+      try {
+        await admin.rpc("recalc_purchase_order_aggregates", { _po_id: poId });
+      } catch (e) {
+        console.error(`recalc PO ${poId} 失败:`, (e as Error).message);
+      }
+    }
+
+    // 每段成功后立即推进游标,避免下次重跑已完成的日期
+    if (poOk && inOk) {
+      lastSuccessfulTo = winTo.toISOString();
+      try {
+        await admin.from("jst_sync_state").upsert({
+          key: "purchase_orders_last_sync",
+          value: { last_modified_at: lastSuccessfulTo },
+          updated_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error("update jst_sync_state 失败:", (e as Error).message);
+      }
+    }
   }
 
   const status = errors.length === 0 ? "success" : (ordersCount + receiptsCount > 0 ? "partial_failed" : "failed");
@@ -792,12 +815,13 @@ async function syncRange(fromIso: string, toIso: string, logId: string) {
     fetched_orders_count: ordersCount,
     fetched_items_count: itemsCount,
     fetched_receipts_count: receiptsCount,
-    message: `${errors.length ? "部分成功 / 部分失败。" : "全部同步成功。"}汇总:单 ${ordersCount}、明细 ${itemsCount}、入库 ${receiptsCount}${errors.length ? `,失败段 ${errors.length}` : ""}`,
+    message: `${errors.length ? "部分成功 / 部分失败。" : "全部同步成功。"}汇总:单 ${ordersCount}、明细 ${itemsCount}、入库 ${receiptsCount}${errors.length ? `,失败段 ${errors.length}` : ""}${lastSuccessfulTo ? `;游标已推进至 ${lastSuccessfulTo}` : ""}`,
     error_detail: errors.length ? sanitizeMsg(errors.join(" | ")).slice(0, 1500) : null,
   }).eq("id", logId);
 
-  return { ordersCount, itemsCount, receiptsCount };
+  return { ordersCount, itemsCount, receiptsCount, lastSuccessfulTo };
 }
+
 
 async function markStaleRunningAsFailed() {
   const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
@@ -887,12 +911,17 @@ Deno.serve(async (req) => {
 
     const explicitFrom: string | undefined = body.start_date;
     const explicitTo: string | undefined = body.end_date;
+    const mode: string = String(body.mode ?? "").toLowerCase();
+    const forceBackfill = mode === "force_backfill";
 
     let fromIso: string;
     let toIso: string = new Date().toISOString();
     if (explicitFrom) {
       fromIso = new Date(explicitFrom).toISOString();
       if (explicitTo) toIso = new Date(explicitTo).toISOString();
+    } else if (forceBackfill) {
+      // force_backfill 必须传 start_date,否则报错
+      throw new Error("force_backfill 模式必须传 start_date");
     } else {
       const { data: st } = await admin
         .from("jst_sync_state")
@@ -914,21 +943,17 @@ Deno.serve(async (req) => {
         status: "running",
         cursor_from: fromIso,
         cursor_to: toIso,
-        message: `开始同步 mode=${JST_AUTH_MODE}`,
+        message: `开始同步 mode=${JST_AUTH_MODE}${forceBackfill ? " force_backfill" : ""}`,
       })
       .select("id")
       .single();
     if (logErr) throw logErr;
 
     // 后台执行,避免 Edge Function CPU/wall-time 超限
+    // 注意:游标在每个时间段成功后已经在 syncRange 内部推进,这里不再额外 upsert
     const runBackground = async () => {
       try {
         await syncRange(fromIso, toIso, log.id);
-        await admin.from("jst_sync_state").upsert({
-          key: "purchase_orders_last_sync",
-          value: { last_modified_at: toIso },
-          updated_at: new Date().toISOString(),
-        });
       } catch (err) {
         const msg = (err as Error).message ?? "未知错误";
         const safe = msg.replace(/[A-Fa-f0-9]{32,}/g, "***");
@@ -945,6 +970,7 @@ Deno.serve(async (req) => {
     };
     // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
     EdgeRuntime.waitUntil(runBackground());
+
 
     return new Response(
       JSON.stringify({
