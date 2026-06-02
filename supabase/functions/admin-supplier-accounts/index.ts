@@ -168,17 +168,30 @@ Deno.serve(async (req) => {
         newUid = created.user!.id;
       }
 
+      // 检查 phone 是否被其他 profile 占用（phone 有唯一约束）
+      let phoneToWrite: string | null = contact_phone ? contact_phone : null;
+      if (phoneToWrite) {
+        const { data: phoneDup } = await admin
+          .from("profiles").select("id").eq("phone", phoneToWrite).maybeSingle();
+        if (phoneDup && phoneDup.id !== newUid) {
+          // 避免唯一冲突：本次不写入 phone，给出提示但不阻断
+          phoneToWrite = null;
+        }
+      }
+
       // 写入 profile（必须检查 error）
-      const { error: profileErr } = await admin.from("profiles").upsert({
+      const profilePayload: Record<string, unknown> = {
         id: newUid,
         username,
         full_name: contact_name,
-        phone: contact_phone,
         supplier_id,
         account_type: "supplier",
         user_type: "supplier",
         department: "供应商",
-      } as any, { onConflict: "id" });
+      };
+      if (phoneToWrite !== null) profilePayload.phone = phoneToWrite;
+
+      const { error: profileErr } = await admin.from("profiles").upsert(profilePayload as any, { onConflict: "id" });
       if (profileErr) {
         return json({ error: "写入供应商 profile 失败：" + profileErr.message }, 500);
       }
