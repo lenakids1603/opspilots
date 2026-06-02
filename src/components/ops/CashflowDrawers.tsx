@@ -10,7 +10,7 @@ import type {
   BankAccount, BusinessEntity, CashTransaction, CashTxCategory,
   CashDirection, Shop,
 } from "@/lib/finance";
-import { formatDateCN, todayCN, beijingDayRangeToUTC } from "@/lib/datetime";
+import { formatDateCN, todayCN, beijingDayRangeToUTC, beijingYMD } from "@/lib/datetime";
 
 type SupplierLite = { id: string; name: string };
 
@@ -115,7 +115,7 @@ export function CashflowDrawer({
       setEntityId(initial.entity_id);
       setBankId(initial.bank_account_id);
       setAmount(String(initial.amount));
-      setOccurredAt(initial.occurred_at.slice(0, 10));
+      setOccurredAt(beijingYMD(initial.occurred_at));
       setCategoryId(initial.category_id ?? "");
       setShopId(initial.shop_id ?? "");
       setSupplierId(initial.supplier_id ?? "");
