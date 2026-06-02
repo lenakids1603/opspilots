@@ -182,14 +182,16 @@ interface PendingItem {
   po_status: string;
   po_date: string | null;
 }
-// 拉取所有 unreceived>0 且 delivery_date <= 今天+7 的明细（涵盖未来 7 天 + 已延期）
+// 拉取 unreceived>0 且 delivery_date 在 [今天-5, 今天+7] 区间内的明细
 function usePendingItemsRaw() {
   return useQuery({
-    queryKey: ["dash_pending_raw_v2"],
+    queryKey: ["dash_pending_raw_v3"],
     queryFn: async (): Promise<PendingItem[]> => {
       const todayYmd = beijingYMD(new Date());
       const today = new Date(todayYmd + "T00:00:00+08:00");
+      const start = new Date(today); start.setDate(start.getDate() - 5);
       const end = new Date(today); end.setDate(end.getDate() + 7);
+      const gte = beijingDayRangeToUTC(beijingYMD(start))!.gte;
       const lte = beijingDayRangeToUTC(beijingYMD(end))!.lte;
       const { data, error } = await supabase.from("purchase_order_items")
         .select(`
@@ -199,6 +201,7 @@ function usePendingItemsRaw() {
         `)
         .gt("unreceived_qty", 0)
         .not("delivery_date", "is", null)
+        .gte("delivery_date", gte)
         .lte("delivery_date", lte)
         .not("purchase_orders.status", "in", EXCLUDED_IN)
         .limit(10000);
