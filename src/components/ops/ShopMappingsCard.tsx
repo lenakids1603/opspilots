@@ -268,31 +268,35 @@ export function ShopMappingsCard() {
         {/* 基础统计 */}
         <div className="grid grid-cols-4 gap-4 text-sm">
           <Stat label="聚水潭店铺总数" value={quality.total} />
-          <Stat label="已绑定" value={quality.mapped} tone="ok" />
-          <Stat label="未绑定" value={quality.unmapped} tone={quality.unmapped ? "warn" : undefined} />
+          <Stat label="已映射" value={quality.mapped} tone="ok" />
           <Stat label="已忽略" value={quality.ignored} />
+          <Stat label="待处理" value={quality.pending} tone={quality.pending ? "warn" : undefined} />
         </div>
 
         {/* 质量检查 */}
         <div className="grid grid-cols-4 gap-4 text-sm pt-2 border-t">
-          <Stat label="绑定完整率" value={`${quality.completeness}%`} tone={quality.completeness === 100 ? "ok" : "warn"} />
-          <Stat label="无主体绑定" value={quality.noEntity} tone={quality.noEntity ? "warn" : undefined} />
-          <Stat label="无平台绑定" value={quality.noPlatform} tone={quality.noPlatform ? "warn" : undefined} />
+          <Stat label="映射处理率" value={`${quality.processedRate}%`} tone={quality.processedRate === 100 ? "ok" : "warn"} />
+          <Stat label="无主体绑定（已映射）" value={quality.noEntity} tone={quality.noEntity ? "warn" : undefined} />
+          <Stat label="无平台绑定（已映射）" value={quality.noPlatform} tone={quality.noPlatform ? "warn" : undefined} />
           <Stat label="疑似重复绑定" value={quality.dupCount} tone={quality.dupCount ? "danger" : undefined} />
         </div>
 
-        {quality.needsAttention && (
+        {quality.needsAttention ? (
           <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
-              店铺映射尚未完成治理。建议在解决以下问题前不要开启销售与退款同步:
+              仍有店铺未处理时，正式销售汇总受限。已忽略的历史店铺不会阻塞同步。请处理以下风险:
               <span className="ml-1">
-                {quality.unmapped > 0 && `未绑定 ${quality.unmapped} 个;`}
-                {quality.noEntity > 0 && ` 无主体 ${quality.noEntity} 个;`}
-                {quality.noPlatform > 0 && ` 无平台 ${quality.noPlatform} 个;`}
+                {quality.pending > 0 && `待处理 ${quality.pending} 个;`}
+                {quality.noEntity > 0 && ` 已映射但无主体 ${quality.noEntity} 个;`}
+                {quality.noPlatform > 0 && ` 已映射但无平台 ${quality.noPlatform} 个;`}
                 {quality.dupCount > 0 && ` 疑似重复绑定 ${quality.dupCount} 个;`}
               </span>
             </div>
+          </div>
+        ) : (
+          <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+            店铺映射处理完成。已忽略店铺不参与正式经营统计。
           </div>
         )}
       </CardContent>
