@@ -48,8 +48,9 @@ type AuditLog = {
 };
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  mapped:   { label: "已绑定", cls: "bg-emerald-100 text-emerald-700" },
-  unmapped: { label: "未绑定", cls: "bg-amber-100 text-amber-700" },
+  mapped:   { label: "已映射", cls: "bg-emerald-100 text-emerald-700" },
+  unmapped: { label: "待处理", cls: "bg-amber-100 text-amber-700" },
+  pending:  { label: "待处理", cls: "bg-amber-100 text-amber-700" },
   ignored:  { label: "已忽略", cls: "bg-muted text-muted-foreground" },
 };
 
