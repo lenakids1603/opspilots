@@ -436,7 +436,7 @@ function buildJstTimeWindows(from: Date, to: Date): Array<readonly [Date, Date]>
 // 限流:聚水潭 5次/秒、100次/分钟。保守 ~4 req/s
 const RATE_DELAY_MS = 260;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const STALE_RUNNING_MS = 10 * 60_000;
+const STALE_RUNNING_MS = 5 * 60_000;
 const SEGMENT_TIMEOUT_MS = 4 * 60_000;
 const MAX_PAGE_NO = 200;
 
