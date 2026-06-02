@@ -141,7 +141,7 @@ export function SalesRefundPrecheckCard() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: "emerald" | "rose" }) {
+function Metric({ label, value, tone }: { label: string; value: number | string; tone?: "emerald" | "rose" }) {
   const cls = tone === "rose" ? "text-rose-600" : tone === "emerald" ? "text-emerald-600" : "";
   return (
     <div>
