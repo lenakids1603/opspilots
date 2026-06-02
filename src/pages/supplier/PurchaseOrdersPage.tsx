@@ -83,13 +83,21 @@ function fmtMoney(n?: number | null) {
   if (n == null) return "-";
   return "¥" + Number(n).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+// 统一使用浏览器本地时区（中国用户=北京时间）显示日期，
+// 避免与后台采购单管理页用 UTC 字符串截断导致日期错位一天。
+// 例如 po_date=2026-05-30T17:59:48Z 在后台显示 2026/5/31，
+// 供应商门户也必须显示 2026/5/31，否则用户会误以为"看不到 5/31 的采购单"。
 function fmtDate(s?: string | null) {
   if (!s) return "-";
-  return s.slice(0, 10);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s.slice(0, 10);
+  return d.toLocaleDateString("zh-CN");
 }
 function fmtDateTime(s?: string | null) {
   if (!s) return "-";
-  return s.replace("T", " ").slice(0, 16);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s.replace("T", " ").slice(0, 16);
+  return d.toLocaleString("zh-CN", { hour12: false });
 }
 function StatusBadge({ s, label }: { s: WarehouseStatus | string; label?: string }) {
   const cfg: Record<string, { label: string; cls: string }> = {
