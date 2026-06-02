@@ -24,6 +24,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
   AlertTriangle, RefreshCw, ChevronDown, FileText, Boxes, Package,
   Warehouse, LineChart, Truck, Wrench, Search, Clock, Info, Stethoscope,
