@@ -853,8 +853,9 @@ export default function JstDataIntegrationPage() {
                   onClick={() => purchaseSyncMut.mutate({ scope: "purchase_orders", days: 30, label: "最近 30 天采购单" })}>最近 30 天</Button>
                 <Badge variant="default" className="ml-1">已接入</Badge>
               </div>
+              {renderScopeStats(poLatest, "采购单")}
               <div className="text-xs text-muted-foreground">
-                从聚水潭同步采购单数据，用于采购跟踪、供应商下单记录、采购金额统计。日志类型：<code>purchase_orders</code>。
+                从聚水潭同步采购单数据，用于采购跟踪、供应商下单记录、采购金额统计。日志类型：<code>purchase_orders</code>。Edge Function 已按 scope 区分；本按钮仅触发采购单同步，不会附带同步入库单。
               </div>
             </TabsContent>
 
