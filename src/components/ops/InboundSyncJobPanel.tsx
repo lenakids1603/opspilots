@@ -210,15 +210,16 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
           <div className="rounded border p-3 space-y-2 text-xs bg-muted/30">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={STATUS_COLOR[j.status] ?? "bg-slate-100 text-slate-700"}>{j.status}</Badge>
+              {isRunningStale && <Badge variant="destructive">无心跳，可继续</Badge>}
               <span className="font-mono text-muted-foreground">job {String(j.id).slice(0, 8)}…</span>
               <Badge variant="outline">{j.requested_range || "custom"}</Badge>
               <span className="text-muted-foreground">
-                窗口 {(j.current_window_index ?? 0) + 1}/{j.total_windows || 1} · 当前页 {j.current_page_index || j.next_page_index || 0} · 下一页 {j.next_page_index ?? "-"} · page_size {j.page_size}
+                窗口 {currentWindowNumber}/{totalWindows} · 当前页 {j.current_page_index || j.next_page_index || 0} · 下一页 {j.next_page_index ?? "-"} · page_size {j.page_size}
               </span>
               <div className="flex-1" />
-              {(j.status === "partial" || j.status === "stalled" || (j.status === "failed" && j.has_next)) && (
-                <Button size="sm" variant="outline" onClick={() => tickMut.mutate(j.id)} disabled={tickMut.isPending}>
-                  <PlayCircle className="w-4 h-4 mr-1" />继续同步
+              {isResumable && (
+                <Button size="sm" variant="default" onClick={() => requestTick(j.id)} disabled={tickMut.isPending || isTickingRef.current}>
+                  <PlayCircle className="w-4 h-4 mr-1" />{tickMut.isPending || isTickingRef.current ? "续跑中..." : "继续同步"}
                 </Button>
               )}
               {["pending", "running", "partial", "stalled"].includes(j.status) && (
@@ -227,6 +228,14 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
                 </Button>
               )}
               <Button size="sm" variant="ghost" onClick={() => setJobId(null)}>关闭</Button>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>窗口进度 {currentWindowNumber}/{totalWindows}</span>
+                <span>{progressValue}%</span>
+              </div>
+              <Progress value={progressValue} className="h-2" />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-muted-foreground">
@@ -250,6 +259,9 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
             )}
             {j.error_detail && (
               <div className="text-rose-600 whitespace-pre-wrap break-all">error_detail：{j.error_detail}</div>
+            )}
+            {tickError && (
+              <div className="text-rose-600 whitespace-pre-wrap break-all">tick_error：{tickError}</div>
             )}
           </div>
         )}
