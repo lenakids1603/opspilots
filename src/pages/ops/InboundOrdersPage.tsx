@@ -601,6 +601,7 @@ export default function InboundOrdersPage() {
                   <div><span className="text-muted-foreground">JST 修改时间：</span>{formatDateTimeCN(detailRow.jst_modified_at)}</div>
                   <div><span className="text-muted-foreground">创建时间：</span>{formatDateTimeCN(detailRow.created_at)}</div>
                   <div><span className="text-muted-foreground">同步时间：</span>{formatDateTimeCN(detailRow.updated_at)}</div>
+                  <div><span className="text-muted-foreground">更新时间：</span>{formatDateTimeCN(detailRow.updated_at)}</div>
                 </div>
               </section>
 
