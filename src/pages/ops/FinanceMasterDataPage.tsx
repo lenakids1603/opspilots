@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { todayCN } from "@/lib/datetime";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -304,7 +305,7 @@ function EntitiesTab() {
         状态: r.status === "active" ? "启用" : "停用", 备注: r.remark,
       };
     });
-    exportRowsToXlsx(`经营主体_${new Date().toISOString().slice(0, 10)}.xlsx`, "经营主体", out);
+    exportRowsToXlsx(`经营主体_${todayCN()}.xlsx`, "经营主体", out);
     toast({ title: "已导出" });
   };
 
@@ -478,7 +479,7 @@ function BanksTab() {
       状态: r.status === "active" ? "启用" : "停用",
       备注: r.remark,
     }));
-    exportRowsToXlsx(`银行账户_${new Date().toISOString().slice(0, 10)}.xlsx`, "银行账户", out);
+    exportRowsToXlsx(`银行账户_${todayCN()}.xlsx`, "银行账户", out);
     toast({ title: "已导出" });
   };
 
@@ -666,7 +667,7 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
       店铺状态: r.shop_status_raw ?? "",
       最后同步时间: r.last_synced_at ? new Date(r.last_synced_at).toLocaleString("zh-CN") : "",
     }));
-    exportRowsToXlsx(`店铺_${new Date().toISOString().slice(0, 10)}.xlsx`, "店铺", out);
+    exportRowsToXlsx(`店铺_${todayCN()}.xlsx`, "店铺", out);
     toast({ title: "已导出" });
   };
 
@@ -921,7 +922,7 @@ function ShopBankBindingsDrawer({
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<AnyRow>({
     bank_account_id: "", binding_type: "collection", is_default: false,
-    effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "",
+    effective_from: todayCN(), effective_to: "", remark: "",
   });
 
   const reload = useCallback(async () => {
@@ -945,7 +946,7 @@ function ShopBankBindingsDrawer({
       bank_account_id: form.bank_account_id,
       binding_type: form.binding_type,
       is_default: !!form.is_default,
-      effective_from: form.effective_from || new Date().toISOString().slice(0, 10),
+      effective_from: form.effective_from || todayCN(),
       effective_to: form.effective_to || null,
       status: "active",
       remark: form.remark || "",
@@ -962,7 +963,7 @@ function ShopBankBindingsDrawer({
     toast({ title: "已添加绑定" });
     setAdding(false);
     setForm({ bank_account_id: "", binding_type: "collection", is_default: false,
-      effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "" });
+      effective_from: todayCN(), effective_to: "", remark: "" });
     await reload();
     onSaved();
   };
@@ -1155,7 +1156,7 @@ function CategoriesTab() {
       方向: r.direction === "in" ? "收入" : r.direction === "out" ? "支出" : "内部转账",
       排序: r.sort_order, 状态: r.status === "active" ? "启用" : "停用", 备注: r.remark,
     }));
-    exportRowsToXlsx(`收支分类_${new Date().toISOString().slice(0, 10)}.xlsx`, "收支分类", out);
+    exportRowsToXlsx(`收支分类_${todayCN()}.xlsx`, "收支分类", out);
     toast({ title: "已导出" });
   };
 

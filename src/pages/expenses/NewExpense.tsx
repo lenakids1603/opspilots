@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { todayCN } from "@/lib/datetime";
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,7 +20,7 @@ export default function NewExpense() {
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
-    title: '', merchant: '', amount: '', expense_date: new Date().toISOString().slice(0, 10),
+    title: '', merchant: '', amount: '', expense_date: todayCN(),
     category_id: '', cost_center: '', description: '',
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);

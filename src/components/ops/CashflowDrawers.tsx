@@ -77,7 +77,7 @@ export function CashflowDrawer({
   const [entityId, setEntityId] = useState<string>("");
   const [bankId, setBankId] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
-  const [occurredAt, setOccurredAt] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [occurredAt, setOccurredAt] = useState<string>(() => todayCN());
   const [categoryId, setCategoryId] = useState<string>("");
   const [shopId, setShopId] = useState<string>("");
   const [supplierId, setSupplierId] = useState<string>("");
@@ -128,7 +128,7 @@ export function CashflowDrawer({
       setAttachmentPath(initial.attachment_path);
     } else {
       setDir("out"); setEntityId(entities[0]?.id ?? ""); setBankId("");
-      setAmount(""); setOccurredAt(new Date().toISOString().slice(0, 10));
+      setAmount(""); setOccurredAt(todayCN());
       setCategoryId(""); setShopId(""); setSupplierId("");
       setCounterparty(""); setCounterpartyAccount(""); setCounterpartyBank("");
       setSerialNo(""); setSummary(""); setRemark(""); setAttachmentPath(null);
