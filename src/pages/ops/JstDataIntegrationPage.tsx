@@ -796,20 +796,27 @@ export default function JstDataIntegrationPage() {
               {/* —— 采购与入库同步 —— */}
               <TabsContent value="purchase" className="m-0">
                 <div className="px-5 pt-4 pb-3 border-b border-border flex flex-wrap items-center gap-2">
-                  <Button size="sm" disabled title="采购与入库真实同步暂未接入" onClick={() => notWired("同步采购单")}>
-                    <ShoppingCart className="w-3.5 h-3.5 mr-1" /> 同步采购单
+                  <Button size="sm" disabled={purchaseSyncMut.isPending}
+                    onClick={() => purchaseSyncMut.mutate({ label: "同步采购单（增量）" })}>
+                    <ShoppingCart className="w-3.5 h-3.5 mr-1" />
+                    {purchaseSyncMut.isPending ? "同步中..." : "同步采购单"}
                   </Button>
-                  <Button size="sm" variant="outline" disabled title="采购与入库真实同步暂未接入" onClick={() => notWired("同步采购入库单")}>
+                  <Button size="sm" variant="outline" disabled={purchaseSyncMut.isPending}
+                    onClick={() => purchaseSyncMut.mutate({ label: "同步采购入库单（增量）" })}>
                     <PackageCheck className="w-3.5 h-3.5 mr-1" /> 同步采购入库单
                   </Button>
-                  <Button size="sm" variant="outline" disabled title="采购与入库真实同步暂未接入" onClick={() => notWired("同步最近 7 天采购与入库")}>
+                  <Button size="sm" variant="outline" disabled={purchaseSyncMut.isPending}
+                    onClick={() => purchaseSyncMut.mutate({ days: 7, label: "最近 7 天采购与入库" })}>
                     同步最近 7 天采购与入库
                   </Button>
-                  <Button size="sm" variant="outline" disabled title="采购与入库真实同步暂未接入" onClick={() => notWired("同步最近 30 天采购与入库")}>
+                  <Button size="sm" variant="outline" disabled={purchaseSyncMut.isPending}
+                    onClick={() => purchaseSyncMut.mutate({ days: 30, label: "最近 30 天采购与入库" })}>
                     同步最近 30 天采购与入库
                   </Button>
-                  <Badge variant="secondary" className="bg-muted text-muted-foreground ml-1">暂未接入</Badge>
-                  <span className="text-xs text-muted-foreground ml-2">采购与入库真实同步还未实现，按钮已禁用，不会写入运行日志。</span>
+                  <Badge variant="default" className="ml-1">已接入</Badge>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    采购单与采购入库单由同一个 Edge Function 同时拉取，写入 purchase_orders / purchase_receipts，日志在 jst_sync_logs。
+                  </span>
                 </div>
                 <Table>
                   <TableHeader>
