@@ -339,8 +339,11 @@ export default function InboundOrdersPage() {
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
 
+  const [sortKey, setSortKey] = useState<InboundSortKey>("io_date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const statsQ = useStats();
-  const listQ = useInboundList(filters, page);
+  const listQ = useInboundList(filters, page, sortKey, sortDir);
   const itemsQ = useReceiptItems(detailId);
   const compareQ = usePoCompare(detailRow?.purchase_order_id ?? null, detailId);
   const diagQ = useQuery({
@@ -351,7 +354,18 @@ export default function InboundOrdersPage() {
   const diag = useDiagnostics();
 
   const onSearch = () => { setPage(0); setFilters(draft); };
-  const onReset = () => { const d = defaultFilters(); setDraft(d); setFilters(d); setPage(0); };
+  const onReset = () => {
+    const d = defaultFilters();
+    setDraft(d); setFilters(d); setPage(0);
+    setSortKey("io_date"); setSortDir("desc");
+  };
+
+  const onSort = (k: InboundSortKey) => {
+    // 第一次点击 → 降序；第二次 → 升序；第三次 → 恢复默认 io_date desc
+    if (sortKey !== k) { setSortKey(k); setSortDir("desc"); setPage(0); return; }
+    if (sortDir === "desc") { setSortDir("asc"); setPage(0); return; }
+    setSortKey("io_date"); setSortDir("desc"); setPage(0);
+  };
 
   const applyQuickRange = (kind: "today" | "7d" | "30d" | "month" | "all") => {
     const end = todayCN();
