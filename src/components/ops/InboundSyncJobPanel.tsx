@@ -61,7 +61,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
   });
   useEffect(() => {
     const j: any = lastJobQ.data;
-    if (!jobId && j && ["pending", "running", "partial", "stalled"].includes(j.status)) {
+    if (!jobId && j && ["pending", "running", "partial", "waiting_next_tick", "stalled", "failed"].includes(j.status)) {
       setJobId(j.id);
     }
   }, [lastJobQ.data, jobId]);
@@ -223,7 +223,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
                   <PlayCircle className="w-4 h-4 mr-1" />{tickMut.isPending || isTickingRef.current ? "续跑中..." : "继续同步"}
                 </Button>
               )}
-              {["pending", "running", "partial", "stalled"].includes(j.status) && (
+              {["pending", "running", "partial", "waiting_next_tick", "stalled"].includes(j.status) && (
                 <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(j.id)}>
                   <XCircle className="w-4 h-4 mr-1" />取消任务
                 </Button>
