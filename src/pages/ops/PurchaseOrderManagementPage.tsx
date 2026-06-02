@@ -538,7 +538,7 @@ export default function PurchaseOrderManagementPage() {
                     </TableCell></TableRow>
                   ) : styleQ.data!.rows.map((s: any) => (
                     <TableRow key={s.style_no}>
-                      <TableCell className="text-xs">{fmtDate(s.latest_po_date)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{fmtDateTimeMin(s.latest_po_date)}</TableCell>
                       <TableCell className="font-mono text-xs">{s.style_no}</TableCell>
                       <TableCell>{s.product_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={s.suppliers}>{s.suppliers}</TableCell>
