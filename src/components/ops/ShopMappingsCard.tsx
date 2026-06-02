@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Store, Link2, AlertTriangle, History } from "lucide-react";
+import { Store, Link2, AlertTriangle, History, RefreshCw } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -150,10 +150,21 @@ export function ShopMappingsCard() {
               <Badge variant="secondary" className="bg-amber-100 text-amber-700">需处理</Badge>
             )}
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline"><Link2 className="w-4 h-4 mr-1.5" /> 管理映射</Button>
-            </DialogTrigger>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={resyncMut.isPending}
+              onClick={() => resyncMut.mutate()}
+              title="根据财务店铺主表中的聚水潭店铺 ID,自动回填映射、主体、平台"
+            >
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${resyncMut.isPending ? "animate-spin" : ""}`} />
+              根据财务店铺自动匹配
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline"><Link2 className="w-4 h-4 mr-1.5" /> 管理映射</Button>
+              </DialogTrigger>
             <DialogContent className="max-w-6xl">
               <DialogHeader>
                 <DialogTitle>聚水潭店铺映射</DialogTitle>
