@@ -418,6 +418,38 @@ export default function JstDataIntegrationPage() {
     };
   }), [purchaseLogs]);
 
+  // 采购单 / 入库单各自的最近一次同步统计（按 sync_type 分组）
+  const poLatest = useMemo(
+    () => purchaseLogs.find((p: any) => p.sync_type === "purchase_orders"),
+    [purchaseLogs],
+  );
+  const inboundLatest = useMemo(
+    () => purchaseLogs.find((p: any) =>
+      p.sync_type === "purchase_inbound_orders" ||
+      p.sync_type === "purchase_receipts" ||
+      p.sync_type === "purchase_in",
+    ),
+    [purchaseLogs],
+  );
+  const renderScopeStats = (log: any, unit: string) => {
+    if (!log) return (
+      <div className="text-xs text-muted-foreground border border-dashed border-border rounded-md p-3">
+        暂无同步记录
+      </div>
+    );
+    const fetched = (log.fetched_orders_count ?? 0) + (log.fetched_items_count ?? 0) + (log.fetched_receipts_count ?? 0);
+    const failed = log.status === "error" ? 1 : 0;
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs border border-border rounded-md p-3 bg-muted/30">
+        <div><div className="text-muted-foreground">本次{unit}数量</div><div className="font-mono text-sm">{fetched}</div></div>
+        <div><div className="text-muted-foreground">新增/抓取</div><div className="font-mono text-sm">{log.fetched_orders_count ?? 0}</div></div>
+        <div><div className="text-muted-foreground">明细数量</div><div className="font-mono text-sm">{log.fetched_items_count ?? log.fetched_receipts_count ?? 0}</div></div>
+        <div><div className="text-muted-foreground">失败</div><div className="font-mono text-sm">{failed}</div></div>
+        <div><div className="text-muted-foreground">最近同步</div><div className="font-mono text-sm">{fmtTime(log.started_at)}</div></div>
+      </div>
+    );
+  };
+
   const moduleByKey = (k: string) => modules.find((m) => m.module_key === k);
   const baseMod = moduleByKey("base_archive");
 
@@ -821,8 +853,9 @@ export default function JstDataIntegrationPage() {
                   onClick={() => purchaseSyncMut.mutate({ scope: "purchase_orders", days: 30, label: "最近 30 天采购单" })}>最近 30 天</Button>
                 <Badge variant="default" className="ml-1">已接入</Badge>
               </div>
+              {renderScopeStats(poLatest, "采购单")}
               <div className="text-xs text-muted-foreground">
-                从聚水潭同步采购单数据，用于采购跟踪、供应商下单记录、采购金额统计。日志类型：<code>purchase_orders</code>。
+                从聚水潭同步采购单数据，用于采购跟踪、供应商下单记录、采购金额统计。日志类型：<code>purchase_orders</code>。Edge Function 已按 scope 区分；本按钮仅触发采购单同步，不会附带同步入库单。
               </div>
             </TabsContent>
 
@@ -843,9 +876,10 @@ export default function JstDataIntegrationPage() {
                 </Button>
                 <Badge variant="default" className="ml-1">已接入</Badge>
               </div>
+              {renderScopeStats(inboundLatest, "入库单")}
               <div className="text-xs text-muted-foreground space-y-1">
                 <div>从聚水潭同步采购入库单 / 入库记录，用于仓库到货、实际入库数量、供应商应付金额核对。</div>
-                <div>入库单同步与采购单同步已拆分，入库数据主要用于到货核对和供应商应付核算。日志类型：<code>purchase_inbound_orders</code>。</div>
+                <div>入库单同步与采购单同步已拆分，入库数据主要用于到货核对和供应商应付核算。日志类型：<code>purchase_inbound_orders</code>。本按钮仅触发入库单同步，不会附带同步采购单。</div>
                 <div className="text-muted-foreground/80">入库差异校验：用于后续对比采购数量、仓库实际入库数量、供应商送货数量。</div>
               </div>
             </TabsContent>
