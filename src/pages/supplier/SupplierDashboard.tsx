@@ -342,12 +342,12 @@ function Timeline({
 
         return (
           <div key={d.ymd} className="flex flex-col items-stretch flex-1 min-w-0">
-            <div className="h-[88px] px-0.5 flex flex-col justify-end items-center gap-0.5">
+            <div className="min-h-[120px] px-1 pb-1.5 flex flex-col justify-end items-center gap-1">
               {visible.map((s) => (
                 <div
                   key={s.style_no}
-                  className={`text-[10px] font-mono tabular-nums leading-tight truncate w-full text-center ${z.soft}`}
-                  title={`${s.style_no} · ${s.qty}件`}
+                  className={`text-[13px] font-mono font-semibold tabular-nums leading-tight truncate w-full text-center ${z.soft}`}
+                  title={`${s.style_no} · ${fmtInt(s.qty)}件`}
                 >
                   {s.style_no}
                 </div>
@@ -356,7 +356,8 @@ function Timeline({
                 <button
                   type="button"
                   onClick={() => onShowAll(d.ymd, styles)}
-                  className="text-[9px] text-muted-foreground leading-tight hover:underline"
+                  title={styles.slice(MAX_STYLES).map(s => `${s.style_no} · ${fmtInt(s.qty)}件`).join("\n")}
+                  className="text-[11px] font-medium text-muted-foreground leading-tight hover:underline hover:text-foreground"
                 >
                   +{extra} 个款号
                 </button>
