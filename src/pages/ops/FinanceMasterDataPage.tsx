@@ -575,7 +575,8 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
     if (ent) qry = qry.eq("entity_id", ent);
     if (stf) qry = qry.eq("status", stf);
     if (bindState === "bound") qry = qry.not("entity_id", "is", null);
-    else if (bindState === "unbound") qry = qry.is("entity_id", null);
+    else if (bindState === "unbound" || bindState === "missing_entity") qry = qry.is("entity_id", null);
+    else if (bindState === "missing_platform") qry = qry.is("platform_id", null);
     const from = (page - 1) * pageSize;
     const { data, count, error } = await qry.range(from, from + pageSize - 1);
     setLoading(false);
