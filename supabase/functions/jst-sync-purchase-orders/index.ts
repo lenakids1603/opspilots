@@ -606,6 +606,12 @@ async function syncPurchaseOrdersSegment(
         if (!externalPoId) continue;
         try {
           const supplierId = await ensureSupplier(po.supplier_id ?? po.supplierId, po.seller ?? po.supplier_name ?? "");
+          const itemListEarly: any[] = po.items ?? [];
+          let maxDeliveryIso: string | null = null;
+          for (const it of itemListEarly) {
+            const d = parseJstBeijingDateTime(it.delivery_date);
+            if (d && (!maxDeliveryIso || d > maxDeliveryIso)) maxDeliveryIso = d;
+          }
           const row = {
             external_po_id: externalPoId,
             supplier_id: supplierId,
@@ -614,6 +620,7 @@ async function syncPurchaseOrdersSegment(
             po_date: parseJstBeijingDateTime(po.po_date),
             status: po.status ?? "", status_label: po.status ?? "",
             raw_receive_status: po.receive_status ?? "",
+            expected_delivery_date: maxDeliveryIso,
             remark: po.remark ?? "",
             jst_modified_at: parseJstBeijingDateTime(po.modified),
             raw: po,
