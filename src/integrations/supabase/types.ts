@@ -879,6 +879,206 @@ export type Database = {
         }
         Relationships: []
       }
+      jst_sync_jobs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          current_page_index: number
+          current_window_from: string | null
+          current_window_index: number
+          current_window_to: string | null
+          ended_at: string | null
+          error_detail: string
+          has_next: boolean
+          heartbeat_at: string | null
+          id: string
+          last_success_at: string | null
+          max_pages_per_run: number
+          max_window_days: number
+          message: string
+          metadata: Json
+          next_page_index: number
+          page_size: number
+          parent_log_id: string | null
+          requested_from: string
+          requested_range: string
+          requested_to: string
+          started_at: string
+          status: string
+          sync_type: string
+          time_budget_seconds: number
+          total_api_count: number
+          total_failed: number
+          total_item_upserted: number
+          total_order_upserted: number
+          total_windows: number
+          trigger_type: string
+          updated_at: string
+          windows: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          current_page_index?: number
+          current_window_from?: string | null
+          current_window_index?: number
+          current_window_to?: string | null
+          ended_at?: string | null
+          error_detail?: string
+          has_next?: boolean
+          heartbeat_at?: string | null
+          id?: string
+          last_success_at?: string | null
+          max_pages_per_run?: number
+          max_window_days?: number
+          message?: string
+          metadata?: Json
+          next_page_index?: number
+          page_size?: number
+          parent_log_id?: string | null
+          requested_from: string
+          requested_range?: string
+          requested_to: string
+          started_at?: string
+          status?: string
+          sync_type: string
+          time_budget_seconds?: number
+          total_api_count?: number
+          total_failed?: number
+          total_item_upserted?: number
+          total_order_upserted?: number
+          total_windows?: number
+          trigger_type?: string
+          updated_at?: string
+          windows?: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          current_page_index?: number
+          current_window_from?: string | null
+          current_window_index?: number
+          current_window_to?: string | null
+          ended_at?: string | null
+          error_detail?: string
+          has_next?: boolean
+          heartbeat_at?: string | null
+          id?: string
+          last_success_at?: string | null
+          max_pages_per_run?: number
+          max_window_days?: number
+          message?: string
+          metadata?: Json
+          next_page_index?: number
+          page_size?: number
+          parent_log_id?: string | null
+          requested_from?: string
+          requested_range?: string
+          requested_to?: string
+          started_at?: string
+          status?: string
+          sync_type?: string
+          time_budget_seconds?: number
+          total_api_count?: number
+          total_failed?: number
+          total_item_upserted?: number
+          total_order_upserted?: number
+          total_windows?: number
+          trigger_type?: string
+          updated_at?: string
+          windows?: Json
+        }
+        Relationships: []
+      }
+      jst_sync_log_details: {
+        Row: {
+          api_count: number
+          created_at: string
+          duration_ms: number
+          error_detail: string
+          failed_count: number
+          first_io_date: string | null
+          first_modified_at: string | null
+          has_next: boolean
+          id: string
+          item_upserted: number
+          job_id: string | null
+          last_io_date: string | null
+          last_modified_at: string | null
+          log_id: string | null
+          main_upserted: number
+          page_index: number
+          page_size: number
+          request_body: Json
+          response_code: string | null
+          response_msg: string | null
+          sync_type: string
+          window_from: string | null
+          window_index: number
+          window_to: string | null
+        }
+        Insert: {
+          api_count?: number
+          created_at?: string
+          duration_ms?: number
+          error_detail?: string
+          failed_count?: number
+          first_io_date?: string | null
+          first_modified_at?: string | null
+          has_next?: boolean
+          id?: string
+          item_upserted?: number
+          job_id?: string | null
+          last_io_date?: string | null
+          last_modified_at?: string | null
+          log_id?: string | null
+          main_upserted?: number
+          page_index: number
+          page_size?: number
+          request_body?: Json
+          response_code?: string | null
+          response_msg?: string | null
+          sync_type: string
+          window_from?: string | null
+          window_index?: number
+          window_to?: string | null
+        }
+        Update: {
+          api_count?: number
+          created_at?: string
+          duration_ms?: number
+          error_detail?: string
+          failed_count?: number
+          first_io_date?: string | null
+          first_modified_at?: string | null
+          has_next?: boolean
+          id?: string
+          item_upserted?: number
+          job_id?: string | null
+          last_io_date?: string | null
+          last_modified_at?: string | null
+          log_id?: string | null
+          main_upserted?: number
+          page_index?: number
+          page_size?: number
+          request_body?: Json
+          response_code?: string | null
+          response_msg?: string | null
+          sync_type?: string
+          window_from?: string | null
+          window_index?: number
+          window_to?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jst_sync_log_details_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jst_sync_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jst_sync_logs: {
         Row: {
           cursor_from: string | null
@@ -888,8 +1088,11 @@ export type Database = {
           fetched_items_count: number | null
           fetched_orders_count: number | null
           fetched_receipts_count: number | null
+          heartbeat_at: string | null
           id: string
+          job_id: string | null
           message: string | null
+          metadata: Json
           started_at: string
           status: string
           sync_type: string
@@ -902,8 +1105,11 @@ export type Database = {
           fetched_items_count?: number | null
           fetched_orders_count?: number | null
           fetched_receipts_count?: number | null
+          heartbeat_at?: string | null
           id?: string
+          job_id?: string | null
           message?: string | null
+          metadata?: Json
           started_at?: string
           status: string
           sync_type: string
@@ -916,8 +1122,11 @@ export type Database = {
           fetched_items_count?: number | null
           fetched_orders_count?: number | null
           fetched_receipts_count?: number | null
+          heartbeat_at?: string | null
           id?: string
+          job_id?: string | null
           message?: string | null
+          metadata?: Json
           started_at?: string
           status?: string
           sync_type?: string
