@@ -384,52 +384,21 @@ export default function InboundOrdersPage() {
           <Button size="sm" onClick={onSearch}><Search className="w-4 h-4 mr-1" />查询</Button>
           <Button size="sm" variant="outline" onClick={onReset}>重置</Button>
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={() => startMut.mutate(1)} disabled={startMut.isPending}>
-            <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />同步最近 1 天
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => startMut.mutate(7)} disabled={startMut.isPending}>同步最近 7 天</Button>
-          <Button size="sm" variant="outline" onClick={() => startMut.mutate(30)} disabled={startMut.isPending}>同步最近 30 天</Button>
           <Button size="sm" variant="outline" onClick={onExport}><Download className="w-4 h-4 mr-1" />导出</Button>
         </div>
-        {jobQ.data && (() => {
-          const j: any = jobQ.data;
-          const pct = j.total_windows > 0 ? Math.round(((j.current_window_index ?? 0) / j.total_windows) * 100) : 0;
-          const color =
-            j.status === "success" ? "bg-emerald-100 text-emerald-700" :
-            j.status === "partial" ? "bg-blue-100 text-blue-700" :
-            j.status === "running" ? "bg-blue-100 text-blue-700" :
-            j.status === "stalled" ? "bg-amber-100 text-amber-700" :
-            j.status === "failed" ? "bg-rose-100 text-rose-700" :
-            "bg-slate-100 text-slate-700";
-          return (
-            <div className="rounded border p-3 mt-2 space-y-1 text-xs bg-muted/30">
-              <div className="flex items-center gap-2">
-                <Badge className={color}>{j.status}</Badge>
-                <span className="font-medium">入库单同步任务</span>
-                <span className="text-muted-foreground">窗口 {(j.current_window_index ?? 0) + 1}/{j.total_windows} · 第 {j.current_page_index || j.next_page_index} 页 · 进度 {pct}%</span>
-                <div className="flex-1" />
-                {(j.status === "partial" || j.status === "stalled") && (
-                  <Button size="sm" variant="outline" onClick={() => tickMut.mutate(j.id)} disabled={tickMut.isPending}>
-                    <PlayCircle className="w-4 h-4 mr-1" />继续同步
-                  </Button>
-                )}
-                {(["pending", "running", "partial", "stalled"].includes(j.status)) && (
-                  <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(j.id)}>
-                    <XCircle className="w-4 h-4 mr-1" />取消
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={() => setJobId(null)}>关闭</Button>
-              </div>
-              <div className="text-muted-foreground">
-                API 累计 {fmtInt(j.total_api_count)} · 主表 upsert {fmtInt(j.total_order_upserted)} · 明细 upsert {fmtInt(j.total_item_upserted)} · 失败 {fmtInt(j.total_failed)}
-              </div>
-              <div className="text-muted-foreground">当前窗口: {formatDateTimeCN(j.current_window_from)} → {formatDateTimeCN(j.current_window_to)}</div>
-              <div className="whitespace-pre-wrap break-all">{j.message}</div>
-              {j.error_detail && <div className="text-rose-600 whitespace-pre-wrap break-all">错误: {j.error_detail}</div>}
-            </div>
-          );
-        })()}
       </CardContent></Card>
+
+      {/* 入库同步任务面板（与数据中心共用同一组件） */}
+      <div className="mb-3">
+        <InboundSyncJobPanel
+          onJobFinished={() => {
+            qc.invalidateQueries({ queryKey: ["inbound_list"] });
+            qc.invalidateQueries({ queryKey: ["inbound_stats"] });
+            qc.invalidateQueries({ queryKey: ["inbound_diag"] });
+          }}
+        />
+      </div>
+
 
 
       {/* 列表 */}
