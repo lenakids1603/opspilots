@@ -865,9 +865,9 @@ export default function JstDataIntegrationPage() {
             <TabsContent value="receipt" className="m-0 p-5 space-y-3">
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={inBusy}
-                  onClick={() => purchaseSyncMut.mutate({ scope: "purchase_inbound_orders", label: "同步采购入库单（增量）" })}>
+                  onClick={() => purchaseSyncMut.mutate({ scope: "purchase_inbound_orders", label: "同步入库单（增量）" })}>
                   <PackageCheck className="w-3.5 h-3.5 mr-1" />
-                  {inBusy ? "同步中..." : "同步采购入库单"}
+                  {inBusy ? "同步中..." : "同步入库单"}
                 </Button>
                 <Button size="sm" variant="outline" disabled={inBusy}
                   onClick={() => purchaseSyncMut.mutate({ scope: "purchase_inbound_orders", days: 7, label: "最近 7 天入库单" })}>最近 7 天</Button>
