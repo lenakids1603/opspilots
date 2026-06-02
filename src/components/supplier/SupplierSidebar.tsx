@@ -58,19 +58,7 @@ export function SupplierSidebar() {
         ))}
       </nav>
 
-      {/* Service footer */}
-      <div className="px-4 py-3 border-t border-white/5 text-[11px] text-white/65 space-y-2">
-        <div>
-          <div className="text-white/90 font-medium mb-1">采购专属服务</div>
-          <div className="flex items-center gap-1.5">
-            <Phone className="w-3 h-3" /> 王小帆: 138-xxxx-5678
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 text-emerald-300/90">
-          <Mail className="w-3 h-3" /> gys@lenakids.com
-        </div>
-        <div className="text-[10px] text-white/40">极速外部供应链端</div>
-      </div>
+      {/* Service footer removed per request */}
 
       <button
         onClick={handleLogout}
