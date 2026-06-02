@@ -174,7 +174,7 @@ export default function CashflowPage() {
                 const sup = r.supplier_id ? supMap.get(r.supplier_id) : null;
                 return (
                   <tr key={r.id} className="border-t hover:bg-muted/30">
-                    <Td className="font-mono text-[12px]">{r.occurred_at.slice(0, 10)}</Td>
+                    <Td className="font-mono text-[12px]">{formatDateCN(r.occurred_at)}</Td>
                     <Td>{ent?.name ?? "-"}</Td>
                     <Td>{acc?.account_name ?? "-"}</Td>
                     <Td><span className={`font-medium ${DIRECTION_COLOR[r.direction]}`}>{DIRECTION_LABEL[r.direction]}</span></Td>
