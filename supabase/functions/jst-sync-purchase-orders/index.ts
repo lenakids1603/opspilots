@@ -34,6 +34,31 @@ const JST_TOKEN = Deno.env.get("JST_TOKEN") ?? "";
 
 const JST_SYNC_START_DATE = Deno.env.get("JST_SYNC_START_DATE") ?? "2026-01-01";
 
+// 聚水潭返回的业务时间(po_date / io_date / modified / delivery_date)是北京时间(无时区后缀)
+// 例如 "2026-06-01 17:39:29" 实际指北京时间,对应 UTC 09:39:29
+// 不能直接 new Date(),否则会按运行环境本地时区(UTC)解析,导致整体偏移 8 小时
+function parseJstBeijingDateTime(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  // 已带时区(Z 或 +/-HH:MM)的,按原样解析
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  // 匹配 YYYY-MM-DD[ T]HH:mm[:ss[.sss]]  或  YYYY-MM-DD
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?)?$/);
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const [, y, mo, da, hh = "0", mm = "0", ss = "0", ms = "0"] = m;
+  // 视为北京时间(UTC+8),减去 8 小时得到 UTC
+  const utcMs = Date.UTC(+y, +mo - 1, +da, +hh - 8, +mm, +ss, +(ms.padEnd(3, "0").slice(0, 3) || 0));
+  const d = new Date(utcMs);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 // ---------- HTTP proxy (Tinyproxy on fixed IP) ----------
 const JST_PROXY_URL = Deno.env.get("JST_PROXY_URL") ?? "";
 const JST_PROXY_USER = Deno.env.get("JST_PROXY_USER") ?? "";
@@ -573,11 +598,11 @@ async function syncPurchaseOrdersSegment(
             supplier_id: supplierId,
             jst_supplier_id: po.supplier_id ? String(po.supplier_id) : null,
             supplier_name: po.seller ?? po.supplier_name ?? "",
-            po_date: po.po_date ? new Date(po.po_date).toISOString() : null,
+            po_date: parseJstBeijingDateTime(po.po_date),
             status: po.status ?? "", status_label: po.status ?? "",
             raw_receive_status: po.receive_status ?? "",
             remark: po.remark ?? "",
-            jst_modified_at: po.modified ? new Date(po.modified).toISOString() : null,
+            jst_modified_at: parseJstBeijingDateTime(po.modified),
             raw: po,
           };
           const { data: upPo, error: upErr } = await admin.from("purchase_orders")
@@ -605,7 +630,7 @@ async function syncPurchaseOrdersSegment(
               color: propMap["颜色"] ?? propMap["color"] ?? "",
               size: propMap["尺码"] ?? propMap["size"] ?? "",
               spec: props, purchase_qty: qty, unit_price: price, amount: qty * price,
-              delivery_date: it.delivery_date ? new Date(it.delivery_date).toISOString() : null,
+              delivery_date: parseJstBeijingDateTime(it.delivery_date),
               item_remark: it.remark ?? "", raw: it,
             };
             const conflict = poiId ? "external_poi_id" : "external_po_id,sku_no,style_no";
@@ -690,9 +715,9 @@ async function syncPurchaseInSegment(
             external_io_id: externalIoId, purchase_order_id: poId, external_po_id: externalPoId,
             jst_supplier_id: io.supplier_id ? String(io.supplier_id) : null,
             supplier_name: io.supplier_name ?? "", warehouse_name: io.warehouse ?? "",
-            io_date: io.io_date ? new Date(io.io_date).toISOString() : null,
+            io_date: parseJstBeijingDateTime(io.io_date),
             status: io.status ?? "",
-            jst_modified_at: io.modified ? new Date(io.modified).toISOString() : null,
+            jst_modified_at: parseJstBeijingDateTime(io.modified),
             remark: io.remark ?? "", raw: io,
           };
           const { data: upRec, error: recErr } = await admin.from("purchase_receipts")
