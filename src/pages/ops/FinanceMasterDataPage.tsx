@@ -391,20 +391,28 @@ function EntitiesTab() {
 
 /* ============================== 银行账户 ============================== */
 
+const USAGE_LABEL: Record<string, string> = {
+  collection: "收款", payment: "付款", ads: "投流",
+  operation_fee: "运营服务费", backup: "备用", other: "其他",
+};
+const ACCOUNT_TYPE_LABEL: Record<string, string> = { corporate: "对公账户", personal: "个人账户" };
+
 function BanksTab() {
   const [rows, setRows] = useState<AnyRow[]>([]);
   const [total, setTotal] = useState(0);
   const [entities, setEntities] = useState<AnyRow[]>([]);
+  const [bindingCounts, setBindingCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<AnyRow | null>(null);
   const [q, setQ] = useState("");
+  const [acctTypeFilter, setAcctTypeFilter] = useState("");
+  const [usageFilter, setUsageFilter] = useState("");
   const [entFilter, setEntFilter] = useState("");
-  const [purposeFilter, setPurposeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  useDebouncedReset([q, entFilter, purposeFilter, statusFilter, pageSize], setPage);
+  useDebouncedReset([q, acctTypeFilter, usageFilter, entFilter, statusFilter, pageSize], setPage);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -415,16 +423,26 @@ function BanksTab() {
       .order("status", { ascending: true })
       .order("created_at", { ascending: false });
     const qq = q.trim();
-    if (qq) qry = qry.or(`account_name.ilike.%${qq}%,bank_name.ilike.%${qq}%,account_no_masked.ilike.%${qq}%`);
-    if (entFilter) qry = qry.eq("entity_id", entFilter);
-    if (purposeFilter) qry = qry.eq("purpose", purposeFilter);
+    if (qq) qry = qry.or(`account_holder_name.ilike.%${qq}%,account_name.ilike.%${qq}%,bank_name.ilike.%${qq}%,account_number.ilike.%${qq}%,account_no_masked.ilike.%${qq}%`);
+    if (acctTypeFilter) qry = qry.eq("account_type", acctTypeFilter);
+    if (usageFilter) qry = qry.eq("usage_type", usageFilter);
+    if (entFilter) qry = qry.or(`owner_entity_id.eq.${entFilter},related_entity_id.eq.${entFilter}`);
     if (statusFilter) qry = qry.eq("status", statusFilter);
     const from = (page - 1) * pageSize;
     const { data, count, error } = await qry.range(from, from + pageSize - 1);
     setLoading(false);
     if (error) { toast({ title: "加载失败", description: error.message, variant: "destructive" }); return; }
     setRows(data ?? []); setTotal(count ?? 0);
-  }, [q, entFilter, purposeFilter, statusFilter, page, pageSize]);
+
+    const ids = (data ?? []).map((r: any) => r.id);
+    if (ids.length) {
+      const { data: bnd } = await supabase.from("shop_bank_account_bindings")
+        .select("bank_account_id").in("bank_account_id", ids).eq("status", "active");
+      const m = new Map<string, number>();
+      (bnd ?? []).forEach((b: any) => m.set(b.bank_account_id, (m.get(b.bank_account_id) ?? 0) + 1));
+      setBindingCounts(m);
+    } else setBindingCounts(new Map());
+  }, [q, acctTypeFilter, usageFilter, entFilter, statusFilter, page, pageSize]);
   useEffect(() => { load(); }, [load]);
 
   const entityMap = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities]);
@@ -439,12 +457,20 @@ function BanksTab() {
   const handleExport = async () => {
     const { data } = await supabase.from("bank_accounts").select("*").is("deleted_at", null);
     const out = (data ?? []).map((r: any) => {
-      const e = entityMap.get(r.entity_id);
+      const owner = entityMap.get(r.owner_entity_id);
+      const related = entityMap.get(r.related_entity_id);
       return {
-        所属主体: e?.name, 主体类型: ENTITY_TYPE_LABEL[e?.entity_type] ?? e?.entity_type,
-        开户银行: r.bank_name, 银行账号: r.account_no_masked, 账户用途: r.purpose,
-        是否默认: r.is_default ? "是" : "否",
-        当前余额: r.current_balance, 状态: r.status === "active" ? "启用" : "停用", 备注: r.remark,
+        开户名: r.account_holder_name || r.account_name || "",
+        账户类型: ACCOUNT_TYPE_LABEL[r.account_type] ?? r.account_type ?? "",
+        开户银行: r.bank_name || "",
+        银行账号: r.account_number || r.account_no_masked || "",
+        账户法定归属主体: owner?.name ?? "",
+        关联主体: related?.name ?? "",
+        关联人: r.related_person_name || "",
+        用途: USAGE_LABEL[r.usage_type] ?? r.usage_type ?? "",
+        当前余额: r.current_balance,
+        状态: r.status === "active" ? "启用" : "停用",
+        备注: r.remark,
       };
     });
     exportRowsToXlsx(`银行账户_${new Date().toISOString().slice(0, 10)}.xlsx`, "银行账户", out);
@@ -452,25 +478,33 @@ function BanksTab() {
   };
 
   const validateDup = async (form: AnyRow, isEdit: boolean, id?: string) => {
-    const acc = String(form.account_no_masked || "").replace(/\s+/g, "");
+    const acc = String(form.account_number || form.account_no_masked || "").replace(/\s+/g, "");
     if (!acc) return null;
-    const { data } = await supabase.from("bank_accounts").select("id,account_no_masked").is("deleted_at", null);
-    const dup = (data ?? []).find((b: any) =>
-      String(b.account_no_masked || "").replace(/\s+/g, "") === acc && (!isEdit || b.id !== id));
+    const { data } = await supabase.from("bank_accounts").select("id,account_number,account_no_masked").is("deleted_at", null);
+    const dup = (data ?? []).find((b: any) => {
+      const v = String(b.account_number || b.account_no_masked || "").replace(/\s+/g, "");
+      return v === acc && (!isEdit || b.id !== id);
+    });
     if (dup) return "该银行账号已存在，请勿重复添加";
     return null;
   };
 
+  const isPersonal = (editing?.account_type ?? "corporate") === "personal";
   const fields: FieldDef[] = [
-    { key: "entity_id", label: "所属主体", type: "select", required: true, options: entities.map(e => ({ value: e.id, label: e.name })) },
-    { key: "account_name", label: "账户名", required: true },
-    { key: "bank_name", label: "开户银行" },
-    { key: "account_no_masked", label: "银行账号", required: true },
-    { key: "purpose", label: "账户用途", type: "select", default: "收款",
-      options: ["收款", "付款", "投流", "备用", "其他"].map(v => ({ value: v, label: v })) },
-    { key: "account_type", label: "账户类型", type: "select", default: "bank",
-      options: [{ value: "bank", label: "银行" }, { value: "alipay", label: "支付宝" }, { value: "wechat", label: "微信" }, { value: "cash", label: "现金" }] },
-    { key: "is_default", label: "默认账户", type: "checkbox", hint: "设为该主体的默认收/付款账户" },
+    { key: "account_type", label: "账户类型", type: "select", required: true, default: "corporate",
+      options: [{ value: "corporate", label: "对公账户" }, { value: "personal", label: "个人账户" }] },
+    { key: "account_holder_name", label: "开户名", required: true, hint: "对公账户填主体名称，个人账户填持卡人姓名" },
+    { key: "bank_name", label: "开户银行", required: true },
+    { key: "account_number", label: "银行账号", required: true },
+    { key: "owner_entity_id", label: isPersonal ? "账户法定归属主体（个人账户可空）" : "账户法定归属主体",
+      type: "select", required: !isPersonal,
+      options: [{ value: "", label: "（不归属任何主体）" }, ...entities.map(e => ({ value: e.id, label: e.name }))] },
+    { key: "related_entity_id", label: "关联主体（可选）", type: "select",
+      options: [{ value: "", label: "（无）" }, ...entities.map(e => ({ value: e.id, label: e.name }))] },
+    { key: "related_person_name", label: "关联人 / 持卡人（可选）" },
+    { key: "usage_type", label: "账户用途", type: "select", required: true, default: "collection",
+      options: Object.entries(USAGE_LABEL).map(([v, l]) => ({ value: v, label: l })) },
+    { key: "is_default", label: "默认账户", type: "checkbox", hint: "标记为该主体默认账户" },
     { key: "currency", label: "币种", default: "CNY" },
     { key: "current_balance", label: "当前余额", type: "number", default: 0 },
     { key: "status", label: "状态", type: "select", default: "active",
@@ -480,13 +514,21 @@ function BanksTab() {
 
   return (
     <Card className="overflow-hidden mt-4">
+      <div className="px-4 py-3 border-b bg-muted/10 text-[12px] text-muted-foreground">
+        银行账户不直接从属于某个店铺。对公账户的开户名通常等于主体名称；个人账户的开户名是持卡人，可关联到主体但不强制归属。账户与店铺通过"绑定关系"维护（一个账户可绑定多个店铺，一个店铺也可绑定多个账户）。
+      </div>
       <FilterRow>
-        <Input placeholder="搜索账户 / 银行 / 账号" value={q} onChange={e => setQ(e.target.value)} className="h-9 w-60" />
-        <select value={entFilter} onChange={e => setEntFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px] max-w-[180px]">
-          <option value="">全部主体</option>{entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        <Input placeholder="搜索开户名 / 银行 / 账号" value={q} onChange={e => setQ(e.target.value)} className="h-9 w-60" />
+        <select value={acctTypeFilter} onChange={e => setAcctTypeFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px]">
+          <option value="">全部账户类型</option>
+          <option value="corporate">对公账户</option>
+          <option value="personal">个人账户</option>
         </select>
-        <select value={purposeFilter} onChange={e => setPurposeFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px]">
-          <option value="">全部用途</option>{["收款", "付款", "投流", "备用", "其他"].map(v => <option key={v} value={v}>{v}</option>)}
+        <select value={usageFilter} onChange={e => setUsageFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px]">
+          <option value="">全部用途</option>{Object.entries(USAGE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select value={entFilter} onChange={e => setEntFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px] max-w-[180px]">
+          <option value="">全部关联主体</option>{entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-9 rounded-md border px-2 text-[13px]">
           <option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option>
@@ -500,24 +542,40 @@ function BanksTab() {
         <table className="w-full text-[12.5px]">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
-              {["所属主体", "开户银行", "银行账号", "用途", "默认", "余额", "状态", "操作"].map(h => <th key={h} className="px-3 py-2.5 font-normal">{h}</th>)}
+              {["开户名", "账户类型", "开户银行", "银行账号", "关联主体", "用途", "绑定店铺数", "当前余额", "状态", "操作"]
+                .map(h => <th key={h} className="px-3 py-2.5 font-normal whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={8}><EmptyHint msg="暂无银行账户" /></td></tr>}
+            {loading && <tr><td colSpan={10} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={10}><EmptyHint msg="暂无银行账户" /></td></tr>}
             {rows.map(r => {
-              const e = entityMap.get(r.entity_id);
+              const owner = entityMap.get(r.owner_entity_id);
+              const related = entityMap.get(r.related_entity_id);
+              const isPer = r.account_type === "personal";
+              const relText = isPer
+                ? (related ? `关联：${related.name}` : "—")
+                : (owner ? owner.name : "—");
+              const cnt = bindingCounts.get(r.id) ?? 0;
               return (
                 <tr key={r.id} className="border-t hover:bg-muted/30">
-                  <td className="px-3 py-2.5"><div className="font-medium">{e?.name || "-"}</div><div className="text-[11px] text-muted-foreground">{ENTITY_TYPE_LABEL[e?.entity_type] ?? ""}</div></td>
-                  <td className="px-3 py-2.5">{r.bank_name || "-"}</td>
-                  <td className="px-3 py-2.5 font-mono text-[12px]">{r.account_no_masked || "-"}</td>
-                  <td className="px-3 py-2.5">{r.purpose || "-"}</td>
-                  <td className="px-3 py-2.5">{r.is_default ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">默认</span> : "-"}</td>
-                  <td className="px-3 py-2.5">{fmtMoney(Number(r.current_balance ?? 0))}</td>
-                  <td className="px-3 py-2.5"><StatusPill active={r.status === "active"} /></td>
                   <td className="px-3 py-2.5">
+                    <div className="font-medium">{r.account_holder_name || r.account_name || "-"}</div>
+                    {r.related_person_name && isPer && <div className="text-[11px] text-muted-foreground">持卡人：{r.related_person_name}</div>}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className={`text-[11px] px-1.5 py-0.5 rounded ${isPer ? "bg-violet-50 text-violet-700" : "bg-sky-50 text-sky-700"}`}>
+                      {ACCOUNT_TYPE_LABEL[r.account_type] ?? r.account_type}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">{r.bank_name || "-"}</td>
+                  <td className="px-3 py-2.5 font-mono text-[12px]">{r.account_number || r.account_no_masked || "-"}</td>
+                  <td className="px-3 py-2.5 text-[12px]">{relText}</td>
+                  <td className="px-3 py-2.5">{USAGE_LABEL[r.usage_type] ?? r.usage_type ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-center">{cnt > 0 ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">{cnt}</span> : <span className="text-muted-foreground">0</span>}</td>
+                  <td className="px-3 py-2.5 font-mono">{fmtMoney(Number(r.current_balance ?? 0))}</td>
+                  <td className="px-3 py-2.5"><StatusPill active={r.status === "active"} /></td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     <button onClick={() => { setEditing(r); setOpen(true); }} className="w-7 h-7 rounded-md hover:bg-muted inline-flex items-center justify-center"><Pencil className="w-3.5 h-3.5" /></button>
                     <button onClick={() => toggleStatus(r)} className="w-7 h-7 rounded-md hover:bg-muted inline-flex items-center justify-center"><Power className="w-3.5 h-3.5" /></button>
                   </td>
@@ -558,12 +616,16 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
   const [bindShop, setBindShop] = useState<AnyRow | null>(null);
   useDebouncedReset([q, pf, ent, stf, bindState, pageSize], setPage);
 
+  const [bindingsByShop, setBindingsByShop] = useState<Map<string, AnyRow[]>>(new Map());
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [accountsShop, setAccountsShop] = useState<AnyRow | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: es }, { data: ps }, { data: bs }] = await Promise.all([
       supabase.from("business_entities").select("id,name,entity_type").is("deleted_at", null).order("name"),
       supabase.from("platforms").select("id,name,code").is("deleted_at", null).order("name"),
-      supabase.from("bank_accounts").select("id,entity_id,bank_name,account_no_masked,purpose,is_default").is("deleted_at", null),
+      supabase.from("bank_accounts").select("id,account_holder_name,account_name,bank_name,account_number,account_no_masked,account_type,usage_type,is_default,owner_entity_id,related_entity_id").is("deleted_at", null),
     ]);
     setEntities(es ?? []); setPlatforms(ps ?? []); setBanks(bs ?? []);
 
@@ -582,17 +644,31 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
     setLoading(false);
     if (error) { toast({ title: "加载失败", description: error.message, variant: "destructive" }); return; }
     setRows(data ?? []); setTotal(count ?? 0);
+
+    const ids = (data ?? []).map((r: any) => r.id);
+    if (ids.length) {
+      const { data: bnd } = await supabase.from("shop_bank_account_bindings")
+        .select("*").in("shop_id", ids).eq("status", "active");
+      const m = new Map<string, AnyRow[]>();
+      (bnd ?? []).forEach((b: any) => {
+        const arr = m.get(b.shop_id) ?? [];
+        arr.push(b); m.set(b.shop_id, arr);
+      });
+      setBindingsByShop(m);
+    } else setBindingsByShop(new Map());
   }, [q, pf, ent, stf, bindState, page, pageSize, sortKey, sortAsc]);
   useEffect(() => { load(); }, [load]);
 
   const entityMap = useMemo(() => new Map(entities.map(e => [e.id, e])), [entities]);
   const platformMap = useMemo(() => new Map(platforms.map(p => [p.id, p])), [platforms]);
+  const bankMap = useMemo(() => new Map(banks.map(b => [b.id, b])), [banks]);
   const banksByEntity = useMemo(() => {
     const m = new Map<string, AnyRow[]>();
     banks.forEach(b => {
-      if (!b.entity_id) return;
-      const arr = m.get(b.entity_id) ?? [];
-      arr.push(b); m.set(b.entity_id, arr);
+      const key = b.owner_entity_id || b.related_entity_id;
+      if (!key) return;
+      const arr = m.get(key) ?? [];
+      arr.push(b); m.set(key, arr);
     });
     return m;
   }, [banks]);
@@ -613,6 +689,7 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
   };
 
   const openBind = (r: AnyRow) => { setBindShop(r); setBindOpen(true); };
+  const openAccounts = (r: AnyRow) => { setAccountsShop(r); setAccountsOpen(true); };
   const unbind = async (r: AnyRow) => {
     const { error } = await supabase.from("shops").update({ entity_id: null }).eq("id", r.id);
     if (error) toast({ title: "解除失败", description: error.message, variant: "destructive" });
@@ -622,7 +699,7 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
   return (
     <Card className="overflow-hidden mt-4">
       <div className="px-4 py-3 border-b bg-muted/10 text-[12px] text-muted-foreground">
-        店铺资料来自聚水潭同步，平台信息由聚水潭自动提供。本页只维护店铺对应的内部经营主体，用于后续财务流水、开票、账户额度和店铺归属统计。
+        店铺资料来自聚水潭同步。本页维护店铺对应的经营主体，以及店铺与银行账户的绑定关系（一个店铺可绑定多个账户，账户与店铺为多对多）。
       </div>
       <FilterRow>
         <Input placeholder="搜索店铺名 / JST 店铺ID" value={q} onChange={e => setQ(e.target.value)} className="h-9 w-64" />
@@ -650,65 +727,57 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
         <table className="w-full text-[12.5px]">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
-              {([
-                { label: "JST 店铺 ID", key: "jst_shop_id" },
-                { label: "店铺名称", key: "name" },
-                { label: "平台", key: "platform_type" },
-                { label: "所属经营主体", key: "entity_id" },
-                { label: "主体银行账户", key: null },
-                { label: "授权状态", key: "auth_status" },
-                { label: "店铺状态", key: "shop_status_raw" },
-                { label: "最后同步", key: "last_synced_at" },
-                { label: "操作", key: null },
-              ] as { label: string; key: string | null }[]).map(h => {
-                const sortable = !!h.key;
-                const active = sortable && sortKey === h.key;
-                return (
-                  <th
-                    key={h.label}
-                    className={`px-3 py-2.5 font-normal whitespace-nowrap ${sortable ? "cursor-pointer select-none hover:text-foreground" : ""}`}
-                    onClick={() => {
-                      if (!sortable) return;
-                      if (sortKey === h.key) setSortAsc(v => !v);
-                      else { setSortKey(h.key as string); setSortAsc(true); }
-                    }}
-                  >
-                    {h.label}{active ? (sortAsc ? " ↑" : " ↓") : sortable ? " ↕" : ""}
-                  </th>
-                );
-              })}
+              {(["店铺名称","平台","经营主体","默认收款账户","绑定账户数","店铺状态","最后同步","操作"]).map(h =>
+                <th key={h} className="px-3 py-2.5 font-normal whitespace-nowrap">{h}</th>
+              )}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
+            {loading && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9}>
-                <EmptyHint msg="暂无店铺数据。请先在【数据中心 / 聚水潭数据接入详情】同步店铺资料，或检查聚水潭店铺同步是否已写入 shops 表。" />
+              <tr><td colSpan={8}>
+                <EmptyHint msg="暂无店铺数据。请先在【数据中心 / 聚水潭数据接入详情】同步店铺资料。" />
               </td></tr>
             )}
             {rows.map(r => {
               const entity = r.entity_id ? entityMap.get(r.entity_id) : null;
-              const eBanks = r.entity_id ? (banksByEntity.get(r.entity_id) ?? []) : [];
-              const bankSummary = eBanks.length === 0 ? "-"
-                : eBanks.slice(0, 2).map(b => `${b.bank_name ?? ""} ${b.account_no_masked ?? ""}`.trim()).join(" / ")
-                  + (eBanks.length > 2 ? ` +${eBanks.length - 2}` : "");
+              const shopBindings = bindingsByShop.get(r.id) ?? [];
+              const defaultCollection = shopBindings.find(b => b.binding_type === "collection" && b.is_default)
+                ?? shopBindings.find(b => b.binding_type === "collection");
+              const defBank = defaultCollection ? bankMap.get(defaultCollection.bank_account_id) : null;
               const platformName = r.platform_type || platformMap.get(r.platform_id)?.name || "-";
               return (
                 <tr key={r.id} className="border-t hover:bg-muted/30">
-                  <td className="px-3 py-2.5 font-mono text-[11.5px] text-muted-foreground">{r.jst_shop_id ?? "-"}</td>
-                  <td className="px-3 py-2.5"><div className="font-medium">{r.name}</div></td>
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium">{r.name}</div>
+                    <div className="text-[11px] text-muted-foreground font-mono">{r.jst_shop_id ?? ""}</div>
+                  </td>
                   <td className="px-3 py-2.5">{platformName}</td>
                   <td className="px-3 py-2.5">{entity ? entity.name : <span className="text-amber-600">未绑定</span>}</td>
-                  <td className="px-3 py-2.5 text-[12px] text-muted-foreground">{bankSummary}</td>
-                  <td className="px-3 py-2.5">{r.auth_status || "-"}</td>
+                  <td className="px-3 py-2.5 text-[12px]">
+                    {defBank ? (
+                      <div>
+                        <div>{defBank.account_holder_name || defBank.account_name}</div>
+                        <div className="text-[11px] text-muted-foreground font-mono">{defBank.bank_name} · {defBank.account_number || defBank.account_no_masked}</div>
+                      </div>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {shopBindings.length > 0
+                      ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">{shopBindings.length}</span>
+                      : <span className="text-muted-foreground">0</span>}
+                  </td>
                   <td className="px-3 py-2.5">{r.shop_status_raw || "-"}</td>
                   <td className="px-3 py-2.5 text-[11.5px] text-muted-foreground">{r.last_synced_at ? new Date(r.last_synced_at).toLocaleString("zh-CN") : "-"}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    <button onClick={() => openBind(r)} className="text-[12px] text-primary hover:underline mr-3">
+                    <button onClick={() => openAccounts(r)} className="text-[12px] text-primary hover:underline mr-3">
+                      {shopBindings.length > 0 ? "查看/管理账户" : "绑定账户"}
+                    </button>
+                    <button onClick={() => openBind(r)} className="text-[12px] text-muted-foreground hover:underline mr-3">
                       {r.entity_id ? "更换主体" : "绑定主体"}
                     </button>
                     {r.entity_id && (
-                      <button onClick={() => unbind(r)} className="text-[12px] text-muted-foreground hover:underline">解除</button>
+                      <button onClick={() => unbind(r)} className="text-[12px] text-muted-foreground hover:underline">解除主体</button>
                     )}
                   </td>
                 </tr>
@@ -726,6 +795,13 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
         shop={bindShop}
         entities={entities}
         banksByEntity={banksByEntity}
+        onSaved={load}
+      />
+      <ShopBankBindingsDrawer
+        open={accountsOpen}
+        onOpenChange={setAccountsOpen}
+        shop={accountsShop}
+        banks={banks}
         onSaved={load}
       />
     </Card>
@@ -848,6 +924,215 @@ function BindEntityDrawer({
     </Sheet>
   );
 }
+
+/* ============================== 店铺账户绑定抽屉 ============================== */
+
+const BINDING_TYPE_LABEL: Record<string, string> = {
+  collection: "收款", payment: "付款", ads: "投流", backup: "备用", other: "其他",
+};
+
+function ShopBankBindingsDrawer({
+  open, onOpenChange, shop, banks, onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  shop: AnyRow | null;
+  banks: AnyRow[];
+  onSaved: () => void;
+}) {
+  const [bindings, setBindings] = useState<AnyRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<AnyRow>({
+    bank_account_id: "", binding_type: "collection", is_default: false,
+    effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "",
+  });
+
+  const reload = useCallback(async () => {
+    if (!shop) return;
+    setLoading(true);
+    const { data } = await supabase.from("shop_bank_account_bindings")
+      .select("*").eq("shop_id", shop.id).order("status").order("is_default", { ascending: false }).order("created_at", { ascending: false });
+    setLoading(false);
+    setBindings(data ?? []);
+  }, [shop]);
+
+  useEffect(() => { if (open) { reload(); setAdding(false); } }, [open, reload]);
+
+  const bankMap = useMemo(() => new Map(banks.map(b => [b.id, b])), [banks]);
+
+  const save = async () => {
+    if (!shop) return;
+    if (!form.bank_account_id) { toast({ title: "请选择银行账户", variant: "destructive" }); return; }
+    const payload: any = {
+      shop_id: shop.id,
+      bank_account_id: form.bank_account_id,
+      binding_type: form.binding_type,
+      is_default: !!form.is_default,
+      effective_from: form.effective_from || new Date().toISOString().slice(0, 10),
+      effective_to: form.effective_to || null,
+      status: "active",
+      remark: form.remark || "",
+      platform_id: shop.platform_id ?? null,
+    };
+    // If this is set as default, demote other defaults of same binding_type for this shop
+    if (payload.is_default) {
+      await supabase.from("shop_bank_account_bindings")
+        .update({ is_default: false })
+        .eq("shop_id", shop.id).eq("binding_type", payload.binding_type).eq("status", "active");
+    }
+    const { error } = await supabase.from("shop_bank_account_bindings").insert(payload);
+    if (error) { toast({ title: "保存失败", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "已添加绑定" });
+    setAdding(false);
+    setForm({ bank_account_id: "", binding_type: "collection", is_default: false,
+      effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "" });
+    await reload();
+    onSaved();
+  };
+
+  const toggleStatus = async (b: AnyRow) => {
+    const next = b.status === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("shop_bank_account_bindings")
+      .update({ status: next, ...(next === "inactive" ? { is_default: false } : {}) })
+      .eq("id", b.id);
+    if (error) toast({ title: "操作失败", description: error.message, variant: "destructive" });
+    else { toast({ title: next === "active" ? "已启用" : "已停用" }); await reload(); onSaved(); }
+  };
+
+  const setDefault = async (b: AnyRow) => {
+    if (!shop) return;
+    await supabase.from("shop_bank_account_bindings")
+      .update({ is_default: false })
+      .eq("shop_id", shop.id).eq("binding_type", b.binding_type).eq("status", "active");
+    const { error } = await supabase.from("shop_bank_account_bindings")
+      .update({ is_default: true }).eq("id", b.id);
+    if (error) toast({ title: "设置失败", description: error.message, variant: "destructive" });
+    else { toast({ title: "已设为默认" }); await reload(); onSaved(); }
+  };
+
+  const removeBinding = async (b: AnyRow) => {
+    if (!confirm("确认删除该绑定？")) return;
+    const { error } = await supabase.from("shop_bank_account_bindings").delete().eq("id", b.id);
+    if (error) toast({ title: "删除失败", description: error.message, variant: "destructive" });
+    else { toast({ title: "已删除" }); await reload(); onSaved(); }
+  };
+
+  const availableBanks = banks.filter(b => b.status !== "disabled");
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+        {shop && (
+          <div className="space-y-5 pt-2">
+            <div>
+              <div className="text-base font-semibold">店铺绑定银行账户</div>
+              <div className="text-[12px] text-muted-foreground mt-1">维护该店铺关联的银行账户。一个店铺可绑定多个账户，每种绑定类型同时只能有一个默认账户。</div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3 space-y-1.5 text-[12.5px]">
+              <div className="flex justify-between"><span className="text-muted-foreground">店铺</span><span className="font-medium">{shop.name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">JST ID</span><span className="font-mono text-[11.5px]">{shop.jst_shop_id ?? "-"}</span></div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-[12px] font-medium">已绑定账户（{bindings.length}）</div>
+              {!adding && <Button size="sm" onClick={() => setAdding(true)}><Plus className="w-3.5 h-3.5 mr-1" />新增绑定</Button>}
+            </div>
+
+            {adding && (
+              <div className="border rounded-md p-3 space-y-2.5 bg-muted/10">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">银行账户*</div>
+                    <select value={form.bank_account_id}
+                      onChange={e => setForm({ ...form, bank_account_id: e.target.value })}
+                      className="h-9 w-full rounded-md border px-2 text-[13px]">
+                      <option value="">请选择</option>
+                      {availableBanks.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {(b.account_holder_name || b.account_name)} · {b.bank_name} · {b.account_number || b.account_no_masked}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">绑定类型*</div>
+                    <select value={form.binding_type}
+                      onChange={e => setForm({ ...form, binding_type: e.target.value })}
+                      className="h-9 w-full rounded-md border px-2 text-[13px]">
+                      {Object.entries(BINDING_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">生效日期</div>
+                    <Input type="date" value={form.effective_from}
+                      onChange={e => setForm({ ...form, effective_from: e.target.value })} className="h-9" />
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">失效日期（可空）</div>
+                    <Input type="date" value={form.effective_to}
+                      onChange={e => setForm({ ...form, effective_to: e.target.value })} className="h-9" />
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 text-[12.5px]">
+                  <input type="checkbox" checked={!!form.is_default}
+                    onChange={e => setForm({ ...form, is_default: e.target.checked })} />
+                  设为该绑定类型下的默认账户
+                </label>
+                <Input placeholder="备注（可空）" value={form.remark}
+                  onChange={e => setForm({ ...form, remark: e.target.value })} className="h-9" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setAdding(false)}>取消</Button>
+                  <Button size="sm" onClick={save}>保存</Button>
+                </div>
+              </div>
+            )}
+
+            <div className="border rounded-md overflow-hidden">
+              {loading && <div className="py-6 text-center text-[12px] text-muted-foreground">加载中...</div>}
+              {!loading && bindings.length === 0 && <div className="py-6 text-center text-[12px] text-muted-foreground">暂无绑定账户</div>}
+              {bindings.map(b => {
+                const bank = bankMap.get(b.bank_account_id);
+                return (
+                  <div key={b.id} className={`border-t first:border-t-0 px-3 py-2.5 text-[12.5px] ${b.status !== "active" ? "opacity-60" : ""}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{bank?.account_holder_name || bank?.account_name || "-"}</div>
+                        <div className="text-[11.5px] text-muted-foreground font-mono">{bank?.bank_name} · {bank?.account_number || bank?.account_no_masked}</div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px]">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{BINDING_TYPE_LABEL[b.binding_type]}</span>
+                          {b.is_default && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">默认</span>}
+                          <span className="text-muted-foreground">{b.effective_from} → {b.effective_to ?? "—"}</span>
+                          {b.status !== "active" && <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-500">已停用</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 text-[11.5px]">
+                        {b.status === "active" && !b.is_default && (
+                          <button onClick={() => setDefault(b)} className="text-primary hover:underline">设为默认</button>
+                        )}
+                        <button onClick={() => toggleStatus(b)} className="text-muted-foreground hover:underline">
+                          {b.status === "active" ? "停用" : "启用"}
+                        </button>
+                        <button onClick={() => removeBinding(b)} className="text-rose-600 hover:underline">删除</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>关闭</Button>
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+
 
 /* ============================== 收支分类 ============================== */
 

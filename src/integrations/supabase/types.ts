@@ -89,63 +89,95 @@ export type Database = {
       }
       bank_accounts: {
         Row: {
+          account_holder_name: string | null
           account_name: string
           account_no_masked: string | null
+          account_number: string | null
           account_type: string | null
           bank_name: string | null
           created_at: string
           currency: string
           current_balance: number
           deleted_at: string | null
-          entity_id: string
+          entity_id: string | null
           id: string
           is_default: boolean
           normalized_account_no: string | null
+          owner_entity_id: string | null
           purpose: string
+          related_entity_id: string | null
+          related_person_name: string | null
           remark: string | null
           status: string
           updated_at: string
+          usage_type: string | null
         }
         Insert: {
+          account_holder_name?: string | null
           account_name: string
           account_no_masked?: string | null
+          account_number?: string | null
           account_type?: string | null
           bank_name?: string | null
           created_at?: string
           currency?: string
           current_balance?: number
           deleted_at?: string | null
-          entity_id: string
+          entity_id?: string | null
           id?: string
           is_default?: boolean
           normalized_account_no?: string | null
+          owner_entity_id?: string | null
           purpose?: string
+          related_entity_id?: string | null
+          related_person_name?: string | null
           remark?: string | null
           status?: string
           updated_at?: string
+          usage_type?: string | null
         }
         Update: {
+          account_holder_name?: string | null
           account_name?: string
           account_no_masked?: string | null
+          account_number?: string | null
           account_type?: string | null
           bank_name?: string | null
           created_at?: string
           currency?: string
           current_balance?: number
           deleted_at?: string | null
-          entity_id?: string
+          entity_id?: string | null
           id?: string
           is_default?: boolean
           normalized_account_no?: string | null
+          owner_entity_id?: string | null
           purpose?: string
+          related_entity_id?: string | null
+          related_person_name?: string | null
           remark?: string | null
           status?: string
           updated_at?: string
+          usage_type?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "bank_accounts_entity_id_fkey"
             columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "business_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_accounts_owner_entity_id_fkey"
+            columns: ["owner_entity_id"]
+            isOneToOne: false
+            referencedRelation: "business_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_accounts_related_entity_id_fkey"
+            columns: ["related_entity_id"]
             isOneToOne: false
             referencedRelation: "business_entities"
             referencedColumns: ["id"]
@@ -2086,6 +2118,73 @@ export type Database = {
             columns: ["purchase_order_id"]
             isOneToOne: false
             referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shop_bank_account_bindings: {
+        Row: {
+          bank_account_id: string
+          binding_type: string
+          created_at: string
+          effective_from: string
+          effective_to: string | null
+          id: string
+          is_default: boolean
+          platform_id: string | null
+          remark: string
+          shop_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          bank_account_id: string
+          binding_type?: string
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_default?: boolean
+          platform_id?: string | null
+          remark?: string
+          shop_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          bank_account_id?: string
+          binding_type?: string
+          created_at?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          is_default?: boolean
+          platform_id?: string | null
+          remark?: string
+          shop_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_bank_account_bindings_bank_account_id_fkey"
+            columns: ["bank_account_id"]
+            isOneToOne: false
+            referencedRelation: "bank_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shop_bank_account_bindings_platform_id_fkey"
+            columns: ["platform_id"]
+            isOneToOne: false
+            referencedRelation: "platforms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shop_bank_account_bindings_shop_id_fkey"
+            columns: ["shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
             referencedColumns: ["id"]
           },
         ]
