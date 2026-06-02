@@ -447,7 +447,7 @@ export default function PurchaseOrderManagementPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs value={tab} onValueChange={onTabChange}>
             <div className="px-4 pt-3">
               <TabsList>
                 <TabsTrigger value="po">按采购单查看</TabsTrigger>
@@ -459,16 +459,16 @@ export default function PurchaseOrderManagementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>采购单号</TableHead>
-                    <TableHead>供应商</TableHead>
-                    <TableHead>采购日期</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead className="text-right">采购件数</TableHead>
-                    <TableHead className="text-right">已入库</TableHead>
-                    <TableHead className="text-right">未入库</TableHead>
-                    <TableHead className="text-right">采购金额</TableHead>
-                    <TableHead>最近同步</TableHead>
-                    <TableHead>入库状态</TableHead>
+                    <SortHead<PoSortKey> k="external_po_id" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>采购单号</SortHead>
+                    <SortHead<PoSortKey> k="supplier_name" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>供应商</SortHead>
+                    <SortHead<PoSortKey> k="po_date" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>采购日期</SortHead>
+                    <SortHead<PoSortKey> k="status" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>状态</SortHead>
+                    <SortHead<PoSortKey> k="total_purchase_qty" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort} align="right">采购件数</SortHead>
+                    <SortHead<PoSortKey> k="total_received_qty" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort} align="right">已入库</SortHead>
+                    <SortHead<PoSortKey> k="total_unreceived_qty" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort} align="right">未入库</SortHead>
+                    <SortHead<PoSortKey> k="total_amount" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort} align="right">采购金额</SortHead>
+                    <SortHead<PoSortKey> k="updated_at" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>最近同步</SortHead>
+                    <SortHead<PoSortKey> k="warehouse_status" currentKey={poSortKey} dir={poSortDir} onSort={onPoSort}>入库状态</SortHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -516,36 +516,46 @@ export default function PurchaseOrderManagementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>款号</TableHead>
-                    <TableHead>商品名称</TableHead>
-                    <TableHead>涉及供应商</TableHead>
-                    <TableHead className="text-right">采购单数</TableHead>
-                    <TableHead className="text-right">采购件数</TableHead>
-                    <TableHead className="text-right">已入库</TableHead>
-                    <TableHead className="text-right">未入库</TableHead>
-                    <TableHead className="text-right">采购金额</TableHead>
+                    <SortHead<StyleSortKey> k="latest_po_date" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort}>最近采购日期</SortHead>
+                    <SortHead<StyleSortKey> k="style_no" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort}>款号</SortHead>
+                    <SortHead<StyleSortKey> k="product_name" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort}>商品名称</SortHead>
+                    <SortHead<StyleSortKey> k="suppliers" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort}>供应商</SortHead>
+                    <SortHead<StyleSortKey> k="po_count" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">涉及采购单数</SortHead>
+                    <SortHead<StyleSortKey> k="sku_count" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">SKU 数</SortHead>
+                    <SortHead<StyleSortKey> k="purchase_qty" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">采购件数</SortHead>
+                    <SortHead<StyleSortKey> k="received_qty" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">已入库</SortHead>
+                    <SortHead<StyleSortKey> k="unreceived_qty" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">未入库</SortHead>
+                    <SortHead<StyleSortKey> k="amount" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort} align="right">采购金额</SortHead>
+                    <SortHead<StyleSortKey> k="warehouse_status" currentKey={styleSortKey} dir={styleSortDir} onSort={onStyleSort}>入库状态</SortHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {styleQ.isLoading ? (
-                    <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">加载中…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={12} className="text-center py-10 text-muted-foreground">加载中…</TableCell></TableRow>
                   ) : (styleQ.data?.rows.length ?? 0) === 0 ? (
-                    <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
+                    <TableRow><TableCell colSpan={12} className="text-center py-10 text-muted-foreground">
                       暂无采购数据,请先执行聚水潭采购同步
                     </TableCell></TableRow>
                   ) : styleQ.data!.rows.map((s: any) => (
                     <TableRow key={s.style_no}>
+                      <TableCell className="text-xs">{fmtDate(s.latest_po_date)}</TableCell>
                       <TableCell className="font-mono text-xs">{s.style_no}</TableCell>
                       <TableCell>{s.product_name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={s.suppliers}>{s.suppliers}</TableCell>
                       <TableCell className="text-right tabular-nums">{s.po_count}</TableCell>
+                      <TableCell className="text-right tabular-nums">{s.sku_count}</TableCell>
                       <TableCell className="text-right tabular-nums">{s.purchase_qty}</TableCell>
                       <TableCell className="text-right tabular-nums text-emerald-600">{s.received_qty}</TableCell>
                       <TableCell className="text-right tabular-nums text-amber-600">{s.unreceived_qty}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(s.amount)}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className={WAREHOUSE_STATUS_TONE[s.warehouse_status ?? "not_received"] ?? ""}>
+                          {WAREHOUSE_STATUS_LABEL[s.warehouse_status ?? "not_received"] ?? "—"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedStyle(s.style_no)}>查看明细</Button>
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedStyle(s.style_no)}>查看详情</Button>
                       </TableCell>
                     </TableRow>
                   ))}
