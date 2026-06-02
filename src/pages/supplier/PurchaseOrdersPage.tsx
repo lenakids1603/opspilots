@@ -276,7 +276,7 @@ function useSortAndPage<T>(rows: T[], defaultSortKey: keyof T, defaultDir: SortD
   const [sortKey, setSortKey] = useState<keyof T>(defaultSortKey);
   const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(20);
 
   // Reset page when rows change (filter/tab switch)
   useEffect(() => { setPage(1); }, [rows]);
