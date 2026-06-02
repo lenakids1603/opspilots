@@ -1148,6 +1148,39 @@ export default function JstDataIntegrationPage() {
           页面中的 GMV、GSV、退款金额等经营指标均为指定时间范围内的累计值，不代表本次同步新增金额。
         </div>
       </div>
+
+      <Sheet open={!!detailLog} onOpenChange={(o) => !o && setDetailLog(null)}>
+        <SheetContent className="w-[640px] sm:max-w-[640px] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>同步日志详情</SheetTitle>
+            <SheetDescription>
+              {detailLog?._source === "purchase_log" ? "来源:jst_sync_logs(采购与入库)" : "来源:jst_sync_runs"}
+            </SheetDescription>
+          </SheetHeader>
+          {detailLog && (
+            <div className="space-y-3 mt-4 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div><span className="text-muted-foreground">开始:</span> {fmtDateTime(detailLog.started_at)}</div>
+                <div><span className="text-muted-foreground">状态:</span> {detailLog.status}</div>
+                <div><span className="text-muted-foreground">模块:</span> {detailLog.module_key}</div>
+                <div><span className="text-muted-foreground">耗时:</span> {fmtDuration(detailLog.duration_ms)}</div>
+              </div>
+              {detailLog.error_message && (
+                <div>
+                  <div className="font-medium mb-1">错误详情</div>
+                  <pre className="bg-rose-50 text-rose-700 p-2 rounded whitespace-pre-wrap break-all">{detailLog.error_message}</pre>
+                </div>
+              )}
+              <div>
+                <div className="font-medium mb-1">原始记录</div>
+                <pre className="bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
+{JSON.stringify(detailLog._raw ?? detailLog, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
