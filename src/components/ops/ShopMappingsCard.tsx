@@ -413,7 +413,7 @@ export function ShopMappingsCard() {
 function Stat({ label, value, tone, onClick }: { label: string; value: number | string; tone?: "ok" | "warn" | "danger"; onClick?: () => void }) {
   const cls = tone === "ok" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : tone === "danger" ? "text-red-600" : "";
   return (
-    <div>
+    <div className={onClick ? "cursor-pointer hover:opacity-80" : ""} onClick={onClick} title={onClick ? "点击跳转到财务基础资料处理" : undefined}>
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`text-xl font-semibold tabular-nums ${cls}`}>{value}</div>
     </div>
