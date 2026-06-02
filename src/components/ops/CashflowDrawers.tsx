@@ -10,6 +10,7 @@ import type {
   BankAccount, BusinessEntity, CashTransaction, CashTxCategory,
   CashDirection, Shop,
 } from "@/lib/finance";
+import { formatDateCN, todayCN, beijingDayRangeToUTC, beijingYMD } from "@/lib/datetime";
 
 type SupplierLite = { id: string; name: string };
 
@@ -76,7 +77,7 @@ export function CashflowDrawer({
   const [entityId, setEntityId] = useState<string>("");
   const [bankId, setBankId] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
-  const [occurredAt, setOccurredAt] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [occurredAt, setOccurredAt] = useState<string>(() => todayCN());
   const [categoryId, setCategoryId] = useState<string>("");
   const [shopId, setShopId] = useState<string>("");
   const [supplierId, setSupplierId] = useState<string>("");
@@ -114,7 +115,7 @@ export function CashflowDrawer({
       setEntityId(initial.entity_id);
       setBankId(initial.bank_account_id);
       setAmount(String(initial.amount));
-      setOccurredAt(initial.occurred_at.slice(0, 10));
+      setOccurredAt(beijingYMD(initial.occurred_at));
       setCategoryId(initial.category_id ?? "");
       setShopId(initial.shop_id ?? "");
       setSupplierId(initial.supplier_id ?? "");
@@ -127,7 +128,7 @@ export function CashflowDrawer({
       setAttachmentPath(initial.attachment_path);
     } else {
       setDir("out"); setEntityId(entities[0]?.id ?? ""); setBankId("");
-      setAmount(""); setOccurredAt(new Date().toISOString().slice(0, 10));
+      setAmount(""); setOccurredAt(todayCN());
       setCategoryId(""); setShopId(""); setSupplierId("");
       setCounterparty(""); setCounterpartyAccount(""); setCounterpartyBank("");
       setSerialNo(""); setSummary(""); setRemark(""); setAttachmentPath(null);
@@ -278,12 +279,12 @@ export function CashflowDrawer({
         dupQ = dupQ
           .eq("amount", Number(amount))
           .eq("bank_account_id", bankId)
-          .gte("occurred_at", new Date(day + "T00:00:00").toISOString())
-          .lte("occurred_at", new Date(day + "T23:59:59").toISOString());
+          .gte("occurred_at", beijingDayRangeToUTC(day)?.gte ?? new Date(day + "T00:00:00+08:00").toISOString())
+          .lte("occurred_at", beijingDayRangeToUTC(day)?.lte ?? new Date(day + "T23:59:59+08:00").toISOString());
       }
       const { data: dups } = await dupQ;
       if (dups && dups.length > 0) {
-        const list = dups.map((d: any) => `· ${d.occurred_at?.slice(0,10)} ¥${d.amount} ${d.summary ?? ""}`).join("\n");
+        const list = dups.map((d: any) => `· ${formatDateCN(d.occurred_at)} ¥${d.amount} ${d.summary ?? ""}`).join("\n");
         if (!confirm(`系统检测到 ${dups.length} 条疑似重复流水：\n${list}\n\n是否继续保存？`)) return;
       }
     }

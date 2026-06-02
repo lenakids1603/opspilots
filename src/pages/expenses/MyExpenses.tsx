@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { todayCN } from "@/lib/datetime";
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -33,7 +34,7 @@ function exportExpensesToCsv(expenses: Expense[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `expenses-${todayCN()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -87,7 +88,7 @@ function parseCsvImport(text: string): { rows: ImportRow[]; errors: string[] } {
     rows.push({
       title, merchant: merchantIdx >= 0 ? (cols[merchantIdx]?.trim() || '') : '',
       amount, currency: currencyIdx >= 0 ? (cols[currencyIdx]?.trim() || 'USD') : 'USD',
-      expense_date: dateIdx >= 0 && cols[dateIdx]?.trim() ? cols[dateIdx].trim() : new Date().toISOString().slice(0, 10),
+      expense_date: dateIdx >= 0 && cols[dateIdx]?.trim() ? cols[dateIdx].trim() : todayCN(),
       description: descIdx >= 0 ? (cols[descIdx]?.trim() || '') : '',
       cost_center: costIdx >= 0 ? (cols[costIdx]?.trim() || '') : '',
     });

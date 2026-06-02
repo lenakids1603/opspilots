@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { todayCN } from "@/lib/datetime";
 import { supabase } from "@/integrations/supabase/client";
 
 export type RowStatus = "new" | "update" | "skip" | "error";
@@ -493,7 +494,7 @@ export function downloadTemplate() {
     ["供应商付款", "支出", "采购支出", "", "启用", 10, ""],
   ]), "收支分类");
 
-  XLSX.writeFile(wb, `财务基础资料导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `财务基础资料导入模板_${todayCN()}.xlsx`);
 }
 
 export function exportRowsToXlsx(filename: string, sheetName: string, rows: any[]) {
@@ -577,5 +578,5 @@ export async function exportAllMasterData() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopRows.length ? shopRows : [{}]), "店铺");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bindingRows.length ? bindingRows : [{}]), "店铺账户绑定");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows.length ? catRows : [{}]), "收支分类");
-  XLSX.writeFile(wb, `财务基础资料_全量_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `财务基础资料_全量_${todayCN()}.xlsx`);
 }

@@ -21,8 +21,9 @@ import { Search, Inbox } from "lucide-react";
 const PAGE_SIZE = 20;
 
 const fmtMoney = (n: number | null | undefined) => "¥" + (Number(n ?? 0)).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString("zh-CN") : "—";
-const fmtDateTime = (d?: string | null) => d ? new Date(d).toLocaleString("zh-CN", { hour12: false }) : "—";
+import { formatDateCN, formatDateTimeCN, beijingDayRangeToUTC, beijingYMD } from "@/lib/datetime";
+const fmtDate = (d?: string | null) => formatDateCN(d);
+const fmtDateTime = (d?: string | null) => formatDateTimeCN(d);
 
 const WAREHOUSE_STATUS_LABEL: Record<string, string> = {
   not_received: "未入库",
@@ -60,8 +61,9 @@ const EMPTY_FILTERS: Filters = {
 };
 
 function applyPoFilters(q: any, f: Filters) {
-  if (f.startDate) q = q.gte("po_date", new Date(f.startDate).toISOString());
-  if (f.endDate) q = q.lte("po_date", new Date(f.endDate + "T23:59:59").toISOString());
+  // 北京时区日期 → UTC ISO 区间，避免 new Date("YYYY-MM-DD") 按 UTC 解析丢掉北京当日凌晨 0-8 点。
+  if (f.startDate) { const r = beijingDayRangeToUTC(f.startDate); if (r) q = q.gte("po_date", r.gte); }
+  if (f.endDate)   { const r = beijingDayRangeToUTC(f.endDate);   if (r) q = q.lte("po_date", r.lte); }
   if (f.supplier) q = q.ilike("supplier_name", `%${f.supplier}%`);
   if (f.poNo) q = q.ilike("external_po_id", `%${f.poNo}%`);
   if (f.status !== "all") q = q.eq("status", f.status);
@@ -162,8 +164,9 @@ function useStyleAggregation(filters: Filters, page: number) {
         if (filters.poNo && !(po.external_po_id ?? "").includes(filters.poNo)) return false;
         if (filters.status !== "all" && po.status !== filters.status) return false;
         if (filters.warehouseStatus !== "all" && po.warehouse_status !== filters.warehouseStatus) return false;
-        if (filters.startDate && po.po_date && po.po_date < filters.startDate) return false;
-        if (filters.endDate && po.po_date && po.po_date.substring(0, 10) > filters.endDate) return false;
+        // 按北京时区比较日期，避免 UTC 字符串截断错位一天。
+        if (filters.startDate && po.po_date && beijingYMD(po.po_date) < filters.startDate) return false;
+        if (filters.endDate && po.po_date && beijingYMD(po.po_date) > filters.endDate) return false;
         return true;
       });
 

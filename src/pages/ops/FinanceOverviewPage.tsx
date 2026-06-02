@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ops/PageHeader";
+import { beijingYMD } from "@/lib/datetime";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -329,7 +330,7 @@ export default function FinanceOverviewPage() {
     // 4) Suspected duplicates: same day + same amount + same bank_account + same direction
     const dupMap = new Map<string, Tx[]>();
     txInPeriod.forEach(t => {
-      const k = `${t.occurred_at.slice(0,10)}|${t.bank_account_id}|${t.amount}|${t.direction}`;
+      const k = `${beijingYMD(t.occurred_at)}|${t.bank_account_id}|${t.amount}|${t.direction}`;
       const arr = dupMap.get(k) || []; arr.push(t); dupMap.set(k, arr);
     });
     Array.from(dupMap.values()).filter(arr => arr.length >= 2).slice(0, 2).forEach(arr => {
