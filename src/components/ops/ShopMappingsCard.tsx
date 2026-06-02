@@ -131,11 +131,8 @@ export function ShopMappingsCard() {
     },
     onError: (e: any) => toast({ title: "自动匹配失败", description: e.message, variant: "destructive" }),
   });
-      qc.invalidateQueries({ queryKey: ["jst_sync_metrics"] });
-      toast({ title: "已保存" });
-    },
-    onError: (e: any) => toast({ title: "保存失败", description: e.message, variant: "destructive" }),
-  });
+
+
 
   const rows = mappingsQ.data ?? [];
 
