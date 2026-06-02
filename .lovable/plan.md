@@ -1,88 +1,92 @@
-# 验证 + 接入 base_archive 真实同步
 
-分两步走：先做链路验证（不改代码），再接入真实的 base_archive 同步。
+## 背景
 
----
+数据库当前已有 `purchase_receipts` 和 `purchase_receipt_items` 两张表，结构基本能覆盖入库单需求（io_date / external_io_id / external_po_id / supplier_name / warehouse_name / status / jst_modified_at / raw 等）。但目前：
 
-## 第一步：验证当前数据链路（只读检查，无代码改动）
+- 没有独立的「入库单」页面，只能在 JST 同步页/采购单管理页里看到聚合数据
+- 最新 io_date 仅到 2026/5/27，5/31 以后的入库单没拉进来
+- 同步日志只显示成功数量，不显示 API 返回 vs 数据库实际写入数量，问题定位困难
 
-针对你列的 5 点，我会用 `psql` + 代码审计直接验证：
+为避免数据迁移成本，**复用现有 `purchase_receipts` / `purchase_receipt_items` 表**，不新建 `jst_purchase_inbound_orders`。如果你坚持表名独立，告诉我后我再换。
 
-1. **页面无 mock**：`grep` 已确认 `JstDataIntegrationPage.tsx` 中所有渲染源都来自 `useModules / useMetrics / useErrors / useRuns` 四个 hook，无写死数组。✅
-2. **同步触发会写 jst_sync_runs**：现有 `triggerRun` mutation 直接 `insert` 到 `jst_sync_runs`，右上角下拉、行内"重试"、补数据工具按钮（共 14 处 onClick）全部走它。我会在验证阶段实际触发一次并查表确认。
-3. **日志实时刷新**：mutation `onSuccess` 调 `qc.invalidateQueries(["jst_sync_runs"])`，会重新拉取并显示。
-4. **errors → 顶部异常 + 模块状态**：`jst_sync_errors` 驱动顶部 `abnormalModules` 横幅；`jst_sync_modules.status` 驱动各行状态徽章。两者目前是**两套独立字段**，我会在第二步把 edge function 写入 errors 时同步更新 modules.status，保证一致。
-5. **供应商账号无权访问**：4 张表的 RLS 都是 `is_ops_internal(auth.uid())`，supplier 账号 `account_type='supplier'` 会被全部拒绝。我会用 supplier 账号做一次 `SELECT` 验证返回 0 行。
+## 一、菜单与路由
 
-验证结果会在执行后用一两行文字汇报，不阻塞第二步。
+`src/components/ops/OpsSidebar.tsx`：「仓库系统」组下新增「入库单」放在「到货登记」之前。
 
----
+`src/App.tsx` 新增路由 `/warehouse/inbound-orders` → `InboundOrdersPage`。
 
-## 第二步：接入真实 base_archive 同步
+## 二、新增页面 `src/pages/ops/InboundOrdersPage.tsx`
 
-### 范围（第一批，仅基础档案）
-- 店铺资料 → `shops`
-- 供应商资料 → `ops_suppliers`
-- 仓库资料 → **新表 `jst_warehouses`**（当前无对应业务表）
+**顶部统计卡片（按北京时间）**
+- 今日入库单数 / 今日入库件数 / 今日入库金额
+- 本月入库件数 / 本月入库金额
+- 待核对入库单（暂以 `purchase_order_id IS NULL` 计）
+- 异常入库单（明细行数为 0 或主表数量与明细汇总不一致）
+- 查询失败显示「读取失败」而非 0
 
-商品/SKU 已有独立 edge function (`jst-sync-products`)，本批不动；后续验证字段稳定后再合并到 base_archive 调度里。
+**筛选区**
+- 入库日期范围（默认最近 7 天，北京时间 → UTC 用 `beijingRangeToUTC`）
+- 供应商（下拉，来源 ops_suppliers）
+- 仓库名（文本，来源 purchase_receipts.warehouse_name distinct）
+- 入库单号 / 采购单号 / 款号/SKU
+- 入库状态、是否有关联采购单、是否有明细、是否异常
+- 按钮：查询 / 重置 / 同步最近 1/7/30 天 / 导出 CSV
 
-### 架构
+**主表（分页 20 条/页）**
+列：入库日期、入库单号、聚水潭入库 ID、采购单号、供应商、仓库、入库类型、状态、入库件数、入库金额、明细行数、创建时间、JST 修改时间、同步时间（updated_at）、异常标记、操作（查看详情 / 原始 JSON / 重新同步该单 / 关联采购单）
 
-```text
-前端按钮
-   │
-   ▼
-supabase.functions.invoke("jst-sync-dispatch", { module_key, trigger_type, scope })
-   │
-   ▼
-jst-sync-dispatch (新 edge function)
-   ├─ 校验 ops_internal + admin
-   ├─ INSERT jst_sync_runs(status=running, created_by=auth.uid)
-   ├─ 按 module_key 调用对应 syncer（本批仅 base_archive）
-   │     ├─ shops:      /open/shops/query
-   │     ├─ suppliers:  /open/suppliers/query
-   │     └─ warehouses: /open/wms/partner/query
-   ├─ 成功 → UPDATE runs(status=ok, counts, finished_at, duration_ms)
-   │       → UPDATE jst_sync_modules(last_sync_at, next_sync_at, status='ok', last_result_summary)
-   │       → UPSERT jst_sync_metrics(base_archive_summary)
-   │       → UPDATE jst_sync_errors SET status='resolved' WHERE module_key=...
-   └─ 失败 → UPDATE runs(status=error, error_message)
-           → UPSERT jst_sync_errors(open, retry_count++)
-           → UPDATE jst_sync_modules(status='error', last_result_summary)
-```
+**右侧抽屉详情**（统一用 `Sheet` 组件，不用 Dialog）
+- A 基础信息
+- B 入库明细表格（款号/SKU/颜色/尺码/数量/单价/金额/采购单号/采购明细 ID）
+- C 与采购单对比（如有 `purchase_order_id`，查询 purchase_order_items 汇总采购/已入库/本次/未入库/进度/超收/少收）
+- D 原始 JSON（pretty）
 
-### 数据库迁移
+## 三、同步诊断面板
 
-新增 `jst_warehouses`（仓库主数据）：
+页面右上角「诊断」按钮 → 弹抽屉，查询展示：
+- 最近一次 `purchase_inbound_orders` 同步：开始/结束/耗时/API 返回数/主表 upsert 数/明细 upsert 数/失败数/错误
+- 数据库最新入库单 io_date / jst_modified_at
+- 最近 7 天主表 / 明细记录数
+- 主表有但明细为空的入库单数
+- 明细中 purchase_order_id IS NULL 的明细数（未关联采购单）
 
-```text
-id, jst_wms_co_id (unique), name, type, status,
-remark, raw_jst_json, last_synced_at, created_at, updated_at
-```
+## 四、Edge Function 修复 `supabase/functions/jst-sync-purchase-orders/index.ts`
 
-RLS：`is_ops_internal` 读；`admin` 写；service_role 全权。
+针对入库单同步 (`scope='purchase_inbound_orders'`)：
 
-修改 `jst_sync_runs` 的 INSERT 策略：允许 `created_by IS NULL` 当调用方是 service_role（edge function 走 service role 不会走 RLS，所以现状已 ok，无需改）。
+1. **打印关键日志到 `jst_sync_logs.message / error_detail`**：请求开始/结束时间（UTC + 北京）、传给 JST 的字段名、API 返回总数、主表 upsert 成功/失败、明细 upsert 成功/失败、第一条与最后一条 io_date 和 modified
+2. **统计改为数据库实际 upsert 数量**，不再用 API 返回数量充数
+3. **API 返回 > 0 但写入 0** 时，写入 `status='partial'` 并将错误堆栈写入 `error_detail`
+4. **增量游标统一用 `jst_modified_at`**，业务展示用 `io_date`
+5. **北京时间窗口转 UTC** 修正：days=1 表示北京今日 00:00 起，转 UTC 减 8h；不要让北京 6/2 的单因为窗口算错被排除
+6. **类型字段统一为 `purchase_inbound_orders`**，删除旧的 `purchase_receipts` / `purchase_in` 写入路径（读路径仍 fallback 兼容历史日志）
 
-### 前端改动
+## 五、同步日志详情抽屉增强
 
-- 把 `triggerRun.mutationFn` 改为：对 `base_archive`/`shop`/`supplier`/`warehouse` 走 `supabase.functions.invoke("jst-sync-dispatch", ...)`；其他模块（product/sku/inventory/sales_refund/purchase）**保留旧的 mock-insert 行为并加 toast 提示"暂未接入"**，直到逐一上线。
-- 不在前端直接调用聚水潭，符合要求 #1。
-- mutation 完成后 `invalidateQueries(["jst_sync_runs","jst_sync_modules","jst_sync_metrics","jst_sync_errors"])` 一次性刷新所有看板。
+`JstDataIntegrationPage.tsx` 已有同步日志详情，扩展为展示：
+批次 ID / sync_type / 触发人 / 起止时间 / 耗时 / 请求范围 / 请求参数 / JST 返回数 / 主表新增更新 / 明细新增更新 / 失败 / 错误堆栈 / 前 3 条 raw JSON 预览。
+数据来源：`jst_sync_logs.message`（JSON 字符串）+ `error_detail`。
 
-### 边界与不做的事
+## 六、不做的事
 
-- ❌ 不接 sales_refund、inventory、purchase、商品/SKU
-- ❌ 不实现自动定时调度（cron）。本步只做"手动按钮 → 真实接口"链路。后续接 `pg_cron` 再说。
-- ❌ 不引入 webhook 回调
-- ✅ Edge function 使用现有 JST secrets（`JST_APP_KEY` / `JST_APP_SECRET` / `JST_ACCESS_TOKEN`），与 `jst-sync-products` 共用 token 刷新逻辑
+- 不新建 `jst_purchase_inbound_orders` / `_items` 表，复用 `purchase_receipts` / `_items`
+- 不改采购单同步逻辑、不动权限模型（沿用现有 `is_ops_internal` RLS）
+- 不实现「关联采购单」的写入功能（只放占位按钮 + toast），因为这涉及业务规则待定
+- 不实现金额计算（当前明细表已有 `cost_price / cost_amount`，直接展示，缺失显示 -）
 
-### 交付物
+## 验收
 
-1. 数据库迁移：`jst_warehouses` 表 + RLS + GRANT
-2. 新 edge function：`supabase/functions/jst-sync-dispatch/index.ts`
-3. 修改 `JstDataIntegrationPage.tsx`：`triggerRun` 改走 invoke
-4. 验证 checklist 的简短汇报
+- 侧栏「仓库系统 / 入库单」可点击
+- 点「同步最近 1 天」→ 触发已有 `jst-sync-dispatch` (scope=purchase_inbound_orders, days=1)
+- 同步完成后列表立即刷新出今日聚水潭入库单
+- 同步日志详情能看到 JST 返回数 vs 数据库写入数
+- 若 JST 返回 0 / 写入 0 / 筛选条件遮挡，诊断面板能分别说明
 
-确认后我会：先执行第一步验证（产出一段汇报），然后申请数据库迁移并写代码。
+## 技术细节
+
+- 路由：`/warehouse/inbound-orders`
+- 表：复用 `purchase_receipts` (主) + `purchase_receipt_items` (明细)
+- 日期：统一用 `src/lib/datetime.ts` 的 `formatDateCN / formatDateTimeCN / beijingRangeToUTC`
+- 抽屉：`@/components/ui/sheet`
+- 触发同步：复用现有 `jst-sync-dispatch` edge function，`module_key=purchase`、`scope=['purchase_inbound_orders']`、`extra.days`
+- 文件改动估计：新建 1 个页面文件 (~600 行)、改 OpsSidebar、App.tsx、JstDataIntegrationPage 日志详情、jst-sync-purchase-orders edge function 入库部分

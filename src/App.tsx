@@ -25,6 +25,7 @@ import JstSyncPage from "./pages/ops/JstSyncPage";
 import JstProductSyncPage from "./pages/ops/JstProductSyncPage";
 import JstDataIntegrationPage from "./pages/ops/JstDataIntegrationPage";
 import PurchaseOrderManagementPage from "./pages/ops/PurchaseOrderManagementPage";
+import InboundOrdersPage from "./pages/ops/InboundOrdersPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
 import SupplierPlaceholder from "./pages/supplier/SupplierPlaceholder";
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/products" element={wrap(<ProductsPage />)} />
           
           <Route path="/warehouse/arrivals" element={wrap(<ArrivalsPage />)} />
+          <Route path="/warehouse/inbound-orders" element={wrap(<InboundOrdersPage />)} />
           <Route path="/finance/supplier-bills" element={wrap(<SupplierBillsPage />)} />
           <Route path="/system/users" element={wrap(<UsersPage />)} />
 

@@ -39,7 +39,10 @@ const GROUPS: Group[] = [
   },
   {
     title: "仓库系统", icon: Warehouse,
-    items: [{ title: "到货登记", url: "/warehouse/arrivals" }],
+    items: [
+      { title: "入库单", url: "/warehouse/inbound-orders" },
+      { title: "到货登记", url: "/warehouse/arrivals" },
+    ],
   },
   {
     title: "采购系统", icon: ShoppingCart,
