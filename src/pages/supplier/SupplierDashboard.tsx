@@ -164,7 +164,7 @@ function useTimeline(dayBefore: number, dayAfter: number) {
   });
 }
 
-interface PendingRow {
+interface PendingItem {
   id: string;
   style_no: string;
   sku_no: string;
@@ -181,27 +181,26 @@ interface PendingRow {
   po_status: string;
   po_date: string | null;
 }
-function usePendingItems(startYmd: string, endYmd: string, dayFilterYmd?: string) {
+// 拉取所有 unreceived>0 且 delivery_date <= 今天+7 的明细（涵盖未来 7 天 + 已延期）
+function usePendingItemsRaw() {
   return useQuery({
-    queryKey: ["dash_pending", startYmd, endYmd, dayFilterYmd],
-    queryFn: async (): Promise<PendingRow[]> => {
-      const { gte, lte } = ymdToUTCRange(startYmd, endYmd);
-      let q = supabase.from("purchase_order_items")
+    queryKey: ["dash_pending_raw_v2"],
+    queryFn: async (): Promise<PendingItem[]> => {
+      const todayYmd = beijingYMD(new Date());
+      const today = new Date(todayYmd + "T00:00:00+08:00");
+      const end = new Date(today); end.setDate(end.getDate() + 7);
+      const lte = beijingDayRangeToUTC(beijingYMD(end))!.lte;
+      const { data, error } = await supabase.from("purchase_order_items")
         .select(`
           id,style_no,sku_no,product_name,product_image_url,
           purchase_qty,received_qty,unreceived_qty,amount,unit_price,delivery_date,external_po_id,
           purchase_orders!inner(supplier_name,status,po_date)
         `)
         .gt("unreceived_qty", 0)
+        .not("delivery_date", "is", null)
+        .lte("delivery_date", lte)
         .not("purchase_orders.status", "in", EXCLUDED_IN)
-        .limit(5000);
-      if (gte) q = q.gte("purchase_orders.po_date", gte);
-      if (lte) q = q.lte("purchase_orders.po_date", lte);
-      if (dayFilterYmd) {
-        const d = beijingDayRangeToUTC(dayFilterYmd);
-        if (d) q = q.gte("delivery_date", d.gte).lte("delivery_date", d.lte);
-      }
-      const { data, error } = await q;
+        .limit(10000);
       if (error) throw error;
       return (data ?? []).map((r: any) => ({
         id: r.id,
@@ -222,6 +221,38 @@ function usePendingItems(startYmd: string, endYmd: string, dayFilterYmd?: string
       }));
     },
     staleTime: 30_000,
+  });
+}
+
+interface StyleRow {
+  key: string;
+  style_no: string;
+  product_name: string;
+  product_image_url: string | null;
+  supplier_name: string;
+  sku_count: number;
+  purchase_qty: number;
+  received_qty: number;
+  unreceived_qty: number;
+  amount: number;
+  earliest_delivery: string | null;
+  is_overdue: boolean;
+  status: PendingStatus;
+  items: PendingItem[];
+}
+
+// 查询当前供应商账号对应的供应商名称（内部账号则返回空）
+function useCurrentSupplierName(supplierId?: string | null) {
+  return useQuery({
+    queryKey: ["current_supplier_name", supplierId],
+    enabled: !!supplierId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ops_suppliers").select("name,code").eq("id", supplierId!).maybeSingle();
+      if (error) throw error;
+      return data as { name: string; code: string } | null;
+    },
+    staleTime: 5 * 60_000,
   });
 }
 
