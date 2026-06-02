@@ -2261,6 +2261,15 @@ export type Database = {
         Returns: boolean
       }
       is_ops_internal: { Args: { _uid: string }; Returns: boolean }
+      jst_resync_shop_mappings_from_shops: {
+        Args: never
+        Returns: {
+          ignored_after: number
+          mapped_after: number
+          unmapped_after: number
+          updated_count: number
+        }[]
+      }
       recalc_purchase_order_aggregates: {
         Args: { _po_id: string }
         Returns: undefined
