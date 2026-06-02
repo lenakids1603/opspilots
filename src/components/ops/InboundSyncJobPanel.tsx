@@ -187,17 +187,17 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
           <div className="font-medium text-sm">{title}</div>
           <div className="flex-1" />
           {showStartButtons && (
-            <>
-              <Button size="sm" variant="outline" disabled={startMut.isPending}
+            <div className="flex flex-wrap gap-2">
+              <Button size="default" variant="default" className="h-9" disabled={startMut.isPending}
                 onClick={() => startMut.mutate(1)}>
                 <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />
                 同步最近 1 天
               </Button>
-              <Button size="sm" variant="outline" disabled={startMut.isPending}
-                onClick={() => startMut.mutate(7)}>最近 7 天</Button>
-              <Button size="sm" variant="outline" disabled={startMut.isPending}
-                onClick={() => startMut.mutate(30)}>最近 30 天</Button>
-            </>
+              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
+                disabled={startMut.isPending} onClick={() => startMut.mutate(7)}>同步最近 7 天</Button>
+              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
+                disabled={startMut.isPending} onClick={() => startMut.mutate(30)}>同步最近 30 天</Button>
+            </div>
           )}
         </div>
 
