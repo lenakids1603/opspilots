@@ -925,6 +925,215 @@ function BindEntityDrawer({
   );
 }
 
+/* ============================== 店铺账户绑定抽屉 ============================== */
+
+const BINDING_TYPE_LABEL: Record<string, string> = {
+  collection: "收款", payment: "付款", ads: "投流", backup: "备用", other: "其他",
+};
+
+function ShopBankBindingsDrawer({
+  open, onOpenChange, shop, banks, onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  shop: AnyRow | null;
+  banks: AnyRow[];
+  onSaved: () => void;
+}) {
+  const [bindings, setBindings] = useState<AnyRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<AnyRow>({
+    bank_account_id: "", binding_type: "collection", is_default: false,
+    effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "",
+  });
+
+  const reload = useCallback(async () => {
+    if (!shop) return;
+    setLoading(true);
+    const { data } = await supabase.from("shop_bank_account_bindings")
+      .select("*").eq("shop_id", shop.id).order("status").order("is_default", { ascending: false }).order("created_at", { ascending: false });
+    setLoading(false);
+    setBindings(data ?? []);
+  }, [shop]);
+
+  useEffect(() => { if (open) { reload(); setAdding(false); } }, [open, reload]);
+
+  const bankMap = useMemo(() => new Map(banks.map(b => [b.id, b])), [banks]);
+
+  const save = async () => {
+    if (!shop) return;
+    if (!form.bank_account_id) { toast({ title: "请选择银行账户", variant: "destructive" }); return; }
+    const payload: any = {
+      shop_id: shop.id,
+      bank_account_id: form.bank_account_id,
+      binding_type: form.binding_type,
+      is_default: !!form.is_default,
+      effective_from: form.effective_from || new Date().toISOString().slice(0, 10),
+      effective_to: form.effective_to || null,
+      status: "active",
+      remark: form.remark || "",
+      platform_id: shop.platform_id ?? null,
+    };
+    // If this is set as default, demote other defaults of same binding_type for this shop
+    if (payload.is_default) {
+      await supabase.from("shop_bank_account_bindings")
+        .update({ is_default: false })
+        .eq("shop_id", shop.id).eq("binding_type", payload.binding_type).eq("status", "active");
+    }
+    const { error } = await supabase.from("shop_bank_account_bindings").insert(payload);
+    if (error) { toast({ title: "保存失败", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "已添加绑定" });
+    setAdding(false);
+    setForm({ bank_account_id: "", binding_type: "collection", is_default: false,
+      effective_from: new Date().toISOString().slice(0, 10), effective_to: "", remark: "" });
+    await reload();
+    onSaved();
+  };
+
+  const toggleStatus = async (b: AnyRow) => {
+    const next = b.status === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("shop_bank_account_bindings")
+      .update({ status: next, ...(next === "inactive" ? { is_default: false } : {}) })
+      .eq("id", b.id);
+    if (error) toast({ title: "操作失败", description: error.message, variant: "destructive" });
+    else { toast({ title: next === "active" ? "已启用" : "已停用" }); await reload(); onSaved(); }
+  };
+
+  const setDefault = async (b: AnyRow) => {
+    if (!shop) return;
+    await supabase.from("shop_bank_account_bindings")
+      .update({ is_default: false })
+      .eq("shop_id", shop.id).eq("binding_type", b.binding_type).eq("status", "active");
+    const { error } = await supabase.from("shop_bank_account_bindings")
+      .update({ is_default: true }).eq("id", b.id);
+    if (error) toast({ title: "设置失败", description: error.message, variant: "destructive" });
+    else { toast({ title: "已设为默认" }); await reload(); onSaved(); }
+  };
+
+  const removeBinding = async (b: AnyRow) => {
+    if (!confirm("确认删除该绑定？")) return;
+    const { error } = await supabase.from("shop_bank_account_bindings").delete().eq("id", b.id);
+    if (error) toast({ title: "删除失败", description: error.message, variant: "destructive" });
+    else { toast({ title: "已删除" }); await reload(); onSaved(); }
+  };
+
+  const availableBanks = banks.filter(b => b.status !== "disabled");
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+        {shop && (
+          <div className="space-y-5 pt-2">
+            <div>
+              <div className="text-base font-semibold">店铺绑定银行账户</div>
+              <div className="text-[12px] text-muted-foreground mt-1">维护该店铺关联的银行账户。一个店铺可绑定多个账户，每种绑定类型同时只能有一个默认账户。</div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3 space-y-1.5 text-[12.5px]">
+              <div className="flex justify-between"><span className="text-muted-foreground">店铺</span><span className="font-medium">{shop.name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">JST ID</span><span className="font-mono text-[11.5px]">{shop.jst_shop_id ?? "-"}</span></div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-[12px] font-medium">已绑定账户（{bindings.length}）</div>
+              {!adding && <Button size="sm" onClick={() => setAdding(true)}><Plus className="w-3.5 h-3.5 mr-1" />新增绑定</Button>}
+            </div>
+
+            {adding && (
+              <div className="border rounded-md p-3 space-y-2.5 bg-muted/10">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">银行账户*</div>
+                    <select value={form.bank_account_id}
+                      onChange={e => setForm({ ...form, bank_account_id: e.target.value })}
+                      className="h-9 w-full rounded-md border px-2 text-[13px]">
+                      <option value="">请选择</option>
+                      {availableBanks.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {(b.account_holder_name || b.account_name)} · {b.bank_name} · {b.account_number || b.account_no_masked}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">绑定类型*</div>
+                    <select value={form.binding_type}
+                      onChange={e => setForm({ ...form, binding_type: e.target.value })}
+                      className="h-9 w-full rounded-md border px-2 text-[13px]">
+                      {Object.entries(BINDING_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">生效日期</div>
+                    <Input type="date" value={form.effective_from}
+                      onChange={e => setForm({ ...form, effective_from: e.target.value })} className="h-9" />
+                  </label>
+                  <label className="block">
+                    <div className="text-[11px] text-muted-foreground mb-1">失效日期（可空）</div>
+                    <Input type="date" value={form.effective_to}
+                      onChange={e => setForm({ ...form, effective_to: e.target.value })} className="h-9" />
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 text-[12.5px]">
+                  <input type="checkbox" checked={!!form.is_default}
+                    onChange={e => setForm({ ...form, is_default: e.target.checked })} />
+                  设为该绑定类型下的默认账户
+                </label>
+                <Input placeholder="备注（可空）" value={form.remark}
+                  onChange={e => setForm({ ...form, remark: e.target.value })} className="h-9" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setAdding(false)}>取消</Button>
+                  <Button size="sm" onClick={save}>保存</Button>
+                </div>
+              </div>
+            )}
+
+            <div className="border rounded-md overflow-hidden">
+              {loading && <div className="py-6 text-center text-[12px] text-muted-foreground">加载中...</div>}
+              {!loading && bindings.length === 0 && <div className="py-6 text-center text-[12px] text-muted-foreground">暂无绑定账户</div>}
+              {bindings.map(b => {
+                const bank = bankMap.get(b.bank_account_id);
+                return (
+                  <div key={b.id} className={`border-t first:border-t-0 px-3 py-2.5 text-[12.5px] ${b.status !== "active" ? "opacity-60" : ""}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{bank?.account_holder_name || bank?.account_name || "-"}</div>
+                        <div className="text-[11.5px] text-muted-foreground font-mono">{bank?.bank_name} · {bank?.account_number || bank?.account_no_masked}</div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px]">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{BINDING_TYPE_LABEL[b.binding_type]}</span>
+                          {b.is_default && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">默认</span>}
+                          <span className="text-muted-foreground">{b.effective_from} → {b.effective_to ?? "—"}</span>
+                          {b.status !== "active" && <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-500">已停用</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 text-[11.5px]">
+                        {b.status === "active" && !b.is_default && (
+                          <button onClick={() => setDefault(b)} className="text-primary hover:underline">设为默认</button>
+                        )}
+                        <button onClick={() => toggleStatus(b)} className="text-muted-foreground hover:underline">
+                          {b.status === "active" ? "停用" : "启用"}
+                        </button>
+                        <button onClick={() => removeBinding(b)} className="text-rose-600 hover:underline">删除</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>关闭</Button>
+            </div>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+
+
 /* ============================== 收支分类 ============================== */
 
 function CategoriesTab() {
