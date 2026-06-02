@@ -1614,6 +1614,53 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ===== 采购单断点续跑相关 action (复用入库单同一套 job 系统) =====
+    if (action === "start_po_job") {
+      const days = Number(body.days ?? 7);
+      const requestedRange = body.requested_range ?? (days <= 1 ? "1d" : days <= 7 ? "7d" : days <= 30 ? "30d" : "custom");
+      const to = body.end_date ? new Date(body.end_date) : new Date();
+      const from = body.start_date ? new Date(body.start_date) : new Date(to.getTime() - days * 86400_000);
+      const job = await createSyncJob({
+        syncType: "purchase_orders",
+        fromIso: from.toISOString(),
+        toIso: to.toISOString(),
+        triggerType: body.trigger_type ?? "manual",
+        requestedRange,
+        createdBy: caller.uid,
+      });
+      return new Response(JSON.stringify({
+        ok: true,
+        job_id: job.id,
+        parent_log_id: job.parent_log_id,
+        total_windows: job.total_windows,
+        reused: !!(job as any)._reused,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "tick_po_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      const result = await tickInboundJob(jobId);
+      return new Response(JSON.stringify({ ok: true, status: result.status, job: result.job }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "cancel_po_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      await admin.from("jst_sync_jobs").update({
+        status: "cancelled",
+        ended_at: new Date().toISOString(),
+        message: "用户已取消",
+      }).eq("id", jobId);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "mark_failed") {
       const logId = String(body.log_id ?? "");
       if (!logId) throw new Error("缺少 log_id");
