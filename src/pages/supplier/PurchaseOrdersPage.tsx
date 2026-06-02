@@ -402,7 +402,6 @@ function POTable({ rows, onDetail }: { rows: OrderRow[]; expanded?: string | nul
                   <Td className="text-right tabular-nums text-emerald-700">{po.total_received_qty}</Td>
                   <Td className="text-right tabular-nums text-rose-600">{po.total_unreceived_qty}</Td>
                   <Td className="text-right tabular-nums">{fmtMoney(po.total_amount)}</Td>
-                  {hasExpected && <Td>{fmtDate(po.expected_delivery_date)}</Td>}
                   {hasLatest && <Td>{fmtDateTime(po.latest_receipt_at)}</Td>}
                   <Td>
                     <div className="flex items-center gap-2 min-w-[150px]">
