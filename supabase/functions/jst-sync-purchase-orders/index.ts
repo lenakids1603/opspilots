@@ -934,6 +934,380 @@ async function markStaleRunningAsFailed() {
   return data?.length ?? 0;
 }
 
+// ====================================================================
+// 断点续跑同步任务 (purchase_inbound_orders)
+// 设计目标:
+//  - 每次 Edge Function 调用最多处理 maxPagesPerRun 页 / timeBudgetSeconds 秒
+//  - 每页处理完都写 heartbeat + 累计 + jst_sync_log_details
+//  - 任务永远不会停在 status='running' 没有 ended_at
+//  - 时间窗口拆得更小 (入库默认 3 天) 避免单窗口数据过大
+// ====================================================================
+const INBOUND_JOB_CONFIG = {
+  maxWindowDays: 3,
+  pageSize: 50,
+  maxPagesPerRun: 3,
+  timeBudgetSeconds: 45,
+  staleMs: 3 * 60_000, // 3 分钟无心跳判定为 stalled
+};
+
+function buildInboundWindows(from: Date, to: Date, maxDays: number) {
+  const stepMs = maxDays * 86400_000 - 60_000; // 安全边界
+  const out: Array<{ from: string; to: string }> = [];
+  let cur = from.getTime();
+  const end = to.getTime();
+  if (end <= cur) {
+    out.push({ from: new Date(cur).toISOString(), to: new Date(cur + 60_000).toISOString() });
+    return out;
+  }
+  while (cur < end) {
+    const next = Math.min(cur + stepMs, end);
+    out.push({ from: new Date(cur).toISOString(), to: new Date(next).toISOString() });
+    cur = next;
+  }
+  return out;
+}
+
+async function markStaleInboundJobs() {
+  const cutoff = new Date(Date.now() - INBOUND_JOB_CONFIG.staleMs).toISOString();
+  const { data, error } = await admin
+    .from("jst_sync_jobs")
+    .update({
+      status: "stalled",
+      ended_at: new Date().toISOString(),
+      message: "任务超过 3 分钟无心跳,已标记为 stalled,可点击「继续同步」从断点恢复",
+      error_detail: "stalled: heartbeat exceeded threshold",
+    })
+    .in("status", ["running", "pending"])
+    .lt("heartbeat_at", cutoff)
+    .select("id");
+  if (error) console.error("markStaleInboundJobs error", error.message);
+  return data?.length ?? 0;
+}
+
+async function createInboundJob(opts: {
+  fromIso: string;
+  toIso: string;
+  triggerType: string;
+  requestedRange: string;
+  createdBy: string | null;
+}) {
+  const windows = buildInboundWindows(
+    new Date(opts.fromIso),
+    new Date(opts.toIso),
+    INBOUND_JOB_CONFIG.maxWindowDays,
+  );
+  // 父日志,沿用 jst_sync_logs 老界面
+  const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
+    sync_type: "purchase_inbound_orders",
+    status: "running",
+    cursor_from: opts.fromIso,
+    cursor_to: opts.toIso,
+    heartbeat_at: new Date().toISOString(),
+    message: `[断点同步] 范围=${opts.fromIso} → ${opts.toIso}; 拆分=${windows.length} 段 (≤${INBOUND_JOB_CONFIG.maxWindowDays}天/段); 每次最多 ${INBOUND_JOB_CONFIG.maxPagesPerRun} 页 / ${INBOUND_JOB_CONFIG.timeBudgetSeconds}s`,
+  }).select("id").single();
+  if (logErr) throw logErr;
+
+  const { data: job, error: jobErr } = await admin.from("jst_sync_jobs").insert({
+    parent_log_id: log.id,
+    sync_type: "purchase_inbound_orders",
+    status: "pending",
+    trigger_type: opts.triggerType,
+    requested_range: opts.requestedRange,
+    requested_from: opts.fromIso,
+    requested_to: opts.toIso,
+    total_windows: windows.length,
+    current_window_index: 0,
+    current_window_from: windows[0]?.from ?? null,
+    current_window_to: windows[0]?.to ?? null,
+    current_page_index: 0,
+    next_page_index: 1,
+    page_size: INBOUND_JOB_CONFIG.pageSize,
+    has_next: true,
+    max_window_days: INBOUND_JOB_CONFIG.maxWindowDays,
+    max_pages_per_run: INBOUND_JOB_CONFIG.maxPagesPerRun,
+    time_budget_seconds: INBOUND_JOB_CONFIG.timeBudgetSeconds,
+    windows,
+    created_by: opts.createdBy,
+    heartbeat_at: new Date().toISOString(),
+    started_at: new Date().toISOString(),
+    message: "任务已创建,等待第一次 tick",
+  }).select().single();
+  if (jobErr) throw jobErr;
+
+  // 把 job_id 回写到父日志
+  await admin.from("jst_sync_logs").update({ job_id: job.id }).eq("id", log.id);
+
+  return job;
+}
+
+async function updateJobProgress(jobId: string, patch: Record<string, unknown>) {
+  const { error } = await admin
+    .from("jst_sync_jobs")
+    .update({ ...patch, heartbeat_at: new Date().toISOString() })
+    .eq("id", jobId);
+  if (error) console.error("updateJobProgress error", error.message);
+}
+
+async function writeLogDetail(row: Record<string, unknown>) {
+  const { error } = await admin.from("jst_sync_log_details").insert(row);
+  if (error) console.error("writeLogDetail error", error.message);
+}
+
+// 处理一页入库单数据
+async function processInboundPage(args: {
+  job: any;
+  windowIndex: number;
+  windowFrom: Date;
+  windowTo: Date;
+  pageIndex: number;
+}) {
+  const { job, windowIndex, windowFrom, windowTo, pageIndex } = args;
+  const pageStart = Date.now();
+  const affectedPoIds = new Set<string>();
+  const reqBody = {
+    page_index: pageIndex,
+    page_size: job.page_size ?? 50,
+    modified_begin: fmt(windowFrom),
+    modified_end: fmt(windowTo),
+  };
+
+  let apiCount = 0, mainUpserted = 0, itemUpserted = 0, failed = 0;
+  let hasNext = false;
+  let firstIo: string | null = null, lastIo: string | null = null;
+  let firstMod: string | null = null, lastMod: string | null = null;
+  let respCode: string | null = null, respMsg: string | null = null;
+  let errorDetail = "";
+
+  try {
+    await sleep(RATE_DELAY_MS);
+    const { data, meta } = await callJushuitan("purchasein.query", reqBody);
+    respCode = String(meta.code ?? "");
+    respMsg = sanitizeMsg(meta.msg ?? "").slice(0, 500);
+    const list: any[] = data.datas ?? data.list ?? [];
+    apiCount = list.length;
+    hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === (job.page_size ?? 50));
+    if (list.length > 0) {
+      firstIo = parseJstBeijingDateTime(list[0].io_date);
+      firstMod = parseJstBeijingDateTime(list[0].modified);
+      lastIo = parseJstBeijingDateTime(list[list.length - 1].io_date);
+      lastMod = parseJstBeijingDateTime(list[list.length - 1].modified);
+    }
+
+    for (const io of list) {
+      const externalIoId = String(io.io_id ?? "");
+      if (!externalIoId) continue;
+      try {
+        const externalPoId = io.po_id ? String(io.po_id) : null;
+        let poId: string | null = null;
+        if (externalPoId) {
+          const { data: po } = await admin.from("purchase_orders").select("id").eq("external_po_id", externalPoId).maybeSingle();
+          poId = po?.id ?? null;
+          if (poId) affectedPoIds.add(poId);
+        }
+        const recRow = {
+          external_io_id: externalIoId, purchase_order_id: poId, external_po_id: externalPoId,
+          jst_supplier_id: io.supplier_id ? String(io.supplier_id) : null,
+          supplier_name: io.supplier_name ?? "", warehouse_name: io.warehouse ?? "",
+          io_date: parseJstBeijingDateTime(io.io_date),
+          status: io.status ?? "",
+          jst_modified_at: parseJstBeijingDateTime(io.modified),
+          remark: io.remark ?? "", raw: io,
+        };
+        const { data: upRec, error: recErr } = await admin.from("purchase_receipts")
+          .upsert(recRow, { onConflict: "external_io_id" }).select("id").single();
+        if (recErr) throw recErr;
+        mainUpserted++;
+        const receiptId = upRec.id as string;
+        const itemList: any[] = io.items ?? [];
+        for (const it of itemList) {
+          const ioiId = it.ioi_id ? String(it.ioi_id) : null;
+          const qty = Number(it.qty ?? 0);
+          const itemRow = {
+            receipt_id: receiptId, purchase_order_id: poId,
+            external_io_id: externalIoId, external_ioi_id: ioiId, external_po_id: externalPoId,
+            sku_no: it.sku_id ? String(it.sku_id) : "",
+            product_name: it.name ?? "", received_qty: qty,
+            cost_price: Number(it.cost_price ?? 0),
+            cost_amount: Number(it.cost_amount ?? qty * Number(it.cost_price ?? 0)),
+            remark: it.remark ?? "", raw: it,
+          };
+          const conflict = ioiId ? "external_ioi_id" : "external_io_id,sku_no";
+          const { error: itErr } = await admin.from("purchase_receipt_items")
+            .upsert(itemRow, { onConflict: conflict });
+          if (itErr) throw itErr;
+          itemUpserted++;
+        }
+      } catch (writeErr) {
+        failed++;
+        errorDetail = sanitizeMsg((writeErr as Error).message ?? "").slice(0, 500);
+      }
+    }
+  } catch (apiErr) {
+    errorDetail = sanitizeMsg((apiErr as Error).message ?? "").slice(0, 500);
+    failed++;
+    throw new Error(errorDetail);
+  } finally {
+    // 永远写一条页级日志,方便排查每一页
+    await writeLogDetail({
+      job_id: job.id,
+      log_id: job.parent_log_id,
+      sync_type: "purchase_inbound_orders",
+      window_index: windowIndex,
+      window_from: windowFrom.toISOString(),
+      window_to: windowTo.toISOString(),
+      page_index: pageIndex,
+      page_size: job.page_size ?? 50,
+      api_count: apiCount,
+      has_next: hasNext,
+      main_upserted: mainUpserted,
+      item_upserted: itemUpserted,
+      failed_count: failed,
+      first_io_date: firstIo,
+      last_io_date: lastIo,
+      first_modified_at: firstMod,
+      last_modified_at: lastMod,
+      request_body: reqBody,
+      response_code: respCode,
+      response_msg: respMsg,
+      duration_ms: Date.now() - pageStart,
+      error_detail: errorDetail,
+    });
+  }
+
+  // 按段聚合刷新 PO,避免 total_* 长期为 0
+  for (const poId of affectedPoIds) {
+    try { await admin.rpc("recalc_purchase_order_aggregates", { _po_id: poId }); }
+    catch (_) { /* ignore */ }
+  }
+
+  return { apiCount, mainUpserted, itemUpserted, failed, hasNext };
+}
+
+async function tickInboundJob(jobId: string) {
+  const tickStart = Date.now();
+  const { data: job, error: loadErr } = await admin
+    .from("jst_sync_jobs")
+    .select("*")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (loadErr) throw loadErr;
+  if (!job) throw new Error("任务不存在");
+  if (["success", "failed", "cancelled"].includes(job.status)) {
+    return { status: job.status, job };
+  }
+
+  const windows: Array<{ from: string; to: string }> = Array.isArray(job.windows) ? job.windows : [];
+  if (windows.length === 0) {
+    await updateJobProgress(jobId, {
+      status: "success",
+      ended_at: new Date().toISOString(),
+      message: "范围为空,无需同步",
+    });
+    return { status: "success", job };
+  }
+
+  await updateJobProgress(jobId, { status: "running", message: `开始处理,当前窗口 ${(job.current_window_index ?? 0) + 1}/${windows.length}` });
+
+  const budgetMs = (job.time_budget_seconds ?? INBOUND_JOB_CONFIG.timeBudgetSeconds) * 1000;
+  const maxPages = job.max_pages_per_run ?? INBOUND_JOB_CONFIG.maxPagesPerRun;
+
+  let windowIndex = job.current_window_index ?? 0;
+  let pageIndex = job.next_page_index || 1;
+  let totalApi = job.total_api_count ?? 0;
+  let totalMain = job.total_order_upserted ?? 0;
+  let totalItem = job.total_item_upserted ?? 0;
+  let totalFailed = job.total_failed ?? 0;
+  let pagesThisRun = 0;
+  let lastError = "";
+
+  while (windowIndex < windows.length) {
+    if (Date.now() - tickStart > budgetMs) break;
+    if (pagesThisRun >= maxPages) break;
+
+    const win = windows[windowIndex];
+    const winFrom = new Date(win.from);
+    const winTo = new Date(win.to);
+
+    try {
+      const result = await processInboundPage({
+        job, windowIndex, windowFrom: winFrom, windowTo: winTo, pageIndex,
+      });
+      pagesThisRun++;
+      totalApi += result.apiCount;
+      totalMain += result.mainUpserted;
+      totalItem += result.itemUpserted;
+      totalFailed += result.failed;
+
+      const movedNext = !result.hasNext || result.apiCount === 0;
+      const newWindowIndex = movedNext ? windowIndex + 1 : windowIndex;
+      const newPageIndex = movedNext ? 1 : pageIndex + 1;
+
+      await updateJobProgress(jobId, {
+        current_window_index: newWindowIndex,
+        current_window_from: windows[newWindowIndex]?.from ?? win.from,
+        current_window_to: windows[newWindowIndex]?.to ?? win.to,
+        current_page_index: pageIndex,
+        next_page_index: newPageIndex,
+        has_next: !(movedNext && newWindowIndex >= windows.length),
+        total_api_count: totalApi,
+        total_order_upserted: totalMain,
+        total_item_upserted: totalItem,
+        total_failed: totalFailed,
+        last_success_at: new Date().toISOString(),
+        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页完成 (本页 ${result.apiCount} 条,主表+${result.mainUpserted},明细+${result.itemUpserted}${result.hasNext ? ",还有下一页" : ",本窗口结束"})`,
+      });
+
+      windowIndex = newWindowIndex;
+      pageIndex = newPageIndex;
+    } catch (err) {
+      lastError = sanitizeMsg((err as Error).message ?? "").slice(0, 500);
+      totalFailed++;
+      await updateJobProgress(jobId, {
+        total_failed: totalFailed,
+        error_detail: lastError,
+        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页失败: ${lastError}`,
+      });
+      break;
+    }
+  }
+
+  // 收尾状态
+  const allDone = windowIndex >= windows.length;
+  const finalStatus = allDone ? (lastError ? "failed" : "success") : (lastError ? "failed" : "partial");
+  const tail = {
+    status: finalStatus,
+    ended_at: allDone || lastError ? new Date().toISOString() : null,
+    total_api_count: totalApi,
+    total_order_upserted: totalMain,
+    total_item_upserted: totalItem,
+    total_failed: totalFailed,
+    current_window_index: Math.min(windowIndex, windows.length - 1),
+    current_window_from: windows[Math.min(windowIndex, windows.length - 1)]?.from ?? null,
+    current_window_to: windows[Math.min(windowIndex, windows.length - 1)]?.to ?? null,
+    next_page_index: pageIndex,
+    message: allDone
+      ? `全部完成 · 窗口 ${windows.length} 个 · 入库单 ${totalMain} · 明细 ${totalItem}${lastError ? ` · 末次错误: ${lastError}` : ""}`
+      : lastError
+        ? `任务失败 · 窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页 · ${lastError}`
+        : `本次 tick 已处理 ${pagesThisRun} 页,等待继续 · 当前窗口 ${windowIndex + 1}/${windows.length} 下一页=${pageIndex}`,
+    error_detail: lastError || null,
+  };
+  await updateJobProgress(jobId, tail);
+
+  // 同步更新父日志,保持老界面不被卡死
+  await admin.from("jst_sync_logs").update({
+    status: finalStatus === "partial" ? "running" : finalStatus,
+    ended_at: tail.ended_at,
+    fetched_receipts_count: totalMain,
+    fetched_items_count: totalItem,
+    heartbeat_at: new Date().toISOString(),
+    message: tail.message,
+    error_detail: lastError || null,
+  }).eq("id", job.parent_log_id);
+
+  return { status: finalStatus, job: { ...job, ...tail } };
+}
+
 // ---------- auth ----------
 async function isAdminCaller(req: Request): Promise<boolean> {
   const auth = req.headers.get("Authorization");
