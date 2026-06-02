@@ -694,7 +694,11 @@ async function syncPurchaseInSegment(
   const segId = await insertSegmentLog("purchase_inbound_orders", winFrom.toISOString(), winTo.toISOString(), parentLogId);
   const startedAt = Date.now();
   let receipts = 0, receiptItems = 0, page = 1, pages = 0, dbOk = 0, dbFailed = 0;
+  let apiReturned = 0;
+  let firstIoDate: string | null = null, lastIoDate: string | null = null;
+  let firstModified: string | null = null, lastModified: string | null = null;
   let finalized = false;
+  const reqWinBJ = `${fmt(winFrom)} → ${fmt(winTo)} (Asia/Shanghai)`;
   try {
     while (true) {
       assertSegmentNotTimedOut(startedAt, "采购入库同步");
@@ -706,6 +710,13 @@ async function syncPurchaseInSegment(
       });
       const list: any[] = data.datas ?? data.list ?? [];
       pages++;
+      apiReturned += list.length;
+      if (list.length > 0) {
+        if (!firstIoDate) firstIoDate = String(list[0].io_date ?? "");
+        if (!firstModified) firstModified = String(list[0].modified ?? "");
+        lastIoDate = String(list[list.length - 1].io_date ?? "");
+        lastModified = String(list[list.length - 1].modified ?? "");
+      }
       const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === 50);
       for (const io of list) {
         const externalIoId = String(io.io_id ?? "");
@@ -759,17 +770,30 @@ async function syncPurchaseInSegment(
       await updateSegmentProgress(segId, {
         fetched_receipts_count: receipts,
         fetched_items_count: receiptItems,
-        message: buildApiDetail(meta, { page, returned: list.length, hasNext, dbOk, dbFailed, durationMs: Date.now() - startedAt }),
+        message: `[入库] 窗口=${reqWinBJ}; ${buildApiDetail(meta, { page, returned: list.length, hasNext, dbOk, dbFailed, durationMs: Date.now() - startedAt })}; API返回累计=${apiReturned}; 主表upsert=${receipts}; 明细upsert=${receiptItems}; 首条io_date=${firstIoDate ?? "-"}; 末条io_date=${lastIoDate ?? "-"}`,
       });
       if (!hasNext || list.length === 0) break;
       page++;
     }
     finalized = true;
-    const emptyMsg = receipts === 0 ? "本时间窗口无采购入库数据。" : `采购入库 ${fmt(winFrom)} → ${fmt(winTo)} pages=${pages} receipts=${receipts}`;
-    await finishSegmentLog(segId, "success", {
+    const writeFailed = apiReturned > 0 && receipts === 0;
+    const finalStatus: "success" | "failed" = writeFailed ? "failed" : "success";
+    const summary = [
+      `[入库] 窗口=${reqWinBJ}`,
+      `请求字段=modified_begin/modified_end`,
+      `API返回数=${apiReturned}`,
+      `主表upsert=${receipts}`,
+      `明细upsert=${receiptItems}`,
+      `失败=${dbFailed}`,
+      `首条io_date=${firstIoDate ?? "-"} modified=${firstModified ?? "-"}`,
+      `末条io_date=${lastIoDate ?? "-"} modified=${lastModified ?? "-"}`,
+      `耗时=${Math.round((Date.now() - startedAt) / 1000)}s`,
+    ].join("; ");
+    await finishSegmentLog(segId, finalStatus, {
       fetched_receipts_count: receipts,
       fetched_items_count: receiptItems,
-      message: `${emptyMsg}; 写入成功=${dbOk}; 写入失败=${dbFailed}; 耗时=${Math.round((Date.now() - startedAt) / 1000)}s`,
+      message: writeFailed ? `⚠️ API 返回 ${apiReturned} 条但数据库写入 0 条,请检查 error_detail。${summary}` : summary,
+      error_detail: writeFailed ? `API_returned=${apiReturned} but db_written=0; check upsert path` : null,
     });
     return { receipts, pages };
   } catch (e) {
@@ -778,7 +802,8 @@ async function syncPurchaseInSegment(
     await finishSegmentLog(segId, "failed", {
       fetched_receipts_count: receipts,
       fetched_items_count: receiptItems,
-      message: `采购入库段失败 page=${page}; 写入成功=${dbOk}; 写入失败=${dbFailed}; 耗时=${Math.round((Date.now() - startedAt) / 1000)}s`, error_detail: msg.slice(0, 1000),
+      message: `[入库] 段失败 窗口=${reqWinBJ} page=${page} API返回=${apiReturned} 主表upsert=${receipts} 明细upsert=${receiptItems} 失败=${dbFailed} 耗时=${Math.round((Date.now() - startedAt) / 1000)}s`,
+      error_detail: msg.slice(0, 1000),
     });
     throw e;
   } finally {
