@@ -31,20 +31,24 @@ export function useSalesRefundPrecheck() {
   const q = useMappings();
   const stats = useMemo(() => {
     const rows = q.data ?? [];
-    const active = rows.filter((r) => r.mapping_status !== "ignored");
     const total = rows.length;
-    const mapped = rows.filter((r) => r.mapping_status === "mapped").length;
-    const unmapped = active.filter((r) => r.mapping_status === "unmapped").length;
+    const mappedRows = rows.filter((r) => r.mapping_status === "mapped");
+    const mapped = mappedRows.length;
     const ignored = rows.filter((r) => r.mapping_status === "ignored").length;
-    const noEntity = active.filter((r) => !r.matched_business_entity_id).length;
-    const noPlatform = active.filter((r) => !r.matched_platform_id).length;
+    const pending = total - mapped - ignored;
+    // 无主体/无平台/重复绑定 仅统计已映射店铺
+    const noEntity = mappedRows.filter((r) => !r.matched_business_entity_id).length;
+    const noPlatform = mappedRows.filter((r) => !r.matched_platform_id).length;
     const shopCount = new Map<string, number>();
-    active.forEach((r) => {
+    mappedRows.forEach((r) => {
       if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1);
     });
     const duplicates = Array.from(shopCount.values()).filter((n) => n > 1).length;
-    const allowSummary = unmapped === 0 && noEntity === 0 && noPlatform === 0 && duplicates === 0;
-    return { total, mapped, unmapped, ignored, noEntity, noPlatform, duplicates, allowSummary };
+    const processedRate = total > 0 ? Math.round(((mapped + ignored) / total) * 100) : 0;
+    const allowSummary = pending === 0 && noEntity === 0 && noPlatform === 0 && duplicates === 0;
+    // 兼容旧字段
+    const unmapped = pending;
+    return { total, mapped, ignored, pending, unmapped, noEntity, noPlatform, duplicates, processedRate, allowSummary };
   }, [q.data]);
   return { ...q, stats };
 }
