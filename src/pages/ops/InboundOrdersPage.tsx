@@ -20,7 +20,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   formatDateCN, formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
-import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
+
 
 const PAGE_SIZE = 20;
 const fmtMoney = (n: number | null | undefined) =>
@@ -264,7 +264,6 @@ export default function InboundOrdersPage() {
   const [detailRow, setDetailRow] = useState<any | null>(null);
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [lastFinishedJob, setLastFinishedJob] = useState<any | null>(null);
 
   const statsQ = useStats();
   const listQ = useInboundList(filters, page);
@@ -276,55 +275,6 @@ export default function InboundOrdersPage() {
     queryFn: async () => null,
   });
   const diag = useDiagnostics();
-
-  // 本次同步数据分布（按 io_date 聚合本次任务期间被写入的入库单）
-  const syncResultQ = useQuery({
-    queryKey: ["inbound_sync_result", lastFinishedJob?.id],
-    enabled: !!lastFinishedJob?.id && !!lastFinishedJob?.started_at,
-    queryFn: async () => {
-      const job = lastFinishedJob;
-      // 取本次任务期间被 upsert 的入库单（updated_at >= started_at）
-      const { data, error } = await supabase
-        .from("purchase_receipts")
-        .select("id, io_date, updated_at, created_at")
-        .gte("updated_at", job.started_at)
-        .limit(5000);
-      if (error) throw error;
-      const rows = data ?? [];
-      const byDay: Record<string, { count: number; isNew: number; isUpdated: number }> = {};
-      let earliest: string | null = null;
-      let latest: string | null = null;
-      for (const r of rows as any[]) {
-        const ymd = beijingYMD(r.io_date) || "未知";
-        const isNew = r.created_at && r.updated_at && Math.abs(new Date(r.created_at).getTime() - new Date(r.updated_at).getTime()) < 2000;
-        const cur = byDay[ymd] ?? { count: 0, isNew: 0, isUpdated: 0 };
-        cur.count += 1;
-        if (isNew) cur.isNew += 1; else cur.isUpdated += 1;
-        byDay[ymd] = cur;
-        if (r.io_date) {
-          if (!earliest || r.io_date < earliest) earliest = r.io_date;
-          if (!latest || r.io_date > latest) latest = r.io_date;
-        }
-      }
-      const dist = Object.entries(byDay)
-        .sort(([a], [b]) => (a < b ? 1 : -1))
-        .map(([ymd, v]) => ({ ymd, ...v }));
-      const totalNew = dist.reduce((s, d) => s + d.isNew, 0);
-      const totalUpd = dist.reduce((s, d) => s + d.isUpdated, 0);
-      // 当前筛选范围内可见 vs 范围外
-      const startYmd = filters.startDate;
-      const endYmd = filters.endDate;
-      let inRange = 0, outRange = 0;
-      for (const d of dist) {
-        if (d.ymd === "未知") { outRange += d.count; continue; }
-        if ((!startYmd || d.ymd >= startYmd) && (!endYmd || d.ymd <= endYmd)) inRange += d.count;
-        else outRange += d.count;
-      }
-      return { dist, totalNew, totalUpd, total: rows.length, earliest, latest, inRange, outRange };
-    },
-  });
-
-  // ===== 断点续跑任务由 InboundSyncJobPanel 统一管理 =====
 
   const onSearch = () => { setPage(0); setFilters(draft); };
   const onReset = () => { const d = defaultFilters(); setDraft(d); setFilters(d); setPage(0); };
@@ -346,13 +296,6 @@ export default function InboundOrdersPage() {
     setDraft(next); setFilters(next); setPage(0);
   };
 
-  const viewThisSyncRange = () => {
-    if (!syncResultQ.data?.earliest || !syncResultQ.data?.latest) return;
-    const start = beijingYMD(syncResultQ.data.earliest);
-    const end = beijingYMD(syncResultQ.data.latest);
-    const next = { ...draft, startDate: start, endDate: end };
-    setDraft(next); setFilters(next); setPage(0);
-  };
 
   const onExport = () => {
     const rows = listQ.data?.rows ?? [];
@@ -469,75 +412,9 @@ export default function InboundOrdersPage() {
         </div>
       </CardContent></Card>
 
-      {/* 入库同步任务面板（与数据中心共用同一组件） */}
-      <div className="mb-3">
-        <InboundSyncJobPanel
-          onJobFinished={(job) => {
-            if (job?.status === "success") setLastFinishedJob(job);
-            qc.invalidateQueries({ queryKey: ["inbound_list"] });
-            qc.invalidateQueries({ queryKey: ["inbound_stats"] });
-            qc.invalidateQueries({ queryKey: ["inbound_diag"] });
-          }}
-        />
-      </div>
+      {/* 入库同步任务面板与同步结果已迁移至「聚水潭数据接入详情」页面 */}
 
-      {/* 本次同步结果 */}
-      {lastFinishedJob && (
-        <Card className="mb-3 border-emerald-200">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className="bg-emerald-100 text-emerald-700">本次同步完成</Badge>
-              <span className="text-xs text-muted-foreground font-mono">job {String(lastFinishedJob.id).slice(0, 8)}…</span>
-              <span className="text-xs text-muted-foreground">
-                聚水潭修改时间：{formatDateTimeCN(lastFinishedJob.requested_from)} → {formatDateTimeCN(lastFinishedJob.requested_to)}
-              </span>
-              <div className="flex-1" />
-              {syncResultQ.data?.earliest && (
-                <Button size="sm" variant="default" onClick={viewThisSyncRange}>
-                  查看本次同步数据（{beijingYMD(syncResultQ.data.earliest)} → {beijingYMD(syncResultQ.data.latest)}）
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setLastFinishedJob(null)}>关闭</Button>
-            </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-x-4 gap-y-1 text-xs">
-              <div>API 返回入库单：<span className="font-medium">{fmtInt(lastFinishedJob.total_api_count)}</span></div>
-              <div>主表 upsert：<span className="font-medium">{fmtInt(lastFinishedJob.total_order_upserted)}</span></div>
-              <div>明细 upsert：<span className="font-medium">{fmtInt(lastFinishedJob.total_item_upserted)}</span></div>
-              <div>失败：<span className={lastFinishedJob.total_failed > 0 ? "text-rose-600 font-medium" : "font-medium"}>{fmtInt(lastFinishedJob.total_failed)}</span></div>
-              <div>本次写入主表（按 updated_at）：<span className="font-medium">{fmtInt(syncResultQ.data?.total)}</span></div>
-              <div className="text-emerald-700">当前筛选范围内可见：<span className="font-medium">{fmtInt(syncResultQ.data?.inRange)}</span></div>
-              <div className="text-amber-700">当前筛选范围外：<span className="font-medium">{fmtInt(syncResultQ.data?.outRange)}</span></div>
-            </div>
-
-            {syncResultQ.data && syncResultQ.data.total > 0 && syncResultQ.data.inRange === 0 && (
-              <div className="text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 p-2">
-                本次同步成功，但部分数据的入库日期不在当前筛选范围内，请扩大入库日期范围查看。
-              </div>
-            )}
-
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">本次同步数据的入库日期分布：</div>
-              {syncResultQ.isLoading && <div className="text-xs text-muted-foreground">统计中...</div>}
-              {syncResultQ.data && syncResultQ.data.dist.length === 0 && (
-                <div className="text-xs text-muted-foreground">未匹配到本次同步期间被写入的入库单。</div>
-              )}
-              {syncResultQ.data && syncResultQ.data.dist.length > 0 && (
-                <div className="flex flex-wrap gap-1 max-h-40 overflow-auto">
-                  {syncResultQ.data.dist.map(d => {
-                    const inRange = d.ymd !== "未知" && (!filters.startDate || d.ymd >= filters.startDate) && (!filters.endDate || d.ymd <= filters.endDate);
-                    return (
-                      <Badge key={d.ymd} variant="outline" className={inRange ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}>
-                        {d.ymd}：{d.count} 单（新 {d.isNew}/更 {d.isUpdated}）
-                      </Badge>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
 
 
