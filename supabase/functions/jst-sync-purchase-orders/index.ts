@@ -991,13 +991,34 @@ async function markStaleInboundJobs() {
   return data?.length ?? 0;
 }
 
-async function createInboundJob(opts: {
+type JobSyncType = "purchase_inbound_orders" | "purchase_orders";
+
+async function findActiveJob(syncType: JobSyncType) {
+  const { data } = await admin
+    .from("jst_sync_jobs")
+    .select("*")
+    .eq("sync_type", syncType)
+    .in("status", ["pending", "running", "partial", "waiting_next_tick", "stalled"])
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data;
+}
+
+async function createSyncJob(opts: {
+  syncType: JobSyncType;
   fromIso: string;
   toIso: string;
   triggerType: string;
   requestedRange: string;
   createdBy: string | null;
 }) {
+  await markStaleInboundJobs();
+  // 防止重复创建
+  const existing = await findActiveJob(opts.syncType);
+  if (existing) {
+    return { ...existing, _reused: true };
+  }
   const windows = buildInboundWindows(
     new Date(opts.fromIso),
     new Date(opts.toIso),
@@ -1005,7 +1026,7 @@ async function createInboundJob(opts: {
   );
   // 父日志,沿用 jst_sync_logs 老界面
   const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
-    sync_type: "purchase_inbound_orders",
+    sync_type: opts.syncType,
     status: "running",
     cursor_from: opts.fromIso,
     cursor_to: opts.toIso,
@@ -1016,7 +1037,7 @@ async function createInboundJob(opts: {
 
   const { data: job, error: jobErr } = await admin.from("jst_sync_jobs").insert({
     parent_log_id: log.id,
-    sync_type: "purchase_inbound_orders",
+    sync_type: opts.syncType,
     status: "pending",
     trigger_type: opts.triggerType,
     requested_range: opts.requestedRange,
@@ -1045,6 +1066,17 @@ async function createInboundJob(opts: {
   await admin.from("jst_sync_logs").update({ job_id: job.id }).eq("id", log.id);
 
   return job;
+}
+
+// 向后兼容别名
+async function createInboundJob(opts: {
+  fromIso: string;
+  toIso: string;
+  triggerType: string;
+  requestedRange: string;
+  createdBy: string | null;
+}) {
+  return createSyncJob({ ...opts, syncType: "purchase_inbound_orders" });
 }
 
 async function updateJobProgress(jobId: string, patch: Record<string, unknown>) {
@@ -1196,6 +1228,150 @@ async function processInboundPage(args: {
   return { apiCount, mainUpserted, itemUpserted, failed, hasNext };
 }
 
+// 处理一页采购单数据 (purchase.query)
+async function processPurchasePage(args: {
+  job: any;
+  windowIndex: number;
+  windowFrom: Date;
+  windowTo: Date;
+  pageIndex: number;
+}) {
+  const { job, windowIndex, windowFrom, windowTo, pageIndex } = args;
+  const pageStart = Date.now();
+  const affectedPoIds = new Set<string>();
+  const reqBody = {
+    page_index: pageIndex,
+    page_size: job.page_size ?? 50,
+    modified_begin: fmt(windowFrom),
+    modified_end: fmt(windowTo),
+  };
+
+  let apiCount = 0, mainUpserted = 0, itemUpserted = 0, failed = 0;
+  let hasNext = false;
+  let firstIo: string | null = null, lastIo: string | null = null;
+  let firstMod: string | null = null, lastMod: string | null = null;
+  let respCode: string | null = null, respMsg: string | null = null;
+  let errorDetail = "";
+
+  try {
+    await sleep(RATE_DELAY_MS);
+    const { data, meta } = await callJushuitan("purchase.query", reqBody);
+    respCode = String(meta.code ?? "");
+    respMsg = sanitizeMsg(meta.msg ?? "").slice(0, 500);
+    const list: any[] = data.datas ?? data.list ?? data.orders ?? [];
+    apiCount = list.length;
+    hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === (job.page_size ?? 50));
+    if (list.length > 0) {
+      firstIo = parseJstBeijingDateTime(list[0].po_date);
+      firstMod = parseJstBeijingDateTime(list[0].modified);
+      lastIo = parseJstBeijingDateTime(list[list.length - 1].po_date);
+      lastMod = parseJstBeijingDateTime(list[list.length - 1].modified);
+    }
+
+    for (const po of list) {
+      const externalPoId = String(po.po_id ?? po.poId ?? "");
+      if (!externalPoId) continue;
+      try {
+        const supplierId = await ensureSupplier(po.supplier_id ?? po.supplierId, po.seller ?? po.supplier_name ?? "");
+        const itemListEarly: any[] = po.items ?? [];
+        let maxDeliveryIso: string | null = null;
+        for (const it of itemListEarly) {
+          const d = parseJstBeijingDateTime(it.delivery_date);
+          if (d && (!maxDeliveryIso || d > maxDeliveryIso)) maxDeliveryIso = d;
+        }
+        const row = {
+          external_po_id: externalPoId,
+          supplier_id: supplierId,
+          jst_supplier_id: po.supplier_id ? String(po.supplier_id) : null,
+          supplier_name: po.seller ?? po.supplier_name ?? "",
+          po_date: parseJstBeijingDateTime(po.po_date),
+          status: po.status ?? "", status_label: po.status ?? "",
+          raw_receive_status: po.receive_status ?? "",
+          expected_delivery_date: maxDeliveryIso,
+          remark: po.remark ?? "",
+          jst_modified_at: parseJstBeijingDateTime(po.modified),
+          raw: po,
+        };
+        const { data: upPo, error: upErr } = await admin.from("purchase_orders")
+          .upsert(row, { onConflict: "external_po_id" }).select("id").single();
+        if (upErr) throw upErr;
+        const poId = upPo.id as string;
+        affectedPoIds.add(poId);
+        mainUpserted++;
+        const itemList: any[] = po.items ?? [];
+        for (const it of itemList) {
+          const poiId = it.poi_id ? String(it.poi_id) : null;
+          const props = it.properties_value ?? "";
+          const propMap: Record<string, string> = {};
+          String(props).split(/[;,]/).forEach((p: string) => {
+            const [k, v] = p.split(":");
+            if (k && v) propMap[k.trim()] = v.trim();
+          });
+          const qty = Number(it.qty ?? 0);
+          const price = Number(it.price ?? 0);
+          const itemRow = {
+            purchase_order_id: poId, external_po_id: externalPoId, external_poi_id: poiId,
+            style_no: it.i_id ? String(it.i_id) : "",
+            sku_no: it.sku_id ? String(it.sku_id) : "",
+            product_name: it.name ?? "", properties_value: props,
+            color: propMap["颜色"] ?? propMap["color"] ?? "",
+            size: propMap["尺码"] ?? propMap["size"] ?? "",
+            spec: props, purchase_qty: qty, unit_price: price, amount: qty * price,
+            delivery_date: parseJstBeijingDateTime(it.delivery_date),
+            item_remark: it.remark ?? "", raw: it,
+          };
+          const conflict = poiId ? "external_poi_id" : "external_po_id,sku_no,style_no";
+          const { error: itErr } = await admin.from("purchase_order_items")
+            .upsert(itemRow, { onConflict: conflict });
+          if (itErr) throw itErr;
+          itemUpserted++;
+        }
+      } catch (writeErr) {
+        failed++;
+        errorDetail = sanitizeMsg((writeErr as Error).message ?? "").slice(0, 500);
+      }
+    }
+  } catch (apiErr) {
+    errorDetail = sanitizeMsg((apiErr as Error).message ?? "").slice(0, 500);
+    failed++;
+    throw new Error(errorDetail);
+  } finally {
+    await writeLogDetail({
+      job_id: job.id,
+      log_id: job.parent_log_id,
+      sync_type: "purchase_orders",
+      window_index: windowIndex,
+      window_from: windowFrom.toISOString(),
+      window_to: windowTo.toISOString(),
+      page_index: pageIndex,
+      page_size: job.page_size ?? 50,
+      api_count: apiCount,
+      has_next: hasNext,
+      main_upserted: mainUpserted,
+      item_upserted: itemUpserted,
+      failed_count: failed,
+      first_io_date: firstIo,
+      last_io_date: lastIo,
+      first_modified_at: firstMod,
+      last_modified_at: lastMod,
+      request_body: reqBody,
+      response_code: respCode,
+      response_msg: respMsg,
+      duration_ms: Date.now() - pageStart,
+      error_detail: errorDetail,
+    });
+  }
+
+  for (const poId of affectedPoIds) {
+    try { await admin.rpc("recalc_purchase_order_aggregates", { _po_id: poId }); }
+    catch (_) { /* ignore */ }
+  }
+
+  return { apiCount, mainUpserted, itemUpserted, failed, hasNext };
+}
+
+
+
 async function tickInboundJob(jobId: string) {
   const tickStart = Date.now();
   await markStaleInboundJobs();
@@ -1255,7 +1431,8 @@ async function tickInboundJob(jobId: string) {
     const winTo = new Date(win.to);
 
     try {
-      const result = await processInboundPage({
+      const pageProcessor = job.sync_type === "purchase_orders" ? processPurchasePage : processInboundPage;
+      const result = await pageProcessor({
         job, windowIndex, windowFrom: winFrom, windowTo: winTo, pageIndex,
       });
       pagesThisRun++;
@@ -1328,15 +1505,20 @@ async function tickInboundJob(jobId: string) {
   await updateJobProgress(jobId, tail);
 
   // 同步更新父日志,保持老界面不被卡死
-  await admin.from("jst_sync_logs").update({
+  const parentLogPatch: Record<string, unknown> = {
     status: finalStatus,
     ended_at: tail.ended_at,
-    fetched_receipts_count: totalMain,
     fetched_items_count: totalItem,
     heartbeat_at: new Date().toISOString(),
     message: tail.message,
     error_detail: lastError || "",
-  }).eq("id", job.parent_log_id);
+  };
+  if (job.sync_type === "purchase_orders") {
+    parentLogPatch.fetched_orders_count = totalMain;
+  } else {
+    parentLogPatch.fetched_receipts_count = totalMain;
+  }
+  await admin.from("jst_sync_logs").update(parentLogPatch).eq("id", job.parent_log_id);
 
   return { status: finalStatus, job: { ...job, ...tail } };
 }
@@ -1420,6 +1602,53 @@ Deno.serve(async (req) => {
     }
 
     if (action === "cancel_inbound_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      await admin.from("jst_sync_jobs").update({
+        status: "cancelled",
+        ended_at: new Date().toISOString(),
+        message: "用户已取消",
+      }).eq("id", jobId);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ===== 采购单断点续跑相关 action (复用入库单同一套 job 系统) =====
+    if (action === "start_po_job") {
+      const days = Number(body.days ?? 7);
+      const requestedRange = body.requested_range ?? (days <= 1 ? "1d" : days <= 7 ? "7d" : days <= 30 ? "30d" : "custom");
+      const to = body.end_date ? new Date(body.end_date) : new Date();
+      const from = body.start_date ? new Date(body.start_date) : new Date(to.getTime() - days * 86400_000);
+      const job = await createSyncJob({
+        syncType: "purchase_orders",
+        fromIso: from.toISOString(),
+        toIso: to.toISOString(),
+        triggerType: body.trigger_type ?? "manual",
+        requestedRange,
+        createdBy: caller.uid,
+      });
+      return new Response(JSON.stringify({
+        ok: true,
+        job_id: job.id,
+        parent_log_id: job.parent_log_id,
+        total_windows: job.total_windows,
+        reused: !!(job as any)._reused,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "tick_po_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      const result = await tickInboundJob(jobId);
+      return new Response(JSON.stringify({ ok: true, status: result.status, job: result.job }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "cancel_po_job") {
       const jobId = String(body.job_id ?? "");
       if (!jobId) throw new Error("缺少 job_id");
       await admin.from("jst_sync_jobs").update({

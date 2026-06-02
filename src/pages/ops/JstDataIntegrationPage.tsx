@@ -844,37 +844,23 @@ export default function JstDataIntegrationPage() {
 
             {/* ====== 采购API ====== */}
             <TabsContent value="purchase" className="m-0 p-5 space-y-3">
-              <Card>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <ShoppingCart className="w-4 h-4 text-muted-foreground" />
-                    <div className="font-medium text-sm">采购单同步任务（断点续跑）</div>
-                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">已接入</Badge>
-                    <Badge variant="secondary" className="bg-sky-100 text-sky-700">支持断点续跑</Badge>
-                    <div className="flex-1" />
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="default" variant="default" className="h-9" disabled={poBusy}
-                        onClick={() => purchaseSyncMut.mutate({ scope: "purchase_orders", days: 1, label: "同步最近 1 天采购单" })}>
-                        <RefreshCw className={"w-4 h-4 mr-1 " + (poBusy ? "animate-spin" : "")} />
-                        同步最近 1 天
-                      </Button>
-                      <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                        disabled={poBusy}
-                        onClick={() => purchaseSyncMut.mutate({ scope: "purchase_orders", days: 7, label: "同步最近 7 天采购单" })}>同步最近 7 天</Button>
-                      <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                        disabled={poBusy}
-                        onClick={() => purchaseSyncMut.mutate({ scope: "purchase_orders", days: 30, label: "同步最近 30 天采购单" })}>同步最近 30 天</Button>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    暂无正在进行的采购单同步任务。点击右上角按钮即可创建新任务，任务会以 3 天窗口、每次最多 3 页分批执行，避免 Edge Function 超时。
-                  </div>
-                </CardContent>
-              </Card>
+              <InboundSyncJobPanel
+                title="采购单同步任务（断点续跑）"
+                syncType="purchase_orders"
+                startAction="start_po_job"
+                tickAction="tick_po_job"
+                cancelAction="cancel_po_job"
+                unitLabel="采购单"
+                toastTitle="已创建采购单同步任务"
+                onJobFinished={() => {
+                  qc.invalidateQueries({ queryKey: ["jst_purchase_logs"] });
+                  qc.invalidateQueries({ queryKey: ["jst_dashboard"] });
+                }}
+              />
               {renderScopeStats(poLatest, "采购单")}
               <div className="text-xs text-muted-foreground space-y-1">
                 <div>同步聚水潭采购单数据，已升级为「断点续跑」任务系统：每次自动按 3 天窗口、每窗口最多 3 页执行，Edge Function 不会超时；任务状态为 partial 时会自动继续，stalled 时可点「继续同步」手动恢复。</div>
-                <div>任务记录写入 <code>jst_sync_jobs</code> / <code>jst_sync_log_details</code>，可在上方看到 job_id、窗口进度、当前页、API/主表/明细 upsert 数和错误详情。</div>
+                <div>任务记录写入 <code>jst_sync_jobs</code> / <code>jst_sync_log_details</code>，可在上方面板看到 job_id、窗口进度、当前页、API/主表/明细 upsert 数和错误详情。</div>
               </div>
             </TabsContent>
 
@@ -882,6 +868,8 @@ export default function JstDataIntegrationPage() {
             <TabsContent value="receipt" className="m-0 p-5 space-y-3">
               <InboundSyncJobPanel
                 title="入库单同步任务（断点续跑）"
+                syncType="purchase_inbound_orders"
+                unitLabel="入库单"
                 onJobFinished={() => {
                   qc.invalidateQueries({ queryKey: ["jst_purchase_logs"] });
                   qc.invalidateQueries({ queryKey: ["jst_dashboard"] });
@@ -893,6 +881,7 @@ export default function JstDataIntegrationPage() {
                 <div>任务记录写入 <code>jst_sync_jobs</code> / <code>jst_sync_log_details</code>，可在上方面板看到 job_id、窗口进度、当前页、API/主表/明细 upsert 数和错误详情。</div>
               </div>
             </TabsContent>
+
 
 
             <TabsContent value="outbound" className="m-0">

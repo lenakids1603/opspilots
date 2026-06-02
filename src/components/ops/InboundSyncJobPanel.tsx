@@ -30,29 +30,49 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 interface Props {
-  /** Optional callback fired when a job reaches a terminal state (success/failed/cancelled). Receives the job row. */
   onJobFinished?: (job: any) => void;
-  /** Title shown in the card header */
   title?: string;
-  /** Whether to show built-in start buttons (1/7/30 days). Default true. */
   showStartButtons?: boolean;
+  /** sync_type used for last-job lookup & query keys. Defaults to inbound. */
+  syncType?: "purchase_inbound_orders" | "purchase_orders";
+  /** Edge function action names — override for purchase orders */
+  startAction?: string;
+  tickAction?: string;
+  cancelAction?: string;
+  /** UI labels */
+  unitLabel?: string; // e.g. "入库单" / "采购单"
+  emptyText?: string;
+  toastTitle?: string; // e.g. "已创建入库单同步任务"
 }
 
-export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任务", showStartButtons = true }: Props) {
+export function InboundSyncJobPanel({
+  onJobFinished,
+  title = "入库单同步任务",
+  showStartButtons = true,
+  syncType = "purchase_inbound_orders",
+  startAction = "start_inbound_job",
+  tickAction = "tick_inbound_job",
+  cancelAction = "cancel_inbound_job",
+  unitLabel = "入库单",
+  emptyText,
+  toastTitle,
+}: Props) {
   const qc = useQueryClient();
   const [jobId, setJobId] = useState<string | null>(null);
   const [tickError, setTickError] = useState<string | null>(null);
   const isTickingRef = useRef(false);
 
+  const lastJobKey = ["sync_last_job", syncType];
+
   // Restore the latest unfinished job on mount
   const lastJobQ = useQuery({
-    queryKey: ["inbound_last_job"],
+    queryKey: lastJobKey,
     enabled: !jobId,
     queryFn: async () => {
       const { data } = await supabase
         .from("jst_sync_jobs")
         .select("*")
-        .eq("sync_type", "purchase_inbound_orders")
+        .eq("sync_type", syncType)
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -68,7 +88,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
 
   // Poll active job
   const jobQ = useQuery({
-    queryKey: ["inbound_job", jobId],
+    queryKey: ["sync_job", syncType, jobId],
     enabled: !!jobId,
     refetchInterval: (q) => {
       const d: any = q.state.data;
@@ -91,20 +111,23 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
     mutationFn: async (days: number) => {
       const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
         body: {
-          action: "start_inbound_job",
+          action: startAction,
           days,
           requested_range: days <= 1 ? "1d" : days <= 7 ? "7d" : "30d",
         },
       });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
-      return data as { job_id: string; total_windows: number };
+      return data as { job_id: string; total_windows: number; reused?: boolean };
     },
     onSuccess: (d) => {
       setJobId(d.job_id);
+      qc.invalidateQueries({ queryKey: lastJobKey });
       toast({
-        title: "已创建入库单同步任务",
-        description: `任务 ${d.job_id.slice(0, 8)}… 已拆分为 ${d.total_windows} 个窗口，将自动分批执行。`,
+        title: toastTitle ?? `已创建${unitLabel}同步任务`,
+        description: d.reused
+          ? `已有进行中的任务 ${d.job_id.slice(0, 8)}…，已切换到该任务并继续。`
+          : `任务 ${d.job_id.slice(0, 8)}… 已拆分为 ${d.total_windows} 个窗口，将自动分批执行。`,
       });
     },
     onError: (e: any) => toast({ title: "启动同步失败", description: e.message, variant: "destructive" }),
@@ -113,7 +136,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
   const tickMut = useMutation({
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
-        body: { action: "tick_inbound_job", job_id: id },
+        body: { action: tickAction, job_id: id },
       });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error ?? "继续失败");
@@ -121,7 +144,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
     },
     onSuccess: () => {
       setTickError(null);
-      qc.invalidateQueries({ queryKey: ["inbound_job", jobId] });
+      qc.invalidateQueries({ queryKey: ["sync_job", syncType, jobId] });
     },
     onError: (e: any) => {
       setTickError(e.message);
@@ -141,12 +164,12 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
   const cancelMut = useMutation({
     mutationFn: async (id: string) => {
       const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
-        body: { action: "cancel_inbound_job", job_id: id },
+        body: { action: cancelAction, job_id: id },
       });
       if (error) throw new Error(error.message);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["inbound_job", jobId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sync_job", syncType, jobId] }),
   });
 
   const j: any = jobQ.data;
@@ -179,12 +202,16 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, nextPage, isResumable, jobId]);
 
+  const emptyMsg = emptyText ?? `暂无正在进行的${unitLabel}同步任务。点击右上角按钮即可创建新任务，任务会以 3 天窗口、每次最多 3 页分批执行，避免 Edge Function 超时。`;
+
   return (
     <Card>
       <CardContent className="p-4 space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Activity className="w-4 h-4 text-muted-foreground" />
           <div className="font-medium text-sm">{title}</div>
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">已接入</Badge>
+          <Badge variant="secondary" className="bg-sky-100 text-sky-700">支持断点续跑</Badge>
           <div className="flex-1" />
           {showStartButtons && (
             <div className="flex flex-wrap gap-2">
@@ -202,9 +229,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
         </div>
 
         {!j && (
-          <div className="text-xs text-muted-foreground">
-            暂无正在进行的入库同步任务。点击右上角按钮即可创建新任务，任务会以 3 天窗口、每次最多 3 页分批执行，避免 Edge Function 超时。
-          </div>
+          <div className="text-xs text-muted-foreground">{emptyMsg}</div>
         )}
 
         {j && (
@@ -241,7 +266,7 @@ export function InboundSyncJobPanel({ onJobFinished, title = "入库单同步任
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-muted-foreground">
               <div>API 累计：<span className="text-foreground font-medium">{fmtInt(j.total_api_count)}</span></div>
-              <div>主表 upsert：<span className="text-foreground font-medium">{fmtInt(j.total_order_upserted)}</span></div>
+              <div>{unitLabel} upsert：<span className="text-foreground font-medium">{fmtInt(j.total_order_upserted)}</span></div>
               <div>明细 upsert：<span className="text-foreground font-medium">{fmtInt(j.total_item_upserted)}</span></div>
               <div>失败：<span className={j.total_failed > 0 ? "text-rose-600 font-medium" : "text-foreground font-medium"}>{fmtInt(j.total_failed)}</span></div>
               <div>has_next：<span className="text-foreground">{String(j.has_next)}</span></div>
