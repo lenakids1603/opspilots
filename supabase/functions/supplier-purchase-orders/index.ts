@@ -40,9 +40,10 @@ Deno.serve(async (req) => {
       let q = supabase
         .from("purchase_order_items")
         .select(
-          "id, purchase_order_id, style_no, product_name, product_image_url, purchase_qty, received_qty, unreceived_qty, delivery_date, purchase_orders!inner(id, external_po_id, po_date, warehouse_status, supplier_id)",
+          "id, purchase_order_id, style_no, product_name, product_image_url, purchase_qty, received_qty, unreceived_qty, delivery_date, purchase_orders!inner(id, external_po_id, po_date, warehouse_status, supplier_id, status)",
         )
-        .limit(5000);
+        .limit(5000)
+        .not("purchase_orders.status", "in", "(Delete,delete,Deleted,deleted,已删除)");
       if (startDate) q = q.gte("purchase_orders.po_date", startDate);
       if (endDate) q = q.lte("purchase_orders.po_date", endDate);
       if (warehouseStatus) q = q.eq("purchase_orders.warehouse_status", warehouseStatus);
