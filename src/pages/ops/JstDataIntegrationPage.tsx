@@ -435,7 +435,9 @@ export default function JstDataIntegrationPage() {
       const groupLabel = isPurchaseLog ? CATEGORY_LABEL.purchase
         : (mod ? (CATEGORY_LABEL[mod.category] ?? mod.category) : "");
       const moduleName = isPurchaseLog
-        ? (l.module_key === "purchase_orders" ? "采购单" : l.module_key === "purchase_receipts" ? "采购入库单" : "采购与入库")
+        ? (l.module_key === "purchase_orders" ? "采购单"
+          : (l.module_key === "purchase_inbound_orders" || l.module_key === "purchase_in" || l.module_key === "purchase_receipts") ? "采购入库单"
+          : "采购与入库")
         : (mod?.module_name ?? l.module_key);
       const triggerLabel = TRIGGER_LABEL[l.trigger_type] ?? l.trigger_type;
       if (triggerFilter !== "all" && triggerLabel !== triggerFilter) return false;
