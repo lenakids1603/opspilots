@@ -264,7 +264,6 @@ export default function InboundOrdersPage() {
   const [detailRow, setDetailRow] = useState<any | null>(null);
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [lastFinishedJob, setLastFinishedJob] = useState<any | null>(null);
 
   const statsQ = useStats();
   const listQ = useInboundList(filters, page);
@@ -276,55 +275,6 @@ export default function InboundOrdersPage() {
     queryFn: async () => null,
   });
   const diag = useDiagnostics();
-
-  // 本次同步数据分布（按 io_date 聚合本次任务期间被写入的入库单）
-  const syncResultQ = useQuery({
-    queryKey: ["inbound_sync_result", lastFinishedJob?.id],
-    enabled: !!lastFinishedJob?.id && !!lastFinishedJob?.started_at,
-    queryFn: async () => {
-      const job = lastFinishedJob;
-      // 取本次任务期间被 upsert 的入库单（updated_at >= started_at）
-      const { data, error } = await supabase
-        .from("purchase_receipts")
-        .select("id, io_date, updated_at, created_at")
-        .gte("updated_at", job.started_at)
-        .limit(5000);
-      if (error) throw error;
-      const rows = data ?? [];
-      const byDay: Record<string, { count: number; isNew: number; isUpdated: number }> = {};
-      let earliest: string | null = null;
-      let latest: string | null = null;
-      for (const r of rows as any[]) {
-        const ymd = beijingYMD(r.io_date) || "未知";
-        const isNew = r.created_at && r.updated_at && Math.abs(new Date(r.created_at).getTime() - new Date(r.updated_at).getTime()) < 2000;
-        const cur = byDay[ymd] ?? { count: 0, isNew: 0, isUpdated: 0 };
-        cur.count += 1;
-        if (isNew) cur.isNew += 1; else cur.isUpdated += 1;
-        byDay[ymd] = cur;
-        if (r.io_date) {
-          if (!earliest || r.io_date < earliest) earliest = r.io_date;
-          if (!latest || r.io_date > latest) latest = r.io_date;
-        }
-      }
-      const dist = Object.entries(byDay)
-        .sort(([a], [b]) => (a < b ? 1 : -1))
-        .map(([ymd, v]) => ({ ymd, ...v }));
-      const totalNew = dist.reduce((s, d) => s + d.isNew, 0);
-      const totalUpd = dist.reduce((s, d) => s + d.isUpdated, 0);
-      // 当前筛选范围内可见 vs 范围外
-      const startYmd = filters.startDate;
-      const endYmd = filters.endDate;
-      let inRange = 0, outRange = 0;
-      for (const d of dist) {
-        if (d.ymd === "未知") { outRange += d.count; continue; }
-        if ((!startYmd || d.ymd >= startYmd) && (!endYmd || d.ymd <= endYmd)) inRange += d.count;
-        else outRange += d.count;
-      }
-      return { dist, totalNew, totalUpd, total: rows.length, earliest, latest, inRange, outRange };
-    },
-  });
-
-  // ===== 断点续跑任务由 InboundSyncJobPanel 统一管理 =====
 
   const onSearch = () => { setPage(0); setFilters(draft); };
   const onReset = () => { const d = defaultFilters(); setDraft(d); setFilters(d); setPage(0); };
@@ -346,13 +296,6 @@ export default function InboundOrdersPage() {
     setDraft(next); setFilters(next); setPage(0);
   };
 
-  const viewThisSyncRange = () => {
-    if (!syncResultQ.data?.earliest || !syncResultQ.data?.latest) return;
-    const start = beijingYMD(syncResultQ.data.earliest);
-    const end = beijingYMD(syncResultQ.data.latest);
-    const next = { ...draft, startDate: start, endDate: end };
-    setDraft(next); setFilters(next); setPage(0);
-  };
 
   const onExport = () => {
     const rows = listQ.data?.rows ?? [];
