@@ -947,7 +947,7 @@ const INBOUND_JOB_CONFIG = {
   pageSize: 50,
   maxPagesPerRun: 3,
   timeBudgetSeconds: 45,
-  staleMs: 3 * 60_000, // 3 分钟无心跳判定为 stalled
+  staleMs: 2 * 60_000, // 2 分钟无心跳判定为 stalled
 };
 
 function buildInboundWindows(from: Date, to: Date, maxDays: number) {
@@ -974,7 +974,7 @@ async function markStaleInboundJobs() {
     .update({
       status: "stalled",
       ended_at: null,
-      message: "任务超过 3 分钟无心跳,已标记为 stalled,可点击「继续同步」从断点恢复",
+      message: "任务超过 2 分钟无心跳,已标记为 stalled,可点击「继续同步」从断点恢复",
       error_detail: "stalled: heartbeat exceeded threshold",
     })
     .in("status", ["running", "pending"])
