@@ -90,7 +90,7 @@ export type Database = {
       bank_accounts: {
         Row: {
           account_holder_name: string | null
-          account_name: string
+          account_name: string | null
           account_no_masked: string | null
           account_number: string | null
           account_type: string | null
@@ -114,7 +114,7 @@ export type Database = {
         }
         Insert: {
           account_holder_name?: string | null
-          account_name: string
+          account_name?: string | null
           account_no_masked?: string | null
           account_number?: string | null
           account_type?: string | null
@@ -138,7 +138,7 @@ export type Database = {
         }
         Update: {
           account_holder_name?: string | null
-          account_name?: string
+          account_name?: string | null
           account_no_masked?: string | null
           account_number?: string | null
           account_type?: string | null
