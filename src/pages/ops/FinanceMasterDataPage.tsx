@@ -709,15 +709,15 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
         <table className="w-full text-[12.5px]">
           <thead className="bg-muted/40 text-muted-foreground">
             <tr className="text-left">
-              {(["店铺名称","平台","经营主体","默认收款账户","绑定账户数","店铺状态","最后同步","操作"]).map(h =>
+              {(["店铺名称","平台","经营主体","默认收款账户","状态","操作"]).map(h =>
                 <th key={h} className="px-3 py-2.5 font-normal whitespace-nowrap">{h}</th>
               )}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
+            {loading && <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8}>
+              <tr><td colSpan={6}>
                 <EmptyHint msg="暂无店铺数据。请先在【数据中心 / 聚水潭数据接入详情】同步店铺资料。" />
               </td></tr>
             )}
@@ -744,13 +744,7 @@ function ShopsTab({ initialFilter = "" }: { initialFilter?: string }) {
                       </div>
                     ) : <span className="text-muted-foreground">—</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-center">
-                    {shopBindings.length > 0
-                      ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">{shopBindings.length}</span>
-                      : <span className="text-muted-foreground">0</span>}
-                  </td>
                   <td className="px-3 py-2.5">{r.shop_status_raw || "-"}</td>
-                  <td className="px-3 py-2.5 text-[11.5px] text-muted-foreground">{r.last_synced_at ? new Date(r.last_synced_at).toLocaleString("zh-CN") : "-"}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     <button onClick={() => openAccounts(r)} className="text-[12px] text-primary hover:underline mr-3">
                       {shopBindings.length > 0 ? "查看/管理账户" : "绑定账户"}
