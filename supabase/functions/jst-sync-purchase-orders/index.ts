@@ -936,6 +936,20 @@ Deno.serve(async (req) => {
     const mode: string = String(body.mode ?? "").toLowerCase();
     const forceBackfill = mode === "force_backfill";
 
+    // scope 决定本次同步是采购单 / 入库单 / 两者(向后兼容)
+    const rawScope = String(body.scope ?? "both").toLowerCase();
+    const scope: SyncScope =
+      rawScope === "purchase_orders" ? "purchase_orders"
+      : rawScope === "purchase_inbound_orders" || rawScope === "purchase_in" || rawScope === "inbound" ? "purchase_inbound_orders"
+      : "both";
+    const parentSyncType =
+      scope === "purchase_orders" ? "purchase_orders"
+      : scope === "purchase_inbound_orders" ? "purchase_inbound_orders"
+      : "purchase_orders"; // 兼容历史:both 仍记到 purchase_orders 父日志
+    const stateKey =
+      scope === "purchase_inbound_orders" ? "purchase_inbound_orders_last_sync"
+      : "purchase_orders_last_sync";
+
     let fromIso: string;
     let toIso: string = new Date().toISOString();
     if (explicitFrom) {
@@ -948,7 +962,7 @@ Deno.serve(async (req) => {
       const { data: st } = await admin
         .from("jst_sync_state")
         .select("value")
-        .eq("key", "purchase_orders_last_sync")
+        .eq("key", stateKey)
         .maybeSingle();
       const last = (st?.value as any)?.last_modified_at as string | undefined;
       if (last) {
@@ -961,21 +975,20 @@ Deno.serve(async (req) => {
     const { data: log, error: logErr } = await admin
       .from("jst_sync_logs")
       .insert({
-        sync_type: "purchase_orders",
+        sync_type: parentSyncType,
         status: "running",
         cursor_from: fromIso,
         cursor_to: toIso,
-        message: `开始同步 mode=${JST_AUTH_MODE}${forceBackfill ? " force_backfill" : ""}`,
+        message: `开始同步 mode=${JST_AUTH_MODE} scope=${scope}${forceBackfill ? " force_backfill" : ""}`,
       })
       .select("id")
       .single();
     if (logErr) throw logErr;
 
     // 后台执行,避免 Edge Function CPU/wall-time 超限
-    // 注意:游标在每个时间段成功后已经在 syncRange 内部推进,这里不再额外 upsert
     const runBackground = async () => {
       try {
-        await syncRange(fromIso, toIso, log.id);
+        await syncRange(fromIso, toIso, log.id, scope);
       } catch (err) {
         const msg = (err as Error).message ?? "未知错误";
         const safe = msg.replace(/[A-Fa-f0-9]{32,}/g, "***");
