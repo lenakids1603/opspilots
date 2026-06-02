@@ -817,21 +817,27 @@ async function syncSalesRefund(runId: string, days: number, allowSummary: boolea
 }
 
 // ---------- 店铺映射前置校验 (sales_refund 等真实业务同步前调用) ----------
+// 规则:仅"待处理 (unmapped/pending)"店铺会阻塞正式销售汇总;
+// 已忽略 (ignored) 视为业务上已处理 (历史废弃 / 个体户已注销),不阻塞;
+// 无主体 / 无平台 / 重复绑定的检查仅针对"已映射 (mapped)"店铺。
 async function shopMappingPrecheck() {
   const { data } = await admin.from("jst_shop_mappings")
     .select("matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status");
   const rows = (data ?? []) as any[];
-  const active = rows.filter(r => r.mapping_status !== "ignored");
-  const unmapped = active.filter(r => r.mapping_status === "unmapped").length;
-  const noEntity = active.filter(r => !r.matched_business_entity_id).length;
-  const noPlatform = active.filter(r => !r.matched_platform_id).length;
+  const total = rows.length;
+  const mappedRows = rows.filter(r => r.mapping_status === "mapped");
+  const ignored = rows.filter(r => r.mapping_status === "ignored").length;
+  const pending = total - mappedRows.length - ignored;
+  const noEntity = mappedRows.filter(r => !r.matched_business_entity_id).length;
+  const noPlatform = mappedRows.filter(r => !r.matched_platform_id).length;
   const shopCount = new Map<string, number>();
-  active.forEach(r => { if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1); });
+  mappedRows.forEach(r => { if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1); });
   const dupCount = Array.from(shopCount.values()).filter(n => n > 1).length;
-  const blocking = unmapped > 0 || noEntity > 0 || noPlatform > 0 || dupCount > 0;
+  const blocking = pending > 0 || noEntity > 0 || noPlatform > 0 || dupCount > 0;
   return {
-    blocking, unmapped, noEntity, noPlatform, dupCount,
-    summary: `未绑定 ${unmapped} 个,无主体 ${noEntity} 个,无平台 ${noPlatform} 个,重复绑定 ${dupCount} 组`,
+    blocking, pending, unmapped: pending, ignored, mapped: mappedRows.length, total,
+    noEntity, noPlatform, dupCount,
+    summary: `共 ${total},已映射 ${mappedRows.length},已忽略 ${ignored},待处理 ${pending};已映射中无主体 ${noEntity},无平台 ${noPlatform},重复 ${dupCount}`,
   };
 }
 

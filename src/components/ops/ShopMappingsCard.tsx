@@ -48,12 +48,13 @@ type AuditLog = {
 };
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  mapped:   { label: "已绑定", cls: "bg-emerald-100 text-emerald-700" },
-  unmapped: { label: "未绑定", cls: "bg-amber-100 text-amber-700" },
+  mapped:   { label: "已映射", cls: "bg-emerald-100 text-emerald-700" },
+  unmapped: { label: "待处理", cls: "bg-amber-100 text-amber-700" },
+  pending:  { label: "待处理", cls: "bg-amber-100 text-amber-700" },
   ignored:  { label: "已忽略", cls: "bg-muted text-muted-foreground" },
 };
 
-const IGNORE_PRESETS = ["历史测试店铺", "已关闭店铺", "非本公司店铺", "不参与统计", "重复店铺"];
+const IGNORE_PRESETS = ["历史废弃店铺", "店铺已关闭", "个体户已注销", "测试店铺", "不参与当前统计", "其他"];
 
 export function ShopMappingsCard() {
   const { toast } = useToast();
@@ -136,27 +137,29 @@ export function ShopMappingsCard() {
 
   const rows = mappingsQ.data ?? [];
 
-  // 质量分析
+  // 质量分析:已忽略店铺视为业务上已处理,不计入风险;主体/平台/重复绑定仅针对已映射店铺
   const quality = useMemo(() => {
     const total = rows.length;
-    const mapped = rows.filter(r => r.mapping_status === "mapped").length;
-    const unmapped = rows.filter(r => r.mapping_status === "unmapped").length;
+    const mappedRows = rows.filter(r => r.mapping_status === "mapped");
+    const mapped = mappedRows.length;
     const ignored = rows.filter(r => r.mapping_status === "ignored").length;
-    const active = rows.filter(r => r.mapping_status !== "ignored");
-    const noEntity = active.filter(r => !r.matched_business_entity_id).length;
-    const noPlatform = active.filter(r => !r.matched_platform_id).length;
+    const pending = total - mapped - ignored;
+    const noEntity = mappedRows.filter(r => !r.matched_business_entity_id).length;
+    const noPlatform = mappedRows.filter(r => !r.matched_platform_id).length;
 
-    // 重复绑定检测:同一 matched_shop_id 出现多次(active)
     const shopCount = new Map<string, number>();
-    active.forEach(r => {
+    mappedRows.forEach(r => {
       if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1);
     });
     const dupShopIds = new Set(Array.from(shopCount.entries()).filter(([, n]) => n > 1).map(([id]) => id));
-    const dupCount = active.filter(r => r.matched_shop_id && dupShopIds.has(r.matched_shop_id)).length;
+    const dupCount = mappedRows.filter(r => r.matched_shop_id && dupShopIds.has(r.matched_shop_id)).length;
 
-    const completeness = total > 0 ? Math.round((mapped / total) * 100) : 0;
-    const needsAttention = unmapped > 0 || noEntity > 0 || noPlatform > 0 || dupCount > 0;
-    return { total, mapped, unmapped, ignored, noEntity, noPlatform, dupCount, completeness, needsAttention, dupShopIds };
+    const processedRate = total > 0 ? Math.round(((mapped + ignored) / total) * 100) : 0;
+    const needsAttention = pending > 0 || noEntity > 0 || noPlatform > 0 || dupCount > 0;
+    // 兼容旧字段
+    const unmapped = pending;
+    const completeness = processedRate;
+    return { total, mapped, unmapped, pending, ignored, noEntity, noPlatform, dupCount, completeness, processedRate, needsAttention, dupShopIds };
   }, [rows]);
 
   return (
@@ -266,31 +269,35 @@ export function ShopMappingsCard() {
         {/* 基础统计 */}
         <div className="grid grid-cols-4 gap-4 text-sm">
           <Stat label="聚水潭店铺总数" value={quality.total} />
-          <Stat label="已绑定" value={quality.mapped} tone="ok" />
-          <Stat label="未绑定" value={quality.unmapped} tone={quality.unmapped ? "warn" : undefined} />
+          <Stat label="已映射" value={quality.mapped} tone="ok" />
           <Stat label="已忽略" value={quality.ignored} />
+          <Stat label="待处理" value={quality.pending} tone={quality.pending ? "warn" : undefined} />
         </div>
 
         {/* 质量检查 */}
         <div className="grid grid-cols-4 gap-4 text-sm pt-2 border-t">
-          <Stat label="绑定完整率" value={`${quality.completeness}%`} tone={quality.completeness === 100 ? "ok" : "warn"} />
-          <Stat label="无主体绑定" value={quality.noEntity} tone={quality.noEntity ? "warn" : undefined} />
-          <Stat label="无平台绑定" value={quality.noPlatform} tone={quality.noPlatform ? "warn" : undefined} />
+          <Stat label="映射处理率" value={`${quality.processedRate}%`} tone={quality.processedRate === 100 ? "ok" : "warn"} />
+          <Stat label="无主体绑定（已映射）" value={quality.noEntity} tone={quality.noEntity ? "warn" : undefined} />
+          <Stat label="无平台绑定（已映射）" value={quality.noPlatform} tone={quality.noPlatform ? "warn" : undefined} />
           <Stat label="疑似重复绑定" value={quality.dupCount} tone={quality.dupCount ? "danger" : undefined} />
         </div>
 
-        {quality.needsAttention && (
+        {quality.needsAttention ? (
           <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
-              店铺映射尚未完成治理。建议在解决以下问题前不要开启销售与退款同步:
+              仍有店铺未处理时，正式销售汇总受限。已忽略的历史店铺不会阻塞同步。请处理以下风险:
               <span className="ml-1">
-                {quality.unmapped > 0 && `未绑定 ${quality.unmapped} 个;`}
-                {quality.noEntity > 0 && ` 无主体 ${quality.noEntity} 个;`}
-                {quality.noPlatform > 0 && ` 无平台 ${quality.noPlatform} 个;`}
+                {quality.pending > 0 && `待处理 ${quality.pending} 个;`}
+                {quality.noEntity > 0 && ` 已映射但无主体 ${quality.noEntity} 个;`}
+                {quality.noPlatform > 0 && ` 已映射但无平台 ${quality.noPlatform} 个;`}
                 {quality.dupCount > 0 && ` 疑似重复绑定 ${quality.dupCount} 个;`}
               </span>
             </div>
+          </div>
+        ) : (
+          <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+            店铺映射处理完成。已忽略店铺不参与正式经营统计。
           </div>
         )}
       </CardContent>

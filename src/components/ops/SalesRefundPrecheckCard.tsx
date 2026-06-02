@@ -31,20 +31,24 @@ export function useSalesRefundPrecheck() {
   const q = useMappings();
   const stats = useMemo(() => {
     const rows = q.data ?? [];
-    const active = rows.filter((r) => r.mapping_status !== "ignored");
     const total = rows.length;
-    const mapped = rows.filter((r) => r.mapping_status === "mapped").length;
-    const unmapped = active.filter((r) => r.mapping_status === "unmapped").length;
+    const mappedRows = rows.filter((r) => r.mapping_status === "mapped");
+    const mapped = mappedRows.length;
     const ignored = rows.filter((r) => r.mapping_status === "ignored").length;
-    const noEntity = active.filter((r) => !r.matched_business_entity_id).length;
-    const noPlatform = active.filter((r) => !r.matched_platform_id).length;
+    const pending = total - mapped - ignored;
+    // 无主体/无平台/重复绑定 仅统计已映射店铺
+    const noEntity = mappedRows.filter((r) => !r.matched_business_entity_id).length;
+    const noPlatform = mappedRows.filter((r) => !r.matched_platform_id).length;
     const shopCount = new Map<string, number>();
-    active.forEach((r) => {
+    mappedRows.forEach((r) => {
       if (r.matched_shop_id) shopCount.set(r.matched_shop_id, (shopCount.get(r.matched_shop_id) ?? 0) + 1);
     });
     const duplicates = Array.from(shopCount.values()).filter((n) => n > 1).length;
-    const allowSummary = unmapped === 0 && noEntity === 0 && noPlatform === 0 && duplicates === 0;
-    return { total, mapped, unmapped, ignored, noEntity, noPlatform, duplicates, allowSummary };
+    const processedRate = total > 0 ? Math.round(((mapped + ignored) / total) * 100) : 0;
+    const allowSummary = pending === 0 && noEntity === 0 && noPlatform === 0 && duplicates === 0;
+    // 兼容旧字段
+    const unmapped = pending;
+    return { total, mapped, ignored, pending, unmapped, noEntity, noPlatform, duplicates, processedRate, allowSummary };
   }, [q.data]);
   return { ...q, stats };
 }
@@ -114,22 +118,22 @@ export function SalesRefundPrecheckCard() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
           <Metric label="聚水潭店铺总数" value={stats.total} />
           <Metric label="已映射店铺" value={stats.mapped} tone="emerald" />
-          <Metric label="未映射店铺" value={stats.unmapped} tone={stats.unmapped ? "rose" : undefined} />
           <Metric label="已忽略店铺" value={stats.ignored} />
-          <Metric label="无主体绑定" value={stats.noEntity} tone={stats.noEntity ? "rose" : undefined} />
-          <Metric label="无平台绑定" value={stats.noPlatform} tone={stats.noPlatform ? "rose" : undefined} />
-          <Metric label="重复绑定风险" value={stats.duplicates} tone={stats.duplicates ? "rose" : undefined} />
+          <Metric label="待处理店铺" value={stats.pending} tone={stats.pending ? "rose" : undefined} />
+          <Metric label="无主体绑定（已映射）" value={stats.noEntity} tone={stats.noEntity ? "rose" : undefined} />
+          <Metric label="无平台绑定（已映射）" value={stats.noPlatform} tone={stats.noPlatform ? "rose" : undefined} />
+          <Metric label="映射处理率" value={`${stats.processedRate}%`} tone={stats.processedRate === 100 ? "emerald" : undefined} />
         </div>
 
         {blocked ? (
           <div className="text-xs text-amber-800 flex items-start gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            当前仅可保存聚水潭原始销售/退款数据，暂不更新正式经营指标。请先完成店铺映射治理。
+            仍有店铺未处理时，正式销售汇总受限。已忽略的历史店铺不会阻塞同步。当前仅写入聚水潭原始销售/退款数据。
           </div>
         ) : (
           <div className="text-xs text-emerald-800 flex items-start gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            店铺映射治理通过，sales_refund 同步将自动生成每日经营汇总并刷新正式指标。
+            店铺映射处理完成。已忽略店铺不参与正式经营统计。sales_refund 同步将刷新正式 GMV / GSV / 退款指标。
           </div>
         )}
       </CardContent>
@@ -137,7 +141,7 @@ export function SalesRefundPrecheckCard() {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: "emerald" | "rose" }) {
+function Metric({ label, value, tone }: { label: string; value: number | string; tone?: "emerald" | "rose" }) {
   const cls = tone === "rose" ? "text-rose-600" : tone === "emerald" ? "text-emerald-600" : "";
   return (
     <div>
