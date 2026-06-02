@@ -418,13 +418,19 @@ async function callJushuitan(method: string, biz: Record<string, unknown>) {
 }
 
 // ---------- 时间窗口 ----------
-function* timeWindows(from: Date, to: Date, days = 1) {
+// 聚水潭采购入库/采购单查询接口对 modified_begin~modified_end 限制单次最长 7 天。
+// 为保险起见,每段实际使用 6 天 23 小时 59 分钟,避免边界判断报错。
+// 任何 days > 7 的范围都会被自动拆分成多个不超过 7 天的窗口。
+const JST_MAX_WINDOW_MS = 7 * 86400_000 - 60_000; // 6d 23h 59m
+function buildJstTimeWindows(from: Date, to: Date): Array<readonly [Date, Date]> {
+  const out: Array<readonly [Date, Date]> = [];
   let cur = new Date(from);
   while (cur < to) {
-    const end = new Date(Math.min(cur.getTime() + days * 86400_000, to.getTime()));
-    yield [new Date(cur), end] as const;
+    const end = new Date(Math.min(cur.getTime() + JST_MAX_WINDOW_MS, to.getTime()));
+    out.push([new Date(cur), end] as const);
     cur = end;
   }
+  return out;
 }
 
 // 限流:聚水潭 5次/秒、100次/分钟。保守 ~4 req/s
@@ -832,7 +838,15 @@ async function syncRange(
   const errors: string[] = [];
   let lastSuccessfulTo: string | null = null;
 
-  for (const [winFrom, winTo] of timeWindows(new Date(fromIso), new Date(toIso), 1)) {
+  const windows = buildJstTimeWindows(new Date(fromIso), new Date(toIso));
+  const totalDays = Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 86400_000);
+  await admin.from("jst_sync_logs").update({
+    message: `开始同步 scope=${scope} 范围=${fromIso} → ${toIso} (≈${totalDays}天) 自动拆分为 ${windows.length} 个不超过7天的窗口`,
+  }).eq("id", logId);
+
+  let winIdx = 0;
+  for (const [winFrom, winTo] of windows) {
+    winIdx++;
     const segAffected = new Set<string>();
     let poOk = !doPO, inOk = !doIN;
     if (doPO) {
@@ -841,7 +855,7 @@ async function syncRange(
         ordersCount += r.orders; itemsCount += r.items;
         poOk = true;
       } catch (e) {
-        errors.push(`PO ${fmt(winFrom)}: ${(e as Error).message}`);
+        errors.push(`PO 窗口${winIdx}/${windows.length} ${fmt(winFrom)}~${fmt(winTo)}: ${(e as Error).message}`);
       }
     }
     if (doIN) {
@@ -850,7 +864,7 @@ async function syncRange(
         receiptsCount += r.receipts;
         inOk = true;
       } catch (e) {
-        errors.push(`IN ${fmt(winFrom)}: ${(e as Error).message}`);
+        errors.push(`IN 窗口${winIdx}/${windows.length} ${fmt(winFrom)}~${fmt(winTo)}: ${(e as Error).message}`);
       }
     }
 
@@ -865,6 +879,7 @@ async function syncRange(
 
     // 每段成功后立即推进游标,避免下次重跑已完成的日期
     // 不同 scope 使用独立游标,避免互相覆盖
+    // 注意:手动指定 start_date 的回补任务也会推进游标,这是预期行为(已经覆盖到该时间)
     if (poOk && inOk) {
       lastSuccessfulTo = winTo.toISOString();
       const stateKey = scope === "purchase_orders"
@@ -894,11 +909,11 @@ async function syncRange(
     fetched_orders_count: ordersCount,
     fetched_items_count: itemsCount,
     fetched_receipts_count: receiptsCount,
-    message: `${errors.length ? "部分成功 / 部分失败。" : "全部同步成功。"}scope=${scope};汇总:${summaryParts.join("、")}${errors.length ? `,失败段 ${errors.length}` : ""}${lastSuccessfulTo ? `;游标已推进至 ${lastSuccessfulTo}` : ""}`,
+    message: `${errors.length ? "部分成功 / 部分失败。" : "全部同步成功。"}scope=${scope};总范围=${fromIso}→${toIso};自动拆分=${windows.length}段;汇总:${summaryParts.join("、")}${errors.length ? `,失败段 ${errors.length}` : ""}${lastSuccessfulTo ? `;游标推进至 ${lastSuccessfulTo}` : ""}`,
     error_detail: errors.length ? sanitizeMsg(errors.join(" | ")).slice(0, 1500) : null,
   }).eq("id", logId);
 
-  return { ordersCount, itemsCount, receiptsCount, lastSuccessfulTo };
+  return { ordersCount, itemsCount, receiptsCount, lastSuccessfulTo, windowCount: windows.length };
 }
 
 

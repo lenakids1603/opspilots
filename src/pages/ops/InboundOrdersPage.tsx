@@ -287,8 +287,14 @@ export default function InboundOrdersPage() {
       if (data?.ok === false) throw new Error(data?.error ?? "同步失败");
       return data;
     },
-    onSuccess: (d) => {
-      toast({ title: "已启动入库单同步", description: d?.message ?? "请稍候后刷新查看结果" });
+    onSuccess: (d, days) => {
+      const segs = Math.max(1, Math.ceil(days / 7));
+      toast({
+        title: "已启动入库单同步",
+        description: days > 7
+          ? `最近 ${days} 天将自动拆分为约 ${segs} 个不超过 7 天的窗口逐段同步,请稍候在同步日志查看进度`
+          : (d?.message ?? "请稍候后刷新查看结果"),
+      });
       setTimeout(() => {
         qc.invalidateQueries({ queryKey: ["inbound_list"] });
         qc.invalidateQueries({ queryKey: ["inbound_stats"] });
