@@ -516,22 +516,25 @@ export default function InboundOrdersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <SortHead sortKey="io_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库日期</SortHead>
               <SortHead sortKey="external_io_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库单号</SortHead>
+              <SortHead sortKey="io_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库日期</SortHead>
               <SortHead sortKey="external_po_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>采购单号</SortHead>
               <SortHead sortKey="supplier_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>供应商</SortHead>
+              <SortHead sortKey="warehouse_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>仓库</SortHead>
               <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
               <SortHead sortKey="item_qty" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库件数</SortHead>
               <SortHead sortKey="item_amt" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库金额</SortHead>
-              <SortHead sortKey="updated_at" currentKey={sortKey} dir={sortDir} onSort={onSort}>同步时间</SortHead>
+              <SortHead sortKey="item_count" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">明细行数</SortHead>
+              <SortHead sortKey="jst_modified_at" currentKey={sortKey} dir={sortDir} onSort={onSort}>JST 修改时间</SortHead>
+              <TableHead>异常</TableHead>
               <TableHead>操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {listQ.isLoading && <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
-            {listQ.error && <TableRow><TableCell colSpan={10} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
+            {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
+            {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
             {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
-              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
+              <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                 暂无入库单。如聚水潭已有今日入库,请点击「同步最近 1 天」,然后打开「同步诊断」确认 API 返回数与数据库写入数。
               </TableCell></TableRow>
             )}
@@ -539,19 +542,21 @@ export default function InboundOrdersPage() {
               const abnormal = r.item_count === 0;
               return (
                 <TableRow key={r.id}>
-                  <TableCell>{formatDateCN(r.io_date)}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span>{r.external_io_id}</span>
-                      {abnormal && <Badge className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0">无明细</Badge>}
-                    </div>
-                  </TableCell>
+                  <TableCell className="font-mono text-xs">{r.external_io_id}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.io_date, { withSeconds: false })}</TableCell>
                   <TableCell className="font-mono text-xs">{r.external_po_id ?? "-"}</TableCell>
                   <TableCell>{r.supplier_name || "-"}</TableCell>
+                  <TableCell className="text-xs">{r.warehouse_name || "-"}</TableCell>
                   <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
                   <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
                   <TableCell className="text-right">{r.item_amt > 0 ? fmtMoney(r.item_amt) : "-"}</TableCell>
-                  <TableCell className="text-xs">{formatDateTimeCN(r.updated_at)}</TableCell>
+                  <TableCell className="text-right">{fmtInt(r.item_count)}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.jst_modified_at, { withSeconds: false })}</TableCell>
+                  <TableCell>
+                    {abnormal
+                      ? <Badge className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0">无明细</Badge>
+                      : <span className="text-xs text-muted-foreground">—</span>}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => { setDetailId(r.id); setDetailRow(r); }}>详情</Button>
