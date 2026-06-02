@@ -991,13 +991,34 @@ async function markStaleInboundJobs() {
   return data?.length ?? 0;
 }
 
-async function createInboundJob(opts: {
+type JobSyncType = "purchase_inbound_orders" | "purchase_orders";
+
+async function findActiveJob(syncType: JobSyncType) {
+  const { data } = await admin
+    .from("jst_sync_jobs")
+    .select("*")
+    .eq("sync_type", syncType)
+    .in("status", ["pending", "running", "partial", "waiting_next_tick", "stalled"])
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data;
+}
+
+async function createSyncJob(opts: {
+  syncType: JobSyncType;
   fromIso: string;
   toIso: string;
   triggerType: string;
   requestedRange: string;
   createdBy: string | null;
 }) {
+  await markStaleInboundJobs();
+  // 防止重复创建
+  const existing = await findActiveJob(opts.syncType);
+  if (existing) {
+    return { ...existing, _reused: true };
+  }
   const windows = buildInboundWindows(
     new Date(opts.fromIso),
     new Date(opts.toIso),
@@ -1005,7 +1026,7 @@ async function createInboundJob(opts: {
   );
   // 父日志,沿用 jst_sync_logs 老界面
   const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
-    sync_type: "purchase_inbound_orders",
+    sync_type: opts.syncType,
     status: "running",
     cursor_from: opts.fromIso,
     cursor_to: opts.toIso,
@@ -1016,7 +1037,7 @@ async function createInboundJob(opts: {
 
   const { data: job, error: jobErr } = await admin.from("jst_sync_jobs").insert({
     parent_log_id: log.id,
-    sync_type: "purchase_inbound_orders",
+    sync_type: opts.syncType,
     status: "pending",
     trigger_type: opts.triggerType,
     requested_range: opts.requestedRange,
@@ -1045,6 +1066,17 @@ async function createInboundJob(opts: {
   await admin.from("jst_sync_logs").update({ job_id: job.id }).eq("id", log.id);
 
   return job;
+}
+
+// 向后兼容别名
+async function createInboundJob(opts: {
+  fromIso: string;
+  toIso: string;
+  triggerType: string;
+  requestedRange: string;
+  createdBy: string | null;
+}) {
+  return createSyncJob({ ...opts, syncType: "purchase_inbound_orders" });
 }
 
 async function updateJobProgress(jobId: string, patch: Record<string, unknown>) {
