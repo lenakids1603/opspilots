@@ -113,9 +113,16 @@ function useStats() {
   });
 }
 
-function useInboundList(filters: Filters, page: number) {
+type SortDir = "asc" | "desc";
+type InboundSortKey =
+  | "io_date" | "external_io_id" | "external_po_id" | "supplier_name"
+  | "warehouse_name" | "status" | "jst_modified_at" | "updated_at"
+  | "item_qty" | "item_amt" | "item_count";
+const ITEM_SORT_KEYS = new Set<InboundSortKey>(["item_qty", "item_amt", "item_count"]);
+
+function useInboundList(filters: Filters, page: number, sortKey: InboundSortKey, sortDir: SortDir) {
   return useQuery({
-    queryKey: ["inbound_list", filters, page],
+    queryKey: ["inbound_list", filters, page, sortKey, sortDir],
     queryFn: async () => {
       let needItemIds: string[] | null = null;
       if (filters.sku) {
@@ -126,28 +133,64 @@ function useInboundList(filters: Filters, page: number) {
         needItemIds = Array.from(new Set((it ?? []).map((r: any) => r.receipt_id).filter(Boolean)));
         if (needItemIds.length === 0) return { rows: [], count: 0 };
       }
-      let q = supabase.from("purchase_receipts").select("*", { count: "exact" });
-      q = applyFilters(q, filters);
-      if (needItemIds) q = q.in("id", needItemIds);
-      q = q.order("io_date", { ascending: false, nullsFirst: false })
-           .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-      const { data, error, count } = await q;
-      if (error) throw error;
-      const ids = (data ?? []).map((r: any) => r.id);
-      let itemAgg: Record<string, { qty: number; amt: number; count: number }> = {};
-      if (ids.length) {
-        const { data: items } = await supabase.from("purchase_receipt_items")
-          .select("receipt_id, received_qty, cost_amount").in("receipt_id", ids);
-        for (const it of items ?? []) {
-          const k = (it as any).receipt_id as string;
-          const cur = itemAgg[k] ?? { qty: 0, amt: 0, count: 0 };
-          cur.qty += Number((it as any).received_qty ?? 0);
-          cur.amt += Number((it as any).cost_amount ?? 0);
-          cur.count += 1;
-          itemAgg[k] = cur;
+
+      const aggregateItems = async (ids: string[]) => {
+        const agg: Record<string, { qty: number; amt: number; count: number }> = {};
+        if (!ids.length) return agg;
+        for (let i = 0; i < ids.length; i += 800) {
+          const slice = ids.slice(i, i + 800);
+          const { data: items } = await supabase.from("purchase_receipt_items")
+            .select("receipt_id, received_qty, cost_amount").in("receipt_id", slice);
+          for (const it of items ?? []) {
+            const k = (it as any).receipt_id as string;
+            const cur = agg[k] ?? { qty: 0, amt: 0, count: 0 };
+            cur.qty += Number((it as any).received_qty ?? 0);
+            cur.amt += Number((it as any).cost_amount ?? 0);
+            cur.count += 1;
+            agg[k] = cur;
+          }
         }
+        return agg;
+      };
+
+      const isItemSort = ITEM_SORT_KEYS.has(sortKey);
+
+      if (!isItemSort) {
+        // DB-column sort: server-side ORDER BY + paginate
+        let q = supabase.from("purchase_receipts").select("*", { count: "exact" });
+        q = applyFilters(q, filters);
+        if (needItemIds) q = q.in("id", needItemIds);
+        q = q.order(sortKey, { ascending: sortDir === "asc", nullsFirst: false });
+        if (sortKey !== "external_io_id") {
+          q = q.order("external_io_id", { ascending: false, nullsFirst: false });
+        }
+        q = q.range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+        const { data, error, count } = await q;
+        if (error) throw error;
+        const ids = (data ?? []).map((r: any) => r.id);
+        const itemAgg = await aggregateItems(ids);
+        let rows = (data ?? []).map((r: any) => ({
+          ...r,
+          item_qty: itemAgg[r.id]?.qty ?? 0,
+          item_amt: itemAgg[r.id]?.amt ?? 0,
+          item_count: itemAgg[r.id]?.count ?? 0,
+        }));
+        if (filters.hasItems === "yes") rows = rows.filter((r: any) => r.item_count > 0);
+        if (filters.hasItems === "no") rows = rows.filter((r: any) => r.item_count === 0);
+        if (filters.abnormal === "yes") rows = rows.filter((r: any) => r.item_count === 0);
+        if (filters.abnormal === "no") rows = rows.filter((r: any) => r.item_count > 0);
+        return { rows, count: count ?? rows.length };
       }
-      let rows = (data ?? []).map((r: any) => ({
+
+      // Computed-column sort: fetch全部已筛选主表(上限 5000)，聚合 → 完整排序 → 再分页
+      let qAll = supabase.from("purchase_receipts").select("*").limit(5000);
+      qAll = applyFilters(qAll, filters);
+      if (needItemIds) qAll = qAll.in("id", needItemIds);
+      const { data: all, error: allErr } = await qAll;
+      if (allErr) throw allErr;
+      const ids = (all ?? []).map((r: any) => r.id);
+      const itemAgg = await aggregateItems(ids);
+      let rows = (all ?? []).map((r: any) => ({
         ...r,
         item_qty: itemAgg[r.id]?.qty ?? 0,
         item_amt: itemAgg[r.id]?.amt ?? 0,
@@ -157,10 +200,43 @@ function useInboundList(filters: Filters, page: number) {
       if (filters.hasItems === "no") rows = rows.filter((r: any) => r.item_count === 0);
       if (filters.abnormal === "yes") rows = rows.filter((r: any) => r.item_count === 0);
       if (filters.abnormal === "no") rows = rows.filter((r: any) => r.item_count > 0);
-      return { rows, count: count ?? rows.length };
+      rows.sort((a: any, b: any) => {
+        const va = Number(a[sortKey] ?? 0);
+        const vb = Number(b[sortKey] ?? 0);
+        if (va === vb) return String(b.external_io_id ?? "").localeCompare(String(a.external_io_id ?? ""));
+        return sortDir === "asc" ? va - vb : vb - va;
+      });
+      const count = rows.length;
+      const start = page * PAGE_SIZE;
+      return { rows: rows.slice(start, start + PAGE_SIZE), count };
     },
     retry: 1,
   });
+}
+
+function SortHead({
+  sortKey, currentKey, dir, onSort, children, align,
+}: {
+  sortKey: InboundSortKey; currentKey: InboundSortKey; dir: SortDir;
+  onSort: (k: InboundSortKey) => void; children: React.ReactNode; align?: "left" | "right";
+}) {
+  const active = sortKey === currentKey;
+  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead className={align === "right" ? "text-right" : ""}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "inline-flex items-center gap-1 select-none hover:text-foreground transition cursor-pointer",
+          active ? "text-foreground font-semibold" : "text-muted-foreground"
+        )}
+      >
+        <span>{children}</span>
+        <Icon className={cn("w-3 h-3", active ? "opacity-90" : "opacity-50")} />
+      </button>
+    </TableHead>
+  );
 }
 
 function useReceiptItems(receiptId: string | null) {
