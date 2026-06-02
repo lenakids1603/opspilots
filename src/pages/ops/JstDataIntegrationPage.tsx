@@ -424,14 +424,16 @@ export default function JstDataIntegrationPage() {
     [purchaseLogs],
   );
   const inboundLatest = useMemo(
-    () => purchaseLogs.find((p: any) =>
-      p.sync_type === "purchase_inbound_orders" ||
-      p.sync_type === "purchase_receipts" ||
-      p.sync_type === "purchase_in",
-    ),
+    () => purchaseLogs.find((p: any) => p.sync_type === "purchase_inbound_orders"),
     [purchaseLogs],
   );
+  const purchaseLogsFailed = purchaseLogsQ.isError;
   const renderScopeStats = (log: any, unit: string) => {
+    if (purchaseLogsFailed) return (
+      <div className="text-xs text-destructive border border-destructive/40 rounded-md p-3 bg-destructive/5">
+        读取失败：{(purchaseLogsQ.error as any)?.message ?? "无法获取同步日志"}
+      </div>
+    );
     if (!log) return (
       <div className="text-xs text-muted-foreground border border-dashed border-border rounded-md p-3">
         暂无同步记录
