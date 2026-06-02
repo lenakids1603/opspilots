@@ -652,13 +652,19 @@ export default function JstDataIntegrationPage() {
                 <ModuleCard
                   icon={<Users className="w-4 h-4 text-muted-foreground" />}
                   title="供应商资料"
-                  statusDot="ok" statusLabel="正常" statusTone="ok"
+                  statusDot={supplier && supplier.pending > 0 ? "warn" : "ok"}
+                  statusLabel={supplier && supplier.pending > 0 ? "待处理" : "正常"}
+                  statusTone={supplier && supplier.pending > 0 ? "warn" : "ok"}
                   rows={[
-                    { label: "聚水潭原始供应商", value: fmtNum(supplier?.total ?? baseExtra.suppliers) },
-                    { label: "ERP 已启用", value: fmtNum(supplier?.enabled) },
-                    { label: "ERP 已禁用", value: fmtNum(supplier?.disabled) },
+                    { label: "聚水潭识别供应商总数", value: fmtNum(supplier?.total ?? baseExtra.suppliers) },
+                    { label: "已匹配（已绑定 ERP 档案）", value: fmtNum(supplier?.matched) },
+                    { label: "待处理（未绑定）", value: fmtNum(supplier?.pending), valueTone: supplier && supplier.pending > 0 ? "destructive" : "default" },
+                    { label: "已忽略", value: fmtNum(supplier?.ignored) },
+                    { label: "内部 ERP 档案总数（对照）", value: fmtNum(supplier?.opsTotal) },
                     { label: "最近同步时间", value: fmtTime(supplier?.lastSync) },
                   ]}
+                  footer="这里显示的是聚水潭采购/入库数据中识别到的供应商，并用于绑定到系统内部供应商档案。内部供应商档案已有数据，并不代表聚水潭供应商映射已经完成。"
+
                   actions={
                     <>
                       <Button size="sm" disabled={triggerRun.isPending}
