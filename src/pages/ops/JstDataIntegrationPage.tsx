@@ -304,6 +304,33 @@ export default function JstDataIntegrationPage() {
     onError: (e: any) => toast({ title: "同步失败", description: e.message, variant: "destructive" }),
   });
 
+  // 真实接入:聚水潭采购单 + 采购入库同步(一个 Edge Function 同时拉两类数据)
+  const purchaseSyncMut = useMutation({
+    mutationFn: async (input: { days?: number; label: string }) => {
+      const body: Record<string, unknown> = { action: "sync" };
+      if (input.days && input.days > 0) {
+        const to = new Date();
+        const from = new Date(Date.now() - input.days * 86400_000);
+        body.start_date = from.toISOString();
+        body.end_date = to.toISOString();
+      }
+      const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", { body });
+      if (error) throw new Error(error.message);
+      if (data?.ok === false) throw new Error(data?.error ?? "同步失败");
+      return { label: input.label, log_id: data?.log_id as string | undefined, message: data?.message ?? "同步已在后台启动" };
+    },
+    onSuccess: (d) => {
+      toast({
+        title: "已启动采购同步",
+        description: `${d.label} — ${d.message}${d.log_id ? `（日志 ${d.log_id.slice(0, 8)}）` : ""}`,
+      });
+      qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_modules"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_metrics"] });
+    },
+    onError: (e: any) => toast({ title: "采购同步失败", description: e.message, variant: "destructive" }),
+  });
+
   // 给未接入按钮统一弹提示
   const notWired = (label: string) =>
     toast({
