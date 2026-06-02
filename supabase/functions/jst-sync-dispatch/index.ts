@@ -874,10 +874,13 @@ Deno.serve(async (req) => {
         JST_PROXY_USER: !!JST_PROXY_USER,
         JST_PROXY_PASS: !!JST_PROXY_PASS,
       };
+      console.log("JST connection_test env presence (masked):", present);
       const missing = ["JST_APP_KEY", "JST_APP_SECRET"].filter((k) => !(present as any)[k]);
       const tokRow = await loadToken();
       const hasTokenSource = !!(JST_ACCESS_TOKEN_SEED || JST_REFRESH_TOKEN_SEED || tokRow?.accessToken);
+      console.log("JST connection_test token source:", { env_access: !!JST_ACCESS_TOKEN_SEED, env_refresh: !!JST_REFRESH_TOKEN_SEED, db_token: !!tokRow?.accessToken });
       const checkedAt = new Date().toISOString();
+
       const createConnectionRun = async (status: "ok" | "warn" | "error", summary: string, durationMs?: number, errorMessage = "") => {
         await admin.from("jst_sync_runs").insert({
           module_key: "connection", trigger_type: "manual", status,
