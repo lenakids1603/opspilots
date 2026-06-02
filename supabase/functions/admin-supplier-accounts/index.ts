@@ -62,15 +62,18 @@ Deno.serve(async (req) => {
     return json({ error: "Missing authorization token" }, 401);
   }
 
-  // 校验调用方
+  // 校验调用方:使用 getClaims 仅校验 JWT 签名与过期时间,
+  // 不依赖 auth 服务端的 session 存在性。避免用户登出/换浏览器后
+  // 前端 react-query 缓存里残留的旧 token 触发 session_not_found 401。
+  const token = auth.slice(7);
   const userClient = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: auth } },
   });
-  const { data: userData, error: uerr } = await userClient.auth.getUser();
-  if (uerr || !userData?.user) {
+  const { data: claimsData, error: uerr } = await userClient.auth.getClaims(token);
+  if (uerr || !claimsData?.claims?.sub) {
     return json({ error: "Invalid or expired session" }, 401);
   }
-  const uid = userData.user.id;
+  const uid = claimsData.claims.sub as string;
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
   // 必须是内部员工
