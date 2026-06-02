@@ -47,7 +47,7 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    const { error } = await signIn(identifier, password);
+    const { error } = await signIn(identifier, password, userType);
     setIsLoading(false);
     if (error) {
       toast({ title: '登录失败', description: error.message, variant: 'destructive' });

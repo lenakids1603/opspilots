@@ -24,6 +24,21 @@ function emailOf(username: string) {
   return `${username.trim().toLowerCase()}@supplier.local`;
 }
 
+async function authResult(admin: any, action: string, authUserId: string) {
+  const { data, error } = await admin.auth.admin.getUserById(authUserId);
+  const user = data?.user;
+  return {
+    success: !error && !!user,
+    ok: !error && !!user,
+    action,
+    auth_user_id: authUserId,
+    email: user?.email ?? null,
+    email_confirmed: !!user?.email_confirmed_at,
+    banned: !!(user?.banned_until && new Date(user.banned_until) > new Date()),
+    error: error?.message ?? null,
+  };
+}
+
 const WEAK_PASSWORDS = new Set([
   "123456","12345678","password","password123","qwerty123",
   "admin123","gys123","jz123456","88888888","11111111",
@@ -218,7 +233,7 @@ Deno.serve(async (req) => {
         }, 500);
       }
 
-      return json({ ok: true, id: newUid });
+      return json(await authResult(admin, "create", newUid));
     }
 
     if (action === "update") {
@@ -233,7 +248,7 @@ Deno.serve(async (req) => {
       if (pErr) return json({ error: "更新供应商 profile 失败：" + pErr.message }, 500);
       const { error: uErr } = await admin.auth.admin.updateUserById(id, { user_metadata: { remark } });
       if (uErr) return json({ error: "更新供应商账号失败：" + uErr.message }, 500);
-      return json({ ok: true });
+      return json(await authResult(admin, "update", id));
     }
 
     if (action === "set_password") {
@@ -241,12 +256,14 @@ Deno.serve(async (req) => {
       const password = String(body.password ?? "");
       const pwdError = validatePassword(password);
       if (pwdError) return json({ error: pwdError }, 400);
-      const { error } = await admin.auth.admin.updateUserById(id, { password });
+      const { data: before, error: beforeErr } = await admin.auth.admin.getUserById(id);
+      if (beforeErr || !before?.user) return json({ success: false, ok: false, action: "set_password", auth_user_id: id, email: null, error: "找不到对应的 Supabase Auth 用户" }, 404);
+      const { error } = await admin.auth.admin.updateUserById(id, { password, email_confirm: true });
       if (error) {
         const n = normalizeAuthError(error);
         return json({ error: n.status === 400 ? n.message : "重置密码失败：" + error.message }, n.status);
       }
-      return json({ ok: true });
+      return json(await authResult(admin, "set_password", id));
     }
 
     if (action === "set_status") {
@@ -256,7 +273,7 @@ Deno.serve(async (req) => {
         ban_duration: disabled ? "876000h" : "none",
       } as any);
       if (error) return json({ error: "更新账号状态失败：" + error.message }, 500);
-      return json({ ok: true });
+      return json(await authResult(admin, "set_status", id));
     }
 
     return json({ error: "未知操作" }, 400);
