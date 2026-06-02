@@ -1336,7 +1336,8 @@ Deno.serve(async (req) => {
   try {
     const cronSecret = req.headers.get("x-cron-secret") ?? "";
     const okCron = !!CRON_SECRET && cronSecret === CRON_SECRET;
-    const okAdmin = okCron ? false : await isAdminCaller(req);
+    const caller = okCron ? { isAdmin: false, uid: null } : await resolveCaller(req);
+    const okAdmin = caller.isAdmin;
     if (!okCron && !okAdmin) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -1347,11 +1348,63 @@ Deno.serve(async (req) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const action: string = body.action ?? "sync";
 
-    // 自愈:把 running 超过 10 分钟的旧任务标记为 failed,避免页面一直显示在跑
+    // 自愈:把超时无心跳的旧任务标记为 failed/stalled,避免页面一直显示在跑
     const cleanedStale = await markStaleRunningAsFailed();
+    const cleanedStaleJobs = await markStaleInboundJobs();
 
     if (action === "cleanup_stale") {
-      return new Response(JSON.stringify({ ok: true, cleaned: cleanedStale }), {
+      return new Response(JSON.stringify({ ok: true, cleaned: cleanedStale, cleaned_jobs: cleanedStaleJobs }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ===== 入库单断点续跑相关 action =====
+    if (action === "start_inbound_job") {
+      const days = Number(body.days ?? 7);
+      const requestedRange = body.requested_range ?? (days <= 1 ? "1d" : days <= 7 ? "7d" : days <= 30 ? "30d" : "custom");
+      const to = body.end_date ? new Date(body.end_date) : new Date();
+      const from = body.start_date ? new Date(body.start_date) : new Date(to.getTime() - days * 86400_000);
+      const job = await createInboundJob({
+        fromIso: from.toISOString(),
+        toIso: to.toISOString(),
+        triggerType: body.trigger_type ?? "manual",
+        requestedRange,
+        createdBy: caller.uid,
+      });
+      // 后台立刻 tick 一次,前端会继续轮询
+      // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
+      EdgeRuntime.waitUntil(tickInboundJob(job.id).catch((e) => {
+        console.error("initial tick error", (e as Error).message);
+      }));
+      return new Response(JSON.stringify({ ok: true, job_id: job.id, parent_log_id: job.parent_log_id, total_windows: job.total_windows }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "tick_inbound_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      // 同步执行一次 tick,但限制时间预算,让前端可立即看到进度
+      const result = await tickInboundJob(jobId);
+      // 如果还没跑完,后台再触发一次,加速进度
+      if (result.status === "partial") {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(tickInboundJob(jobId).catch((e) => console.error("chained tick", (e as Error).message)));
+      }
+      return new Response(JSON.stringify({ ok: true, status: result.status, job: result.job }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "cancel_inbound_job") {
+      const jobId = String(body.job_id ?? "");
+      if (!jobId) throw new Error("缺少 job_id");
+      await admin.from("jst_sync_jobs").update({
+        status: "cancelled",
+        ended_at: new Date().toISOString(),
+        message: "用户已取消",
+      }).eq("id", jobId);
+      return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
