@@ -410,7 +410,7 @@ export function ShopMappingsCard() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "ok" | "warn" | "danger" }) {
+function Stat({ label, value, tone, onClick }: { label: string; value: number | string; tone?: "ok" | "warn" | "danger"; onClick?: () => void }) {
   const cls = tone === "ok" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : tone === "danger" ? "text-red-600" : "";
   return (
     <div>
