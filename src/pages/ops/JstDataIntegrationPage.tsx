@@ -418,6 +418,38 @@ export default function JstDataIntegrationPage() {
     };
   }), [purchaseLogs]);
 
+  // 采购单 / 入库单各自的最近一次同步统计（按 sync_type 分组）
+  const poLatest = useMemo(
+    () => purchaseLogs.find((p: any) => p.sync_type === "purchase_orders"),
+    [purchaseLogs],
+  );
+  const inboundLatest = useMemo(
+    () => purchaseLogs.find((p: any) =>
+      p.sync_type === "purchase_inbound_orders" ||
+      p.sync_type === "purchase_receipts" ||
+      p.sync_type === "purchase_in",
+    ),
+    [purchaseLogs],
+  );
+  const renderScopeStats = (log: any, unit: string) => {
+    if (!log) return (
+      <div className="text-xs text-muted-foreground border border-dashed border-border rounded-md p-3">
+        暂无同步记录
+      </div>
+    );
+    const fetched = (log.fetched_orders_count ?? 0) + (log.fetched_items_count ?? 0) + (log.fetched_receipts_count ?? 0);
+    const failed = log.status === "error" ? 1 : 0;
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs border border-border rounded-md p-3 bg-muted/30">
+        <div><div className="text-muted-foreground">本次{unit}数量</div><div className="font-mono text-sm">{fetched}</div></div>
+        <div><div className="text-muted-foreground">新增/抓取</div><div className="font-mono text-sm">{log.fetched_orders_count ?? 0}</div></div>
+        <div><div className="text-muted-foreground">明细数量</div><div className="font-mono text-sm">{log.fetched_items_count ?? log.fetched_receipts_count ?? 0}</div></div>
+        <div><div className="text-muted-foreground">失败</div><div className="font-mono text-sm">{failed}</div></div>
+        <div><div className="text-muted-foreground">最近同步</div><div className="font-mono text-sm">{fmtTime(log.started_at)}</div></div>
+      </div>
+    );
+  };
+
   const moduleByKey = (k: string) => modules.find((m) => m.module_key === k);
   const baseMod = moduleByKey("base_archive");
 
