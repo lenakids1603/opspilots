@@ -100,7 +100,21 @@ export function JstConnectionCheckCard() {
           </Alert>
         )}
 
-        {result && !credsMissing && !result.ok && !isWarning && (
+        {transportFailed && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>无法连接 Edge Function</AlertTitle>
+            <AlertDescription>
+              <div className="break-all">{result?.error}</div>
+              <div className="mt-1 text-xs opacity-80">
+                请求未到达 jst-sync-dispatch（常见原因：登录态过期、网络中断）。请重新登录后再点击检测。
+                这种情况下无法判断 Edge Function Secrets 是否配置，请勿据此认为凭证缺失。
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {result && !transportFailed && !credsMissing && !result.ok && !isWarning && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>接口请求失败</AlertTitle>
@@ -111,7 +125,7 @@ export function JstConnectionCheckCard() {
           </Alert>
         )}
 
-        {result && !credsMissing && isWarning && (
+        {result && !transportFailed && !credsMissing && isWarning && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>连接可达，但未获取到店铺数据</AlertTitle>
@@ -132,7 +146,8 @@ export function JstConnectionCheckCard() {
           </Alert>
         )}
 
-        {result && (
+        {hasPresent && (
+
           <div>
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="text-xs text-muted-foreground">凭证配置状态</div>
