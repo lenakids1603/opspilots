@@ -456,7 +456,7 @@ export default function SupplierDashboard() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [selectedYmd, setSelectedYmd] = useState<string | null>(null);
-  const [detailRow, setDetailRow] = useState<PendingRow | null>(null);
+  const [detailStyle, setDetailStyle] = useState<StyleRow | null>(null);
   const [stylesPopup, setStylesPopup] = useState<{ ymd: string; list: { style_no: string; qty: number }[] } | null>(null);
 
   const { startYmd, endYmd } = useMemo(
@@ -464,31 +464,88 @@ export default function SupplierDashboard() {
     [rangeKey, customStart, customEnd]
   );
 
+  // 当前供应商名称（供应商账号）
+  const { profile } = useAuth();
+  const supplierNameQ = useCurrentSupplierName(profile?.supplier_id ?? null);
+
   const purchaseQ = usePurchaseStats(startYmd, endYmd);
   const inboundQ = useInboundStats(startYmd, endYmd);
   const overdueQ = useOverdueStats();
   const timelineQ = useTimeline(5, 14);
-  const pendingQ = usePendingItems(startYmd, endYmd, selectedYmd ?? undefined);
+  const pendingQ = usePendingItemsRaw();
 
   const todayYmd = beijingYMD(new Date());
 
-  // 过滤 + 分页
-  const filteredPending = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    let rows = pendingQ.data ?? [];
-    if (kw) rows = rows.filter(r =>
-      r.style_no.toLowerCase().includes(kw) ||
-      r.sku_no.toLowerCase().includes(kw) ||
-      r.product_name.toLowerCase().includes(kw) ||
-      r.supplier_name.toLowerCase().includes(kw)
-    );
-    return rows;
-  }, [pendingQ.data, keyword]);
-  const totalPages = Math.max(1, Math.ceil(filteredPending.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filteredPending.slice((safePage - 1) * pageSize, safePage * pageSize);
+  // 按款号聚合 → 排序 → 过滤
+  const styleRows = useMemo<StyleRow[]>(() => {
+    const items = pendingQ.data ?? [];
+    const filtered = selectedYmd
+      ? items.filter(it => it.delivery_date && beijingYMD(it.delivery_date) === selectedYmd)
+      : items;
+    const groups = new Map<string, PendingItem[]>();
+    for (const it of filtered) {
+      const k = getStyleKey(it);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(it);
+    }
+    const rows: StyleRow[] = [];
+    for (const [key, arr] of groups.entries()) {
+      const purchase_qty = arr.reduce((s, x) => s + x.purchase_qty, 0);
+      const received_qty = arr.reduce((s, x) => s + x.received_qty, 0);
+      const unreceived_qty = arr.reduce((s, x) => s + x.unreceived_qty, 0);
+      const amount = arr.reduce((s, x) => s + (x.amount > 0 ? x.amount : x.purchase_qty * x.unit_price), 0);
+      // 最早未完成交付日期
+      const unreceivedItems = arr.filter(x => x.unreceived_qty > 0 && x.delivery_date);
+      const earliest_delivery = unreceivedItems.length
+        ? unreceivedItems.map(x => x.delivery_date!).sort()[0]
+        : null;
+      const is_overdue = !!earliest_delivery && beijingYMD(earliest_delivery) < todayYmd;
+      const status = statusForStyle(unreceived_qty, received_qty, earliest_delivery, todayYmd);
+      const sku_count = new Set(arr.map(x => x.sku_no)).size;
+      const first = arr[0];
+      rows.push({
+        key,
+        style_no: first.style_no || key,
+        product_name: arr.find(x => x.product_name)?.product_name ?? "",
+        product_image_url: arr.find(x => x.product_image_url)?.product_image_url ?? null,
+        supplier_name: first.supplier_name,
+        sku_count, purchase_qty, received_qty, unreceived_qty, amount,
+        earliest_delivery, is_overdue, status, items: arr,
+      });
+    }
+    // 应用过滤规则：交付率>90% 且 待入库<20 时隐藏
+    const visible = rows.filter(r => {
+      if (r.purchase_qty <= 0) return true;
+      const rate = r.received_qty / r.purchase_qty;
+      return !(rate > 0.9 && r.unreceived_qty < 20);
+    });
+    // 排序：已延期 → delivery_date 升序 → 待入库降序 → 金额降序
+    visible.sort((a, b) => {
+      if (a.is_overdue !== b.is_overdue) return a.is_overdue ? -1 : 1;
+      const da = a.earliest_delivery ?? "9999";
+      const db = b.earliest_delivery ?? "9999";
+      if (da !== db) return da < db ? -1 : 1;
+      if (a.unreceived_qty !== b.unreceived_qty) return b.unreceived_qty - a.unreceived_qty;
+      return b.amount - a.amount;
+    });
+    return visible;
+  }, [pendingQ.data, selectedYmd, todayYmd]);
 
-  const lastUpdatedAt = new Date(); // 当次查询完成时间
+  const filteredStyles = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return styleRows;
+    return styleRows.filter(r =>
+      r.style_no.toLowerCase().includes(kw) ||
+      r.product_name.toLowerCase().includes(kw) ||
+      r.supplier_name.toLowerCase().includes(kw) ||
+      r.items.some(x => x.sku_no.toLowerCase().includes(kw))
+    );
+  }, [styleRows, keyword]);
+  const totalPages = Math.max(1, Math.ceil(filteredStyles.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredStyles.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const lastUpdatedAt = new Date();
 
   const RANGE_OPTIONS: { v: RangeKey; l: string }[] = [
     { v: "today", l: "今日" }, { v: "month", l: "本月" }, { v: "30d", l: "近30天" }, { v: "year", l: "今年" }, { v: "custom", l: "自定义" },
