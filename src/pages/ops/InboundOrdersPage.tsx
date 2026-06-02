@@ -469,66 +469,9 @@ export default function InboundOrdersPage() {
         </div>
       </CardContent></Card>
 
-      {/* 入库同步任务面板已迁移至「聚水潭数据接入详情」页面，此处不再展示 */}
+      {/* 入库同步任务面板与同步结果已迁移至「聚水潭数据接入详情」页面 */}
 
 
-      {/* 本次同步结果 */}
-      {lastFinishedJob && (
-        <Card className="mb-3 border-emerald-200">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className="bg-emerald-100 text-emerald-700">本次同步完成</Badge>
-              <span className="text-xs text-muted-foreground font-mono">job {String(lastFinishedJob.id).slice(0, 8)}…</span>
-              <span className="text-xs text-muted-foreground">
-                聚水潭修改时间：{formatDateTimeCN(lastFinishedJob.requested_from)} → {formatDateTimeCN(lastFinishedJob.requested_to)}
-              </span>
-              <div className="flex-1" />
-              {syncResultQ.data?.earliest && (
-                <Button size="sm" variant="default" onClick={viewThisSyncRange}>
-                  查看本次同步数据（{beijingYMD(syncResultQ.data.earliest)} → {beijingYMD(syncResultQ.data.latest)}）
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setLastFinishedJob(null)}>关闭</Button>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-x-4 gap-y-1 text-xs">
-              <div>API 返回入库单：<span className="font-medium">{fmtInt(lastFinishedJob.total_api_count)}</span></div>
-              <div>主表 upsert：<span className="font-medium">{fmtInt(lastFinishedJob.total_order_upserted)}</span></div>
-              <div>明细 upsert：<span className="font-medium">{fmtInt(lastFinishedJob.total_item_upserted)}</span></div>
-              <div>失败：<span className={lastFinishedJob.total_failed > 0 ? "text-rose-600 font-medium" : "font-medium"}>{fmtInt(lastFinishedJob.total_failed)}</span></div>
-              <div>本次写入主表（按 updated_at）：<span className="font-medium">{fmtInt(syncResultQ.data?.total)}</span></div>
-              <div className="text-emerald-700">当前筛选范围内可见：<span className="font-medium">{fmtInt(syncResultQ.data?.inRange)}</span></div>
-              <div className="text-amber-700">当前筛选范围外：<span className="font-medium">{fmtInt(syncResultQ.data?.outRange)}</span></div>
-            </div>
-
-            {syncResultQ.data && syncResultQ.data.total > 0 && syncResultQ.data.inRange === 0 && (
-              <div className="text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 p-2">
-                本次同步成功，但部分数据的入库日期不在当前筛选范围内，请扩大入库日期范围查看。
-              </div>
-            )}
-
-            <div>
-              <div className="text-xs text-muted-foreground mb-1">本次同步数据的入库日期分布：</div>
-              {syncResultQ.isLoading && <div className="text-xs text-muted-foreground">统计中...</div>}
-              {syncResultQ.data && syncResultQ.data.dist.length === 0 && (
-                <div className="text-xs text-muted-foreground">未匹配到本次同步期间被写入的入库单。</div>
-              )}
-              {syncResultQ.data && syncResultQ.data.dist.length > 0 && (
-                <div className="flex flex-wrap gap-1 max-h-40 overflow-auto">
-                  {syncResultQ.data.dist.map(d => {
-                    const inRange = d.ymd !== "未知" && (!filters.startDate || d.ymd >= filters.startDate) && (!filters.endDate || d.ymd <= filters.endDate);
-                    return (
-                      <Badge key={d.ymd} variant="outline" className={inRange ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}>
-                        {d.ymd}：{d.count} 单（新 {d.isNew}/更 {d.isUpdated}）
-                      </Badge>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
 
 
