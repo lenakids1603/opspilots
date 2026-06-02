@@ -102,11 +102,12 @@ function StatusBadge({ s, label }: { s: WarehouseStatus | string; label?: string
 function rangeToDates(range: string): { start?: string; end?: string } {
   if (range === "all") return {};
   const now = new Date();
-  if (range === "7d") return { start: new Date(now.getTime() - 7 * 86400000).toISOString() };
-  if (range === "30d") return { start: new Date(now.getTime() - 30 * 86400000).toISOString() };
+  const end = now.toISOString();
+  if (range === "7d") return { start: new Date(now.getTime() - 7 * 86400000).toISOString(), end };
+  if (range === "30d") return { start: new Date(now.getTime() - 30 * 86400000).toISOString(), end };
   if (range === "month") {
     const s = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    return { start: s };
+    return { start: s, end };
   }
   return {};
 }
