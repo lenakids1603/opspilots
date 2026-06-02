@@ -715,9 +715,9 @@ async function syncPurchaseInSegment(
             external_io_id: externalIoId, purchase_order_id: poId, external_po_id: externalPoId,
             jst_supplier_id: io.supplier_id ? String(io.supplier_id) : null,
             supplier_name: io.supplier_name ?? "", warehouse_name: io.warehouse ?? "",
-            io_date: io.io_date ? new Date(io.io_date).toISOString() : null,
+            io_date: parseJstBeijingDateTime(io.io_date),
             status: io.status ?? "",
-            jst_modified_at: io.modified ? new Date(io.modified).toISOString() : null,
+            jst_modified_at: parseJstBeijingDateTime(io.modified),
             remark: io.remark ?? "", raw: io,
           };
           const { data: upRec, error: recErr } = await admin.from("purchase_receipts")
