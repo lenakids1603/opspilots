@@ -358,7 +358,6 @@ function POTable({ rows, onDetail }: { rows: OrderRow[]; expanded?: string | nul
   const { sortKey, sortDir, onSort, page, setPage, pageSize, setPageSize, pageCount, total, pageRows } = useSortAndPage<OrderRow>(rows, "po_date", "desc");
   if (rows.length === 0) return <EmptyState />;
   // Auto-hide columns where ALL values are empty (but 0 is valid)
-  const hasExpected = rows.some((r) => !!r.expected_delivery_date);
   const hasLatest = rows.some((r) => !!r.latest_receipt_at);
 
   return (
