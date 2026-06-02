@@ -118,7 +118,7 @@ export default function SupplierPurchaseOrdersPage() {
   const supplierName = (profile as any)?.full_name ?? (profile as any)?.username ?? "供应商账号";
 
   const [tab, setTab] = useState<"po" | "style">("po");
-  const [dateRange, setDateRange] = useState("all");
+  const [dateRange, setDateRange] = useState("30d");
   const [keyword, setKeyword] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<"all" | WarehouseStatus>("all");
   const [expandedPO, setExpandedPO] = useState<string | null>(null);
