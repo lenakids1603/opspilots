@@ -671,13 +671,13 @@ export default function SupplierDashboard() {
             <thead className="text-muted-foreground border-b border-border">
               <tr className="text-left">
                 <th className="py-2.5 font-normal w-12"></th>
-                <th className="py-2.5 font-normal">款号 / SKU / 商品</th>
+                <th className="py-2.5 font-normal">款号 / 商品</th>
                 <th className="py-2.5 font-normal">供应商</th>
                 <th className="py-2.5 font-normal text-right">采购数</th>
                 <th className="py-2.5 font-normal text-right">已入库</th>
                 <th className="py-2.5 font-normal text-right">待入库</th>
                 <th className="py-2.5 pr-6 font-normal text-right">采购金额</th>
-                <th className="py-2.5 pl-2 font-normal">交付日期</th>
+                <th className="py-2.5 pl-2 font-normal">最早交期</th>
                 <th className="py-2.5 font-normal">交付状态</th>
                 <th className="py-2.5 font-normal">操作</th>
               </tr>
@@ -689,21 +689,21 @@ export default function SupplierDashboard() {
                 <tr><td colSpan={10} className="py-10 text-center text-rose-600">读取失败：{(pendingQ.error as any).message}</td></tr>
               ) : pageRows.length === 0 ? (
                 <tr><td colSpan={10} className="py-12 text-center text-muted-foreground">
-                  <Inbox className="w-6 h-6 inline mr-2 opacity-50" />暂无待交付明细
+                  <Inbox className="w-6 h-6 inline mr-2 opacity-50" />未来 7 天暂无待交付款式
                 </td></tr>
               ) : pageRows.map((r) => {
-                const st = pendingStatus(r, todayYmd);
+                const st = r.status;
                 const rate = r.purchase_qty > 0 ? Math.round((r.received_qty / r.purchase_qty) * 100) : 0;
                 return (
-                  <tr key={r.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
+                  <tr key={r.key} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                     <td className="py-3">
                       {r.product_image_url
                         ? <img src={r.product_image_url} alt="" className="w-9 h-9 object-cover rounded-md" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
                         : <div className="w-9 h-9 rounded-md bg-muted" />}
                     </td>
                     <td className="py-3">
-                      <div className="font-mono text-foreground">{r.style_no || "-"} <span className="text-muted-foreground">/ {r.sku_no || "-"}</span></div>
-                      <div className="text-[11px] text-muted-foreground truncate max-w-[260px]">{r.product_name || "-"}</div>
+                      <div className="font-mono text-foreground">{r.style_no}</div>
+                      <div className="text-[11px] text-muted-foreground truncate max-w-[260px]">{r.product_name || "-"} · 共 {r.sku_count} 个 SKU</div>
                     </td>
                     <td className="py-3 text-[11px] text-muted-foreground">{r.supplier_name || "-"}</td>
                     <td className="py-3 text-right tabular-nums">{fmtInt(r.purchase_qty)} <span className="text-muted-foreground">件</span></td>
@@ -713,13 +713,13 @@ export default function SupplierDashboard() {
                     <td className={`py-3 text-right tabular-nums font-semibold ${st === "overdue" ? "text-rose-600" : st === "soon" ? "text-amber-600" : "text-foreground"}`}>
                       {fmtInt(r.unreceived_qty)} <span className="font-normal text-muted-foreground">件</span>
                     </td>
-                    <td className="py-3 pr-6 text-right tabular-nums font-semibold whitespace-nowrap">{fmtMoney(r.amount > 0 ? r.amount : r.purchase_qty * r.unit_price)}</td>
-                    <td className="py-3 pl-2 font-mono whitespace-nowrap">{r.delivery_date ? formatDateCN(r.delivery_date) : <span className="text-muted-foreground">未设定</span>}</td>
+                    <td className="py-3 pr-6 text-right tabular-nums font-semibold whitespace-nowrap">{fmtMoney(r.amount)}</td>
+                    <td className="py-3 pl-2 font-mono whitespace-nowrap">{r.earliest_delivery ? formatDateCN(r.earliest_delivery) : <span className="text-muted-foreground">未设定</span>}</td>
                     <td className="py-3">
                       <span className={`px-2 py-0.5 rounded text-[11px] border ${STATUS_LABEL[st].cls}`}>{STATUS_LABEL[st].label}</span>
                     </td>
                     <td className="py-3">
-                      <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => setDetailRow(r)}>
+                      <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" onClick={() => setDetailStyle(r)}>
                         <Eye className="w-3 h-3" /> 明细
                       </Button>
                     </td>
@@ -730,9 +730,9 @@ export default function SupplierDashboard() {
           </table>
         </div>
 
-        {filteredPending.length > 0 && (
+        {filteredStyles.length > 0 && (
           <div className="flex items-center justify-between mt-4 text-[11px] text-muted-foreground">
-            <span>共 {filteredPending.length} 条，第 {safePage} / {totalPages} 页</span>
+            <span>共 {filteredStyles.length} 个款式，第 {safePage} / {totalPages} 页</span>
             <div className="flex items-center gap-1">
               <Button variant="outline" size="sm" className="h-7 text-[11px]" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>上一页</Button>
               <Button variant="outline" size="sm" className="h-7 text-[11px]" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>下一页</Button>
@@ -741,29 +741,105 @@ export default function SupplierDashboard() {
         )}
       </Card>
 
-      {/* 款号详情抽屉 */}
-      <Sheet open={!!detailRow} onOpenChange={(o) => !o && setDetailRow(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+      {/* 款式详情抽屉（SKU + 关联采购单） */}
+      <Sheet open={!!detailStyle} onOpenChange={(o) => !o && setDetailStyle(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>{detailRow?.style_no} · {detailRow?.sku_no}</SheetTitle>
-            <SheetDescription>{detailRow?.product_name}</SheetDescription>
+            <SheetTitle>{detailStyle?.style_no}</SheetTitle>
+            <SheetDescription>{detailStyle?.product_name} · {detailStyle?.supplier_name}</SheetDescription>
           </SheetHeader>
-          {detailRow && (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <div><span className="text-muted-foreground">供应商：</span>{detailRow.supplier_name || "-"}</div>
-                <div><span className="text-muted-foreground">采购单号：</span>{detailRow.external_po_id || "-"}</div>
-                <div><span className="text-muted-foreground">采购日期：</span>{formatDateCN(detailRow.po_date)}</div>
-                <div><span className="text-muted-foreground">协议到货：</span>{detailRow.delivery_date ? formatDateCN(detailRow.delivery_date) : "未设定"}</div>
-                <div><span className="text-muted-foreground">采购数量：</span>{fmtInt(detailRow.purchase_qty)} 件</div>
-                <div><span className="text-muted-foreground">已入库：</span>{fmtInt(detailRow.received_qty)} 件</div>
-                <div><span className="text-muted-foreground">待入库：</span>{fmtInt(detailRow.unreceived_qty)} 件</div>
-                <div><span className="text-muted-foreground">单价：</span>{fmtMoney(detailRow.unit_price)}</div>
-                <div><span className="text-muted-foreground">采购金额：</span>{fmtMoney(detailRow.amount > 0 ? detailRow.amount : detailRow.purchase_qty * detailRow.unit_price)}</div>
-                <div><span className="text-muted-foreground">状态：</span>{STATUS_LABEL[pendingStatus(detailRow, todayYmd)].label}</div>
+          {detailStyle && (() => {
+            const rate = detailStyle.purchase_qty > 0 ? Math.round((detailStyle.received_qty / detailStyle.purchase_qty) * 100) : 0;
+            // 关联采购单聚合
+            const poMap = new Map<string, { po_date: string | null; delivery: string | null; purchase: number; received: number; unreceived: number }>();
+            for (const it of detailStyle.items) {
+              const k = it.external_po_id || "-";
+              const cur = poMap.get(k) ?? { po_date: it.po_date, delivery: it.delivery_date, purchase: 0, received: 0, unreceived: 0 };
+              cur.purchase += it.purchase_qty;
+              cur.received += it.received_qty;
+              cur.unreceived += it.unreceived_qty;
+              if (it.delivery_date && (!cur.delivery || it.delivery_date < cur.delivery)) cur.delivery = it.delivery_date;
+              poMap.set(k, cur);
+            }
+            return (
+              <div className="mt-4 space-y-5 text-sm">
+                <div className="grid grid-cols-3 gap-3 p-3 rounded-md bg-muted/40">
+                  <div><div className="text-[11px] text-muted-foreground">采购总数</div><div className="font-semibold tabular-nums">{fmtInt(detailStyle.purchase_qty)} 件</div></div>
+                  <div><div className="text-[11px] text-muted-foreground">已入库</div><div className="font-semibold tabular-nums">{fmtInt(detailStyle.received_qty)} 件 / {rate}%</div></div>
+                  <div><div className="text-[11px] text-muted-foreground">待入库</div><div className="font-semibold tabular-nums">{fmtInt(detailStyle.unreceived_qty)} 件</div></div>
+                  <div><div className="text-[11px] text-muted-foreground">采购金额</div><div className="font-semibold tabular-nums">{fmtMoney(detailStyle.amount)}</div></div>
+                  <div><div className="text-[11px] text-muted-foreground">最早交期</div><div className="font-semibold font-mono">{detailStyle.earliest_delivery ? formatDateCN(detailStyle.earliest_delivery) : "未设定"}</div></div>
+                  <div><div className="text-[11px] text-muted-foreground">状态</div><div><span className={`px-2 py-0.5 rounded text-[11px] border ${STATUS_LABEL[detailStyle.status].cls}`}>{STATUS_LABEL[detailStyle.status].label}</span></div></div>
+                </div>
+
+                <div>
+                  <h4 className="text-[12px] font-semibold mb-2">SKU 明细（{detailStyle.items.length}）</h4>
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr className="text-left">
+                          <th className="px-2 py-2 font-normal">SKU</th>
+                          <th className="px-2 py-2 font-normal">颜色/尺码</th>
+                          <th className="px-2 py-2 font-normal text-right">采购</th>
+                          <th className="px-2 py-2 font-normal text-right">已入</th>
+                          <th className="px-2 py-2 font-normal text-right">待入</th>
+                          <th className="px-2 py-2 font-normal text-right">单价</th>
+                          <th className="px-2 py-2 font-normal text-right">金额</th>
+                          <th className="px-2 py-2 font-normal">交期</th>
+                          <th className="px-2 py-2 font-normal">采购单</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailStyle.items.map((it) => (
+                          <tr key={it.id} className="border-t">
+                            <td className="px-2 py-1.5 font-mono">{it.sku_no || "-"}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[140px]">{it.product_name || "-"}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtInt(it.purchase_qty)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtInt(it.received_qty)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtInt(it.unreceived_qty)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtMoney(it.unit_price)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtMoney(it.amount > 0 ? it.amount : it.purchase_qty * it.unit_price)}</td>
+                            <td className="px-2 py-1.5 font-mono whitespace-nowrap">{it.delivery_date ? formatDateCN(it.delivery_date) : "-"}</td>
+                            <td className="px-2 py-1.5 font-mono text-muted-foreground">{it.external_po_id || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-[12px] font-semibold mb-2">关联采购单（{poMap.size}）</h4>
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr className="text-left">
+                          <th className="px-2 py-2 font-normal">采购单号</th>
+                          <th className="px-2 py-2 font-normal">采购日期</th>
+                          <th className="px-2 py-2 font-normal">协议到货</th>
+                          <th className="px-2 py-2 font-normal text-right">采购</th>
+                          <th className="px-2 py-2 font-normal text-right">已入</th>
+                          <th className="px-2 py-2 font-normal text-right">待入</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from(poMap.entries()).map(([poNo, v]) => (
+                          <tr key={poNo} className="border-t">
+                            <td className="px-2 py-1.5 font-mono">{poNo}</td>
+                            <td className="px-2 py-1.5 font-mono whitespace-nowrap">{v.po_date ? formatDateCN(v.po_date) : "-"}</td>
+                            <td className="px-2 py-1.5 font-mono whitespace-nowrap">{v.delivery ? formatDateCN(v.delivery) : "-"}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtInt(v.purchase)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{fmtInt(v.received)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtInt(v.unreceived)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </SheetContent>
       </Sheet>
 
