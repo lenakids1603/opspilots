@@ -904,7 +904,7 @@ export default function JstDataIntegrationPage() {
 
 
             <TabsContent value="outbound" className="m-0">
-              <OutboundSyncCards />
+              <PlaceholderTab title="出库同步（暂未接入）" hint="销售出库单数据查询与同步，列表功能已移至【仓库系统 / 出库信息】页面。" />
             </TabsContent>
             <TabsContent value="aftersales" className="m-0">
               <AftersalesSyncCards />
