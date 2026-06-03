@@ -234,6 +234,7 @@ export default function SalesOrdersListPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const statsQ = useStats();
+  const typeStatsQ = useTypeStats(filters);
   const listQ = useOrderList(filters, page, sortKey, sortDir);
   const itemsQ = useOrderItems(detailRow?.id ?? null);
 
