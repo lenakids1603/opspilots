@@ -485,7 +485,7 @@ export default function SalesReturnOrdersPage() {
                   <TableHead>售后/退款单号</TableHead>
                   <TableHead>退货店铺</TableHead>
                   <TableHead>供应商</TableHead>
-                  <TableHead>仓库</TableHead>
+                  
                   <SortHead k="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
                   <SortHead k="item_qty" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">销退件数</SortHead>
                   <SortHead k="item_amt" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">销退金额</SortHead>
