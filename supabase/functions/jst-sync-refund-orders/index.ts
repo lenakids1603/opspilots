@@ -130,14 +130,32 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       message: `退货退款单同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}`,
       error_detail: errors.length ? errors.slice(0, 10).join(" | ").slice(0, 1500) : null,
     }).eq("id", logId);
-  } catch (e) {
+  } catch (e: any) {
+    const err = e as any;
+    const isAbort = err?.aborted || err?.name === "AbortError" || /abort/i.test(String(err?.message ?? ""));
+    const friendly = isAbort
+      ? `退货退款单同步请求超时或被中断，请检查接口路径、page_size、时间范围和 Edge Function 超时设置。`
+      : `退货退款单同步失败 page=${page}`;
+    const detail = [
+      `final_api_path=${METHOD_PATH}`,
+      err?.url ? `request_url=${err.url}` : null,
+      `page_index=${page}`,
+      `page_size=${PAGE_SIZE}`,
+      `start_time=${fmtBJ(winFrom)}`,
+      `end_time=${fmtBJ(winTo)}`,
+      err?.code != null ? `response_code=${err.code}` : null,
+      err?.apiMsg ? `response_msg=${err.apiMsg}` : null,
+      err?.requestId ? `request_id=${err.requestId}` : null,
+      `error_name=${err?.name ?? "Error"}`,
+      `error_message=${String(err?.message ?? err).slice(0, 600)}`,
+    ].filter(Boolean).join(" | ");
     await admin.from("jst_sync_logs").update({
       status: "failed",
       ended_at: new Date().toISOString(),
       fetched_orders_count: orders,
       fetched_items_count: items,
-      message: `退货退款单同步失败 page=${page}`,
-      error_detail: String((e as Error).message ?? e).slice(0, 1500),
+      message: friendly,
+      error_detail: detail.slice(0, 1500),
     }).eq("id", logId);
   }
 }
