@@ -80,9 +80,23 @@ async function processRefundPage(args: ProcessPageArgs): Promise<PageResult> {
   const list: any[] = data.datas ?? data.list ?? data.refunds ?? data.orders ?? [];
   const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === pageSize);
   let mainUpserted = 0, itemUpserted = 0, failed = 0, lastErr = "";
+  const oIds: string[] = [], soIds: string[] = [];
   for (const r of list) {
-    try { itemUpserted += await upsertRefund(r); mainUpserted++; }
+    try {
+      itemUpserted += await upsertRefund(r); mainUpserted++;
+      if (r.o_id) oIds.push(String(r.o_id));
+      if (r.so_id) soIds.push(String(r.so_id));
+    }
     catch (we) { failed++; lastErr = String((we as Error).message ?? we); }
+  }
+  // 同步退款后, 回刷涉及订单的内部分类
+  if (oIds.length || soIds.length) {
+    try {
+      await admin.rpc("reclassify_jst_sales_orders_by_keys", {
+        _o_ids: oIds.length ? Array.from(new Set(oIds)) : null,
+        _so_ids: soIds.length ? Array.from(new Set(soIds)) : null,
+      });
+    } catch (_e) { /* ignore */ }
   }
   return { apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext, errorDetail: lastErr };
 }
