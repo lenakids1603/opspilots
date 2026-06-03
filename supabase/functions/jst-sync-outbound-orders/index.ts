@@ -295,22 +295,29 @@ Deno.serve(async (req) => {
     }
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const { from, to } = resolveWindow(body);
+    const fieldVariant = resolveFieldVariant(body.field_variant ?? body.fieldVariant ?? body.ab_variant);
 
     const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
       sync_type: SYNC_TYPE,
       status: "running",
       cursor_from: from.toISOString(),
       cursor_to: to.toISOString(),
-      message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)}`,
+      message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)} · 字段参数=${fieldVariant}`,
+      metadata: {
+        final_api_path: `/open/${METHOD_PATH}`,
+        request_fields: { field_variant: fieldVariant, field_params_enabled: fieldVariant !== "none" },
+        request_body_preview: requestPreview(buildRequestBiz(1, from, to, fieldVariant), fieldVariant),
+      },
     }).select("id").single();
     if (logErr) throw logErr;
 
     // @ts-ignore EdgeRuntime
-    EdgeRuntime.waitUntil(runSync(from.toISOString(), to.toISOString(), log.id));
+    EdgeRuntime.waitUntil(runSync(from.toISOString(), to.toISOString(), log.id, fieldVariant));
 
     return new Response(JSON.stringify({
       ok: true, background: true, log_id: log.id,
       cursor_from: from.toISOString(), cursor_to: to.toISOString(),
+      field_variant: fieldVariant,
       message: "同步已在后台启动",
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
