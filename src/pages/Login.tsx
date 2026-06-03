@@ -80,8 +80,9 @@ export default function Login() {
 
         <div className="relative space-y-10">
           <div>
-            <h1 className="text-5xl font-bold tracking-tight leading-tight whitespace-pre-line">
-              {`Lenakids OpsPilots\n经营数据与自动化中心`}
+            <h1 className="text-5xl font-bold tracking-tight leading-tight">
+              <span className="block">Lenakids OpsPilots</span>
+              <span className="block">经营数据与自动化中心</span>
             </h1>
             <p className="mt-3 text-white/70 text-base">
               Business Insights &amp; Automation Hub
