@@ -26,7 +26,7 @@ export type SrByStyleFilters = {
 
 type Order = {
   id: string; as_id: string; status: string | null; received_date: string | null;
-  modified_at_jst: string | null; warehouse: string | null; shop_name: string | null;
+  modified_at_jst: string | null; warehouse: string | null; shop_name: string | null; shop_id: string | null;
   so_id: string | null; o_id: string | null; outer_as_id: string | null;
 };
 type Item = {
@@ -70,8 +70,17 @@ function useAgg(filters: SrByStyleFilters) {
   return useQuery({
     queryKey: ["sr_by_style", filters],
     queryFn: async () => {
+      // 店铺映射：jst_shop_id → name
+      const { data: shopsData } = await supabase.from("shops")
+        .select("jst_shop_id, name").is("deleted_at", null).not("jst_shop_id", "is", null).limit(5000);
+      const shopMap = new Map<string, string>();
+      for (const s of shopsData ?? []) {
+        const k = String((s as any).jst_shop_id ?? "").trim();
+        if (k) shopMap.set(k, (s as any).name ?? "");
+      }
+
       let q = supabase.from("jst_aftersale_received_orders")
-        .select("id, as_id, status, received_date, modified_at_jst, warehouse, shop_name, so_id, o_id, outer_as_id")
+        .select("id, as_id, status, received_date, modified_at_jst, warehouse, shop_id, shop_name, so_id, o_id, outer_as_id")
         .limit(5000);
       q = applyOrderFilters(q, filters);
       const { data: ords, error } = await q;
@@ -148,10 +157,11 @@ function useAgg(filters: SrByStyleFilters) {
       const styleMap = new Map<string, StyleRow>();
       for (const it of filteredItems) {
         const ord = orderByAs.get(it.as_id);
-        const shop = (ord?.shop_name ?? "").trim() || "(未知店铺)";
+        const sid = String(ord?.shop_id ?? "").trim();
+        const shop = (sid && shopMap.get(sid)) || (ord?.shop_name ?? "").trim() || "(未知店铺)";
         const supplier = (it.supplier_name ?? "").trim() || "-";
         const style = it._style;
-        const key = `${style}__${shop}`;
+        const key = `${style}__${shop}__${supplier}`;
         let row = styleMap.get(key);
         if (!row) {
           row = {
@@ -180,7 +190,7 @@ function useAgg(filters: SrByStyleFilters) {
       }
       const rows = Array.from(styleMap.values())
         .sort((a, b) => String(b.last_at ?? "").localeCompare(String(a.last_at ?? "")));
-      return { rows, items: filteredItems, orderByAs };
+      return { rows, items: filteredItems, orderByAs, shopMap };
     },
     retry: 1,
   });
@@ -211,10 +221,15 @@ export default function SalesReturnByStyleTab({ filters, exportRef }: Props) {
   const detailRow = useMemo(() => rows.find(r => r.key === detailKey) ?? null, [rows, detailKey]);
   const detailItems = useMemo(() => {
     if (!detailRow || !aggQ.data) return [] as Item[];
+    const sm = aggQ.data.shopMap;
     return aggQ.data.items.filter(it => {
       const ord = aggQ.data.orderByAs.get(it.as_id);
-      const shop = (ord?.shop_name ?? "").trim() || "(未知店铺)";
-      return shop === detailRow.shop_name && it._style === detailRow.style_no;
+      const sid = String(ord?.shop_id ?? "").trim();
+      const shop = (sid && sm.get(sid)) || (ord?.shop_name ?? "").trim() || "(未知店铺)";
+      const supplier = (it.supplier_name ?? "").trim() || "-";
+      return shop === detailRow.shop_name
+        && it._style === detailRow.style_no
+        && supplier === detailRow.supplier_name;
     });
   }, [detailRow, aggQ.data, rows, detailKey]);
 

@@ -126,6 +126,23 @@ function useStats() {
 type SortDir = "asc" | "desc";
 type SortKey = "received_date" | "modified_at_jst" | "as_id" | "status" | "item_qty" | "item_amt" | "abnormal";
 
+function useShopMap() {
+  return useQuery({
+    queryKey: ["sr_shop_map"],
+    queryFn: async () => {
+      const { data } = await supabase.from("shops")
+        .select("jst_shop_id, name").is("deleted_at", null).not("jst_shop_id", "is", null).limit(5000);
+      const m = new Map<string, string>();
+      for (const s of data ?? []) {
+        const k = String((s as any).jst_shop_id ?? "").trim();
+        if (k) m.set(k, (s as any).name ?? "");
+      }
+      return m;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: SortDir) {
   return useQuery({
     queryKey: ["sr_list", filters, page, sortKey, sortDir],
@@ -138,7 +155,6 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
         if (!needAsIds.length) return { rows: [], count: 0 };
       }
 
-      // 取主表（受 hasItems/abnormal 需要全量再算）
       const isComputedSort = sortKey === "item_qty" || sortKey === "item_amt" || sortKey === "abnormal";
       const needAggAll = isComputedSort
         || filters.hasItems !== "all" || filters.abnormal !== "all";
@@ -158,29 +174,34 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
       if (error) throw error;
 
       const asIds = (data ?? []).map((r: any) => r.as_id);
-      const agg: Record<string, { qty: number; amt: number; cnt: number; skus: Set<string> }> = {};
+      const agg: Record<string, { qty: number; amt: number; cnt: number; skus: Set<string>; suppliers: Set<string> }> = {};
       for (let i = 0; i < asIds.length; i += 800) {
         const slice = asIds.slice(i, i + 800);
         const { data: items } = await supabase.from("jst_aftersale_received_items")
-          .select("as_id, sku_id, qty, amount").in("as_id", slice);
+          .select("as_id, sku_id, qty, amount, supplier_name").in("as_id", slice);
         for (const it of items ?? []) {
           const k = (it as any).as_id as string;
-          const cur = agg[k] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set<string>() };
+          const cur = agg[k] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set<string>(), suppliers: new Set<string>() };
           cur.qty += Number((it as any).qty ?? 0);
           cur.amt += Number((it as any).amount ?? 0);
           cur.cnt += 1;
           if ((it as any).sku_id) cur.skus.add((it as any).sku_id);
+          const sn = ((it as any).supplier_name ?? "").trim();
+          if (sn) cur.suppliers.add(sn);
           agg[k] = cur;
         }
       }
 
       let rows = (data ?? []).map((r: any) => {
-        const a = agg[r.as_id] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set() };
+        const a = agg[r.as_id] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set(), suppliers: new Set() };
         const noOrig = !r.so_id || r.so_id === "" || r.so_id === "-1";
         const abnormal = a.cnt === 0 || noOrig || !r.status;
+        const suppliers = Array.from(a.suppliers);
         return {
           ...r, item_qty: a.qty, item_amt: a.amt, item_count: a.cnt,
           sku_count: a.skus.size, no_origin: noOrig, abnormal,
+          suppliers,
+          supplier_label: suppliers.length === 0 ? "-" : suppliers.length === 1 ? suppliers[0] : `${suppliers[0]} 等 ${suppliers.length} 家`,
         };
       });
 
@@ -245,6 +266,10 @@ export default function SalesReturnOrdersPage() {
   const styleExportRef = useRef<((kind: "byStyle" | "byOrder") => void) | null>(null);
 
   const statsQ = useStats();
+  const shopMapQ = useShopMap();
+  const shopMap = shopMapQ.data ?? new Map<string, string>();
+  const resolveShop = (r: any) =>
+    (r?.shop_id && shopMap.get(String(r.shop_id).trim())) || r?.shop_name || "-";
   const listQ = useList(filters, page, sortKey, sortDir);
 
   const onSearch = () => { setPage(0); setFilters(draft); };
@@ -302,7 +327,7 @@ export default function SalesReturnOrdersPage() {
     for (let i = 0; i < asIds.length; i += 800) {
       const slice = asIds.slice(i, i + 800);
       const { data } = await supabase.from("jst_aftersale_received_items")
-        .select("as_id, sku_id, name, qty, r_qty, amount").in("as_id", slice);
+        .select("as_id, sku_id, name, qty, r_qty, amount, supplier_name").in("as_id", slice);
       items.push(...(data ?? []));
     }
     const XLSX = await import("xlsx");
@@ -310,7 +335,9 @@ export default function SalesReturnOrdersPage() {
       .replace(/[\/: ]/g, "").slice(0, 12);
     const main = rows.map((r: any) => ({
       "销退单号": r.as_id, "原始订单号": r.so_id ?? "", "售后/退款单号": r.outer_as_id ?? "",
-      "店铺": r.shop_name ?? "", "仓库": r.warehouse ?? "", "状态": r.status ?? "",
+      "店铺": resolveShop(r), "店铺ID": r.shop_id ?? "", "JST店铺名": r.shop_name ?? "",
+      "供应商": (r.suppliers ?? []).join(" / "),
+      "仓库": r.warehouse ?? "", "状态": r.status ?? "",
       "销退件数": r.item_qty, "销退金额": r.item_amt, "SKU 数": r.sku_count,
       "销退时间": formatDateTimeCN(r.received_date, { withSeconds: false }),
       "修改时间": formatDateTimeCN(r.modified_at_jst, { withSeconds: false }),
@@ -318,6 +345,7 @@ export default function SalesReturnOrdersPage() {
     }));
     const detail = items.map(it => ({
       "销退单号": it.as_id, "SKU": it.sku_id ?? "", "商品名称": it.name ?? "",
+      "供应商": it.supplier_name ?? "",
       "件数": Number(it.qty ?? 0), "退款数": Number(it.r_qty ?? 0), "金额": Number(it.amount ?? 0),
     }));
     const wb = XLSX.utils.book_new();
@@ -455,7 +483,8 @@ export default function SalesReturnOrdersPage() {
                   <SortHead k="as_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>销退单号</SortHead>
                   <TableHead>原始订单号</TableHead>
                   <TableHead>售后/退款单号</TableHead>
-                  <TableHead>店铺</TableHead>
+                  <TableHead>退货店铺</TableHead>
+                  <TableHead>供应商</TableHead>
                   <TableHead>仓库</TableHead>
                   <SortHead k="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
                   <SortHead k="item_qty" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">销退件数</SortHead>
@@ -468,10 +497,10 @@ export default function SalesReturnOrdersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
-                {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
+                {listQ.isLoading && <TableRow><TableCell colSpan={14} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
+                {listQ.error && <TableRow><TableCell colSpan={14} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
                 {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
-                  <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                  <TableRow><TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
                     当前筛选下无销退数据。请前往数据中心同步销售退仓后再查看。
                   </TableCell></TableRow>
                 )}
@@ -480,7 +509,8 @@ export default function SalesReturnOrdersPage() {
                     <TableCell className="font-mono text-xs">{r.as_id}</TableCell>
                     <TableCell className="font-mono text-xs">{r.no_origin ? <span className="text-rose-600">无</span> : r.so_id}</TableCell>
                     <TableCell className="font-mono text-xs">{r.outer_as_id ?? "-"}</TableCell>
-                    <TableCell className="text-xs">{r.shop_name ?? "-"}</TableCell>
+                    <TableCell className="text-xs" title={`shop_id: ${r.shop_id ?? "-"}`}>{resolveShop(r)}</TableCell>
+                    <TableCell className="text-xs max-w-[180px] truncate" title={(r.suppliers ?? []).join(" / ")}>{r.supplier_label ?? "-"}</TableCell>
                     <TableCell className="text-xs">{r.warehouse ?? "-"}</TableCell>
                     <TableCell className="text-xs">{r.status ?? <span className="text-rose-600">空</span>}</TableCell>
                     <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
@@ -516,7 +546,7 @@ export default function SalesReturnOrdersPage() {
           <SheetHeader>
             <SheetTitle>销退单详情 · {detailRow?.as_id}</SheetTitle>
             <SheetDescription>
-              {detailRow?.shop_name ?? "-"} · {detailRow?.warehouse ?? "-"} · {detailRow?.status ?? "-"}
+              {resolveShop(detailRow)} · {detailRow?.warehouse ?? "-"} · {detailRow?.status ?? "-"}
             </SheetDescription>
           </SheetHeader>
           {detailRow && (
@@ -541,8 +571,10 @@ export default function SalesReturnOrdersPage() {
                     {detailRow.no_origin ? <span className="text-rose-600">无原始订单</span> : detailRow.so_id}
                   </div>
                   <div><span className="text-muted-foreground">线上订单号 (o_id)：</span>{detailRow.o_id ?? "-"}</div>
-                  <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name ?? "-"}</div>
+                  <div><span className="text-muted-foreground">退货店铺：</span>{resolveShop(detailRow)}</div>
+                  <div><span className="text-muted-foreground">JST 店铺名：</span>{detailRow.shop_name ?? "-"}</div>
                   <div><span className="text-muted-foreground">店铺 ID：</span>{detailRow.shop_id ?? "-"}</div>
+                  <div className="col-span-2"><span className="text-muted-foreground">供应商：</span>{(detailRow.suppliers ?? []).join(" / ") || "-"}</div>
                 </div>
               </section>
               <section>
@@ -551,19 +583,21 @@ export default function SalesReturnOrdersPage() {
                   <TableHeader><TableRow>
                     <TableHead>SKU</TableHead><TableHead>商品名称</TableHead>
                     <TableHead>规格</TableHead>
+                    <TableHead>供应商</TableHead>
                     <TableHead className="text-right">件数</TableHead>
                     <TableHead className="text-right">退款数</TableHead>
                     <TableHead className="text-right">金额</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {(itemsQ.data ?? []).length === 0 && (
-                      <TableRow><TableCell colSpan={6} className="text-center text-rose-600 py-4">无明细（异常）</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-rose-600 py-4">无明细（异常）</TableCell></TableRow>
                     )}
                     {(itemsQ.data ?? []).map((it: any, i: number) => (
                       <TableRow key={it.id ?? i}>
                         <TableCell className="font-mono text-xs">{it.sku_id ?? "-"}</TableCell>
                         <TableCell className="text-xs max-w-[220px] truncate" title={it.name}>{it.name}</TableCell>
                         <TableCell className="text-xs max-w-[180px] truncate" title={it.properties_value}>{it.properties_value ?? "-"}</TableCell>
+                        <TableCell className="text-xs max-w-[140px] truncate" title={it.supplier_name}>{it.supplier_name ?? "-"}</TableCell>
                         <TableCell className="text-right">{fmtInt(it.qty)}</TableCell>
                         <TableCell className="text-right">{fmtInt(it.r_qty)}</TableCell>
                         <TableCell className="text-right">{Number(it.amount) > 0 ? fmtMoney(it.amount) : "-"}</TableCell>
