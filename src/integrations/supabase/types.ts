@@ -1108,6 +1108,7 @@ export type Database = {
           paid_amount: number
           pay_amount: number
           pay_time: string | null
+          plan_delivery_date: string | null
           raw_data: Json | null
           receiver_city: string | null
           receiver_district: string | null
@@ -1147,6 +1148,7 @@ export type Database = {
           paid_amount?: number
           pay_amount?: number
           pay_time?: string | null
+          plan_delivery_date?: string | null
           raw_data?: Json | null
           receiver_city?: string | null
           receiver_district?: string | null
@@ -1186,6 +1188,7 @@ export type Database = {
           paid_amount?: number
           pay_amount?: number
           pay_time?: string | null
+          plan_delivery_date?: string | null
           raw_data?: Json | null
           receiver_city?: string | null
           receiver_district?: string | null

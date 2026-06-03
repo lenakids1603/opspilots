@@ -71,6 +71,7 @@ async function upsertSalesOrder(o: any): Promise<{ orderId: string; itemsUpserte
     created_time: parseJstBeijingDateTime(o.created ?? o.create_time),
     modified_time: parseJstBeijingDateTime(o.modified ?? o.modified_time),
     pay_time: parseJstBeijingDateTime(o.pay_date ?? o.paytime ?? o.pay_time),
+    plan_delivery_date: parseJstBeijingDateTime(o.plan_delivery_date),
     io_id: str(o.io_id),
     io_date: parseJstBeijingDateTime(o.io_date),
     l_id: str(o.l_id),
