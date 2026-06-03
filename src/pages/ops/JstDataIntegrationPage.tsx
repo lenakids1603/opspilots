@@ -580,7 +580,7 @@ export default function JstDataIntegrationPage() {
     { key: "base", label: "基础API", tone: "ok" },
     { key: "product", label: "商品API", tone: "warn" },
     { key: "inventory", label: "库存API", tone: "muted" },
-    { key: "order", label: "订单API", tone: "muted" },
+    { key: "order", label: "订单API", tone: tabTone(["sales_orders"]) },
     { key: "logistics", label: "物流API", tone: "muted" },
     { key: "purchase", label: "采购API", tone: tabTone(["purchase_orders"]) },
     { key: "receipt", label: "入库API", tone: tabTone(["purchase_inbound_orders", "purchase_receipts", "purchase_in"]) },
