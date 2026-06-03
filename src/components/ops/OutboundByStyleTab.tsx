@@ -80,10 +80,16 @@ function useStyleAggregate(filters: OutboundByStyleFilters) {
     queryFn: async () => {
       let q = supabase.from("jst_outbound_orders")
         .select("id, io_id, o_id, shop_name, warehouse, status, logistics_company, l_id, io_date, consign_time")
-        .limit(5000);
+        .order("io_date", { ascending: false, nullsFirst: false })
+        .limit(2000);
       q = applyOrderFilters(q, filters);
       const { data: recs, error } = await q;
-      if (error) throw error;
+      if (error) {
+        const e: any = error;
+        throw new Error(
+          `主表查询失败: ${e.message || ""}${e.details ? ` | details=${e.details}` : ""}${e.hint ? ` | hint=${e.hint}` : ""}${e.code ? ` | code=${e.code}` : ""}`,
+        );
+      }
       const orders = (recs ?? []) as OrderMeta[];
       const orderMap = new Map<string, OrderMeta>(orders.map(r => [r.id, r]));
       const ids = orders.map(r => r.id);
