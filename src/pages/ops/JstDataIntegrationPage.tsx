@@ -657,11 +657,15 @@ export default function JstDataIntegrationPage() {
             </p>
           </div>
           <Tabs defaultValue="base">
-            <div className="px-5 pt-3">
-              <TabsList className="bg-transparent h-auto p-0 gap-1 flex-wrap">
+            <div className="px-5 pt-4 pb-3 bg-muted/40 border-b border-border">
+              <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <span className="inline-block w-1 h-3.5 bg-primary rounded-sm" />
+                选择 API 模块
+              </div>
+              <TabsList className="bg-background border border-border shadow-sm h-auto p-1 gap-1 flex-wrap rounded-lg">
                 {TABS.map((t) => (
                   <TabsTrigger key={t.key} value={t.key}
-                    className="data-[state=active]:bg-muted data-[state=active]:text-foreground text-muted-foreground text-xs px-3 py-1.5">
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=active]:font-semibold text-foreground/70 hover:text-foreground hover:bg-muted text-sm px-4 py-2 rounded-md transition-all">
                     <StatusDot tone={t.tone} />{t.label}
                   </TabsTrigger>
                 ))}
