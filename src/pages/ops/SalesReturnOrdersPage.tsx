@@ -22,6 +22,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
+import { zhStatus } from "@/lib/statusLabel";
 import SalesReturnByStyleTab, { SrByStyleFilters } from "@/components/ops/SalesReturnByStyleTab";
 
 const PAGE_SIZE = 20;
@@ -586,7 +587,7 @@ export default function SalesReturnOrdersPage() {
                     <TableCell className="text-xs" title={`shop_id: ${r.shop_id ?? "-"}`}>{resolveShop(r)}</TableCell>
                     <TableCell className="text-xs max-w-[180px] truncate" title={(r.suppliers ?? []).join(" / ")}>{r.supplier_label ?? "-"}</TableCell>
                     
-                    <TableCell className="text-xs">{r.status ?? <span className="text-rose-600">空</span>}</TableCell>
+                    <TableCell className="text-xs">{r.status ? zhStatus(r.status) : <span className="text-rose-600">空</span>}</TableCell>
                     <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
                     <TableCell className="text-right">{r.item_amt > 0 ? fmtMoney(r.item_amt) : "-"}</TableCell>
                     <TableCell className="text-right">{fmtInt(r.sku_count)}</TableCell>
@@ -633,7 +634,7 @@ export default function SalesReturnOrdersPage() {
                   <div><span className="text-muted-foreground">销退时间：</span>{formatDateTimeCN(detailRow.received_date)}</div>
                   <div><span className="text-muted-foreground">修改时间：</span>{formatDateTimeCN(detailRow.modified_at_jst)}</div>
                   <div><span className="text-muted-foreground">仓库：</span>{detailRow.warehouse ?? "-"}</div>
-                  <div><span className="text-muted-foreground">状态：</span>{detailRow.status ?? "-"}</div>
+                  <div><span className="text-muted-foreground">状态：</span>{zhStatus(detailRow.status)}</div>
                   <div><span className="text-muted-foreground">物流公司：</span>{detailRow.logistics_company ?? "-"}</div>
                   <div><span className="text-muted-foreground">物流单号：</span>{detailRow.l_id ?? "-"}</div>
                 </div>
