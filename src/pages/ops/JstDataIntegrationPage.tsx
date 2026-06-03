@@ -29,6 +29,7 @@ import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
 import { AftersalesSyncCards } from "@/components/ops/AftersalesSyncCards";
+import { OutboundSyncCompactCard } from "@/components/ops/OutboundSyncCompactCard";
 
 
 // ============================================================
@@ -120,8 +121,11 @@ function usePurchaseLogs() {
           "purchase_receipts",
           "purchase_in",
           "purchase",
+          "outbound_orders",
+          "refund_orders",
+          "aftersale_received",
         ])
-        .order("started_at", { ascending: false }).limit(100);
+        .order("started_at", { ascending: false }).limit(200);
       if (error) throw error;
       return data ?? [];
     },
@@ -426,7 +430,7 @@ export default function JstDataIntegrationPage() {
     return {
       id: `plog-${p.id}`, _source: "purchase_log" as const, _raw: p,
       module_key: p.sync_type, trigger_type: "manual", started_at: p.started_at,
-      status: p.status === "success" ? "ok" : p.status === "running" ? "running" : p.status === "partial" ? "warn" : "error",
+      status: p.status === "success" ? "ok" : p.status === "running" ? "running" : (p.status === "partial" || p.status === "partial_failed" || p.status === "timeout_partial") ? "warn" : "error",
       inserted_count: fetched, updated_count: 0,
       failed_count: p.status === "error" ? 1 : 0,
       duration_ms: p.ended_at ? new Date(p.ended_at).getTime() - new Date(p.started_at).getTime() : null,
@@ -482,11 +486,16 @@ export default function JstDataIntegrationPage() {
     return allLogs.filter((l) => {
       const isPurchaseLog = l._source === "purchase_log";
       const mod = modules.find((m) => m.module_key === l.module_key);
-      const groupLabel = isPurchaseLog ? CATEGORY_LABEL.purchase
+      const isFulfillmentKey = (k: string) => k === "outbound_orders" || k === "refund_orders" || k === "aftersale_received";
+      const groupLabel = isPurchaseLog
+        ? (isFulfillmentKey(l.module_key) ? CATEGORY_LABEL.fulfillment : CATEGORY_LABEL.purchase)
         : (mod ? (CATEGORY_LABEL[mod.category] ?? mod.category) : "");
       const moduleName = isPurchaseLog
         ? (l.module_key === "purchase_orders" ? "采购单"
           : (l.module_key === "purchase_inbound_orders" || l.module_key === "purchase_in" || l.module_key === "purchase_receipts") ? "入库单"
+          : l.module_key === "outbound_orders" ? "出库API · 销售出库单"
+          : l.module_key === "refund_orders" ? "售后API · 退货退款单"
+          : l.module_key === "aftersale_received" ? "售后API · 销售退仓"
           : "采购与入库")
         : (mod?.module_name ?? l.module_key);
       const triggerLabel = TRIGGER_LABEL[l.trigger_type] ?? l.trigger_type;
@@ -529,17 +538,38 @@ export default function JstDataIntegrationPage() {
     },
   ];
 
-  // Tabs metadata
+  // Tab 状态点：根据 jst_sync_logs 中各 sync_type 的最近一次状态计算
+  const logsBySyncType = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const p of purchaseLogs as any[]) {
+      const cur = m[p.sync_type];
+      if (!cur || new Date(p.started_at).getTime() > new Date(cur.started_at).getTime()) m[p.sync_type] = p;
+    }
+    return m;
+  }, [purchaseLogs]);
+  const tabTone = (syncTypes: string[]): "ok" | "warn" | "error" | "running" | "muted" => {
+    const candidates = syncTypes.map((t) => logsBySyncType[t]).filter(Boolean);
+    if (candidates.length === 0) return "muted";
+    candidates.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+    const s = String(candidates[0].status ?? "");
+    if (s === "running") return "running";
+    if (s === "success") return "ok";
+    if (s === "failed") return "error";
+    if (s === "partial_failed" || s === "partial" || s === "timeout_partial") return "warn";
+    return "muted";
+  };
+
+  // Tabs metadata（状态点基于真实同步日志）
   const TABS: { key: string; label: string; tone: "ok" | "warn" | "error" | "running" | "muted" }[] = [
     { key: "base", label: "基础API", tone: "ok" },
     { key: "product", label: "商品API", tone: "warn" },
     { key: "inventory", label: "库存API", tone: "muted" },
     { key: "order", label: "订单API", tone: "muted" },
     { key: "logistics", label: "物流API", tone: "muted" },
-    { key: "purchase", label: "采购API", tone: "ok" },
-    { key: "receipt", label: "入库API", tone: "ok" },
-    { key: "outbound", label: "出库API", tone: "muted" },
-    { key: "aftersales", label: "售后API", tone: "muted" },
+    { key: "purchase", label: "采购API", tone: tabTone(["purchase_orders"]) },
+    { key: "receipt", label: "入库API", tone: tabTone(["purchase_inbound_orders", "purchase_receipts", "purchase_in"]) },
+    { key: "outbound", label: "出库API", tone: tabTone(["outbound_orders"]) },
+    { key: "aftersales", label: "售后API", tone: tabTone(["refund_orders", "aftersale_received"]) },
   ];
 
   // ------------------------------------------------------------
@@ -904,7 +934,7 @@ export default function JstDataIntegrationPage() {
 
 
             <TabsContent value="outbound" className="m-0">
-              <PlaceholderTab title="出库同步（暂未接入）" hint="销售出库单数据查询与同步，列表功能已移至【仓库系统 / 出库信息】页面。" />
+              <OutboundSyncCompactCard />
             </TabsContent>
             <TabsContent value="aftersales" className="m-0">
               <AftersalesSyncCards />
@@ -1015,6 +1045,9 @@ export default function JstDataIntegrationPage() {
                   const moduleName = isPurchase
                     ? (l.module_key === "purchase_orders" ? "采购单"
                       : (l.module_key === "purchase_inbound_orders" || l.module_key === "purchase_in" || l.module_key === "purchase_receipts") ? "入库单"
+                      : l.module_key === "outbound_orders" ? "出库API · 销售出库单"
+                      : l.module_key === "refund_orders" ? "售后API · 退货退款单"
+                      : l.module_key === "aftersale_received" ? "售后API · 销售退仓"
                       : "采购与入库")
                     : (mod?.module_name ?? l.module_key);
                   const s = asStatus(l.status === "running" ? "ok" : l.status);
