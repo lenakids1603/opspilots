@@ -143,12 +143,15 @@ function useShopMap() {
   });
 }
 
-// 通过 SKU 编码 → ops_skus → ops_products 解析供应商名称
+// 通过 SKU 编码解析供应商：优先 ops_skus → ops_products，回退 purchase_order_items → purchase_orders.supplier_name
 async function resolveSupplierBySku(skuCodes: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const codes = Array.from(new Set(skuCodes.filter(Boolean)));
+  if (!codes.length) return out;
+
   for (let i = 0; i < codes.length; i += 500) {
     const slice = codes.slice(i, i + 500);
+    // 1) ops_skus → ops_products
     const { data: skus } = await supabase.from("ops_skus")
       .select("sku_code, product_id").in("sku_code", slice);
     const pidSet = Array.from(new Set((skus ?? []).map((s: any) => s.product_id).filter(Boolean)));
@@ -170,6 +173,27 @@ async function resolveSupplierBySku(skuCodes: string[]): Promise<Map<string, str
     for (const s of skus ?? []) {
       const sup = pidToSupplier.get((s as any).product_id);
       if (sup) out.set((s as any).sku_code, sup);
+    }
+
+    // 2) 回退：通过采购明细回填 supplier_name（仅处理尚未解析的 sku）
+    const missing = slice.filter(c => !out.has(c));
+    if (missing.length) {
+      const { data: poi } = await supabase
+        .from("purchase_order_items")
+        .select("sku_no, purchase_orders!inner(supplier_name, created_at)")
+        .in("sku_no", missing)
+        .limit(missing.length * 8);
+      const skuToRecent = new Map<string, { name: string; at: string }>();
+      for (const r of poi ?? []) {
+        const sku = (r as any).sku_no as string;
+        const po = (r as any).purchase_orders;
+        const sn = po?.supplier_name as string | null;
+        const at = (po?.created_at as string | null) ?? "";
+        if (!sku || !sn) continue;
+        const prev = skuToRecent.get(sku);
+        if (!prev || at > prev.at) skuToRecent.set(sku, { name: sn, at });
+      }
+      for (const [sku, v] of skuToRecent) out.set(sku, v.name);
     }
   }
   return out;
