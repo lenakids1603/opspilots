@@ -391,6 +391,7 @@ export default function SalesOrdersListPage() {
                   <div><span className="text-muted-foreground">聚水潭单号：</span>{detailRow.jst_o_id}</div>
                   <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name || detailRow.shop_id || "-"}</div>
                   <div><span className="text-muted-foreground">状态：</span>{zhStatus(detailRow.status)}</div>
+                  <div><span className="text-muted-foreground">内部分类：</span>{detailRow.internal_order_type_name || "待识别"}</div>
                   <div><span className="text-muted-foreground">订单类型：</span>{detailRow.order_type || "-"}</div>
                   <div><span className="text-muted-foreground">实付金额：</span>{fmtMoney(detailRow.paid_amount)}</div>
                   <div><span className="text-muted-foreground">应付金额：</span>{fmtMoney(detailRow.pay_amount)}</div>
