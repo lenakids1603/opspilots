@@ -26,6 +26,7 @@ import JstProductSyncPage from "./pages/ops/JstProductSyncPage";
 import JstDataIntegrationPage from "./pages/ops/JstDataIntegrationPage";
 import PurchaseOrderManagementPage from "./pages/ops/PurchaseOrderManagementPage";
 import InboundOrdersPage from "./pages/ops/InboundOrdersPage";
+import SalesReturnOrdersPage from "./pages/ops/SalesReturnOrdersPage";
 import DeliveryDashboardPage from "./pages/ops/DeliveryDashboardPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
