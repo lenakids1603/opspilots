@@ -115,6 +115,7 @@ function useDeliveryItems() {
           const t = evaluateDelivery({
             purchase_qty,
             received_qty,
+            delivery_date: r.delivery_date,
           });
           return {
             id: r.id,
