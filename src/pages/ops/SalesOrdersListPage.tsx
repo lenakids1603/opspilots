@@ -457,6 +457,7 @@ export default function SalesOrdersListPage() {
                   <div><span className="text-muted-foreground">创建时间：</span>{formatDateTimeCN(detailRow.created_time)}</div>
                   <div><span className="text-muted-foreground">修改时间：</span>{formatDateTimeCN(detailRow.modified_time)}</div>
                   <div><span className="text-muted-foreground">支付时间：</span>{formatDateTimeCN(detailRow.pay_time)}</div>
+                  <div><span className="text-muted-foreground">约定发货时间：</span>{formatDateTimeCN(detailRow.plan_delivery_date)}</div>
                   <div><span className="text-muted-foreground">出库单号：</span>{detailRow.io_id ?? "-"}</div>
                   <div><span className="text-muted-foreground">出库时间：</span>{formatDateTimeCN(detailRow.io_date)}</div>
                   <div><span className="text-muted-foreground">物流公司：</span>{detailRow.logistics_company || "-"}</div>
