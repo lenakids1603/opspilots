@@ -111,7 +111,7 @@ function useOrderList(filters: Filters, page: number, sortKey: SortKey, sortDir:
     queryKey: ["sales_orders_list", filters, page, sortKey, sortDir],
     queryFn: async () => {
       let q = supabase.from("jst_sales_orders")
-        .select("id, jst_o_id, so_id, shop_id, shop_name, status, internal_order_type, internal_order_type_name, order_type, created_time, modified_time, pay_time, plan_delivery_date, paid_amount, pay_amount, io_id, io_date, l_id, lc_id, logistics_company", { count: "exact" });
+        .select("id, jst_o_id, so_id, shop_id, shop_name, status, internal_order_type, internal_order_type_name, order_type, created_time, modified_time, pay_time, plan_delivery_date, paid_amount, pay_amount, io_id, io_date, send_date, l_id, lc_id, logistics_company", { count: "exact" });
       q = applyFilters(q, filters);
       q = q.order(sortKey, { ascending: sortDir === "asc", nullsFirst: false });
       if (sortKey !== "jst_o_id") {
