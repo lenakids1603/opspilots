@@ -429,9 +429,6 @@ export default function SalesReturnOrdersPage() {
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("month")}>本月</Button>
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("all")}>全部</Button>
           <div className="flex-1" />
-          <Button size="sm" variant="default" disabled={syncMut.isPending} onClick={() => syncMut.mutate()}>
-            <RefreshCw className={`w-4 h-4 mr-1 ${syncMut.isPending ? "animate-spin" : ""}`} />同步销售退仓
-          </Button>
           <Button size="sm" variant="outline" onClick={onExportByStyle}><Download className="w-4 h-4 mr-1" />按款号导出</Button>
           <Button size="sm" variant="outline" onClick={onExportByOrder}><Download className="w-4 h-4 mr-1" />按销退单号导出</Button>
         </div>
@@ -475,7 +472,7 @@ export default function SalesReturnOrdersPage() {
                 {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
                 {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
                   <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
-                    当前筛选下无销退数据。可点击「同步销售退仓」拉取最新数据。
+                    当前筛选下无销退数据。请前往数据中心同步销售退仓后再查看。
                   </TableCell></TableRow>
                 )}
                 {(listQ.data?.rows ?? []).map((r: any) => (
