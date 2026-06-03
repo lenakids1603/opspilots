@@ -130,11 +130,13 @@ function SyncCard({ variant }: { variant: Variant }) {
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={syncMut.isPending}
-            onClick={() => syncMut.mutate({ days: 1 })}>
+          <Button size="sm" variant="secondary" disabled={syncMut.isPending}
+            onClick={() => syncMut.mutate({ hours: 1 })}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${syncMut.isPending ? "animate-spin" : ""}`} />
-            同步最近 1 天
+            同步最近 1 小时
           </Button>
+          <Button size="sm" disabled={syncMut.isPending}
+            onClick={() => syncMut.mutate({ days: 1 })}>同步最近 1 天</Button>
           <Button size="sm" variant="outline" disabled={syncMut.isPending}
             onClick={() => syncMut.mutate({ days: 7 })}>同步最近 7 天</Button>
           <Button size="sm" variant="outline" disabled={syncMut.isPending}
