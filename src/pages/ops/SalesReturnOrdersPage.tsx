@@ -571,8 +571,10 @@ export default function SalesReturnOrdersPage() {
                     {detailRow.no_origin ? <span className="text-rose-600">无原始订单</span> : detailRow.so_id}
                   </div>
                   <div><span className="text-muted-foreground">线上订单号 (o_id)：</span>{detailRow.o_id ?? "-"}</div>
-                  <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name ?? "-"}</div>
+                  <div><span className="text-muted-foreground">退货店铺：</span>{resolveShop(detailRow)}</div>
+                  <div><span className="text-muted-foreground">JST 店铺名：</span>{detailRow.shop_name ?? "-"}</div>
                   <div><span className="text-muted-foreground">店铺 ID：</span>{detailRow.shop_id ?? "-"}</div>
+                  <div className="col-span-2"><span className="text-muted-foreground">供应商：</span>{(detailRow.suppliers ?? []).join(" / ") || "-"}</div>
                 </div>
               </section>
               <section>
