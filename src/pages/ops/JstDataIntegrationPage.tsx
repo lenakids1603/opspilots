@@ -430,7 +430,7 @@ export default function JstDataIntegrationPage() {
     return {
       id: `plog-${p.id}`, _source: "purchase_log" as const, _raw: p,
       module_key: p.sync_type, trigger_type: "manual", started_at: p.started_at,
-      status: p.status === "success" ? "ok" : p.status === "running" ? "running" : p.status === "partial" ? "warn" : "error",
+      status: p.status === "success" ? "ok" : p.status === "running" ? "running" : (p.status === "partial" || p.status === "partial_failed" || p.status === "timeout_partial") ? "warn" : "error",
       inserted_count: fetched, updated_count: 0,
       failed_count: p.status === "error" ? 1 : 0,
       duration_ms: p.ended_at ? new Date(p.ended_at).getTime() - new Date(p.started_at).getTime() : null,
