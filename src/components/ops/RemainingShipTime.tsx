@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { formatDateTimeCN } from "@/lib/datetime";
 
 interface Props {
   planDeliveryDate?: string | null;
-  shipped?: boolean; // 已发货则不显示倒计时
+  internalOrderType?: string | null;
+  ioId?: string | null;
+  ioDate?: string | null;
+  sendDate?: string | null;
+  lId?: string | null;
 }
 
 function format(ms: number): { text: string; overdue: boolean; urgent: boolean } {
@@ -20,14 +25,49 @@ function format(ms: number): { text: string; overdue: boolean; urgent: boolean }
   return { text, overdue, urgent: !overdue && ms < 24 * 3600 * 1000 };
 }
 
-export function RemainingShipTime({ planDeliveryDate, shipped }: Props) {
+export function RemainingShipTime({
+  planDeliveryDate,
+  internalOrderType,
+  ioId,
+  ioDate,
+  sendDate,
+  lId,
+}: Props) {
   const [now, setNow] = useState(Date.now());
+  const shipped =
+    internalOrderType === "shipped" ||
+    !!(ioId && String(ioId).length) || !!ioDate ||
+    !!sendDate || !!(lId && String(lId).length);
+
   useEffect(() => {
+    if (shipped) return;
+    if (internalOrderType && internalOrderType !== "paid_pending_ship" && internalOrderType !== "unknown") return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [shipped, internalOrderType]);
+
+  if (shipped) {
+    const t = ioDate || sendDate;
+    return (
+      <span className="text-muted-foreground text-xs whitespace-nowrap">
+        已发货{t ? ` · ${formatDateTimeCN(t, { withSeconds: false })}` : ""}
+      </span>
+    );
+  }
+  if (internalOrderType === "returned_after_ship") {
+    return <span className="text-muted-foreground text-xs">发货后退货</span>;
+  }
+  if (internalOrderType === "paid_cancelled_before_ship") {
+    return <span className="text-muted-foreground text-xs">未发货退款</span>;
+  }
+  if (internalOrderType === "unpaid_cancelled") {
+    return <span className="text-muted-foreground text-xs">未付款取消</span>;
+  }
+  if (!internalOrderType || internalOrderType === "unknown") {
+    if (!planDeliveryDate) return <span className="text-muted-foreground">待识别</span>;
+  }
+  // paid_pending_ship 或 unknown 且有约定发货时间
   if (!planDeliveryDate) return <span className="text-muted-foreground">-</span>;
-  if (shipped) return <span className="text-muted-foreground text-xs">已发货</span>;
   const target = new Date(planDeliveryDate).getTime();
   if (isNaN(target)) return <span className="text-muted-foreground">-</span>;
   const { text, overdue, urgent } = format(target - now);
