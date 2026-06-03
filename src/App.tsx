@@ -26,6 +26,7 @@ import JstProductSyncPage from "./pages/ops/JstProductSyncPage";
 import JstDataIntegrationPage from "./pages/ops/JstDataIntegrationPage";
 import PurchaseOrderManagementPage from "./pages/ops/PurchaseOrderManagementPage";
 import InboundOrdersPage from "./pages/ops/InboundOrdersPage";
+import SalesReturnOrdersPage from "./pages/ops/SalesReturnOrdersPage";
 import DeliveryDashboardPage from "./pages/ops/DeliveryDashboardPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
@@ -57,7 +58,7 @@ const App = () => (
           
           <Route path="/warehouse/inbound-orders" element={wrap(<InboundOrdersPage />)} />
           <Route path="/warehouse/outbound" element={wrap(<OpsPlaceholder breadcrumb={["仓库系统", "出库信息"]} title="出库信息" description="销售出库、调拨出库等出库记录（建设中）" columns={["出库单号", "出库日期", "类型", "仓库", "店铺/收货方", "件数", "金额", "状态", "操作"]} />)} />
-          <Route path="/warehouse/sales-returns" element={wrap(<OpsPlaceholder breadcrumb={["仓库系统", "销退信息"]} title="销退信息" description="销售退仓、退货收货明细（建设中）" columns={["退仓单号", "退仓日期", "原销售单", "店铺", "仓库", "件数", "金额", "状态", "操作"]} />)} />
+          <Route path="/warehouse/sales-returns" element={wrap(<SalesReturnOrdersPage />)} />
           <Route path="/finance/supplier-bills" element={wrap(<SupplierBillsPage />)} />
           <Route path="/system/users" element={wrap(<UsersPage />)} />
 
