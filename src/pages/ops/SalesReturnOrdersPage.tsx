@@ -126,6 +126,23 @@ function useStats() {
 type SortDir = "asc" | "desc";
 type SortKey = "received_date" | "modified_at_jst" | "as_id" | "status" | "item_qty" | "item_amt" | "abnormal";
 
+function useShopMap() {
+  return useQuery({
+    queryKey: ["sr_shop_map"],
+    queryFn: async () => {
+      const { data } = await supabase.from("shops")
+        .select("jst_shop_id, name").is("deleted_at", null).not("jst_shop_id", "is", null).limit(5000);
+      const m = new Map<string, string>();
+      for (const s of data ?? []) {
+        const k = String((s as any).jst_shop_id ?? "").trim();
+        if (k) m.set(k, (s as any).name ?? "");
+      }
+      return m;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: SortDir) {
   return useQuery({
     queryKey: ["sr_list", filters, page, sortKey, sortDir],
@@ -138,7 +155,6 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
         if (!needAsIds.length) return { rows: [], count: 0 };
       }
 
-      // 取主表（受 hasItems/abnormal 需要全量再算）
       const isComputedSort = sortKey === "item_qty" || sortKey === "item_amt" || sortKey === "abnormal";
       const needAggAll = isComputedSort
         || filters.hasItems !== "all" || filters.abnormal !== "all";
@@ -158,29 +174,34 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
       if (error) throw error;
 
       const asIds = (data ?? []).map((r: any) => r.as_id);
-      const agg: Record<string, { qty: number; amt: number; cnt: number; skus: Set<string> }> = {};
+      const agg: Record<string, { qty: number; amt: number; cnt: number; skus: Set<string>; suppliers: Set<string> }> = {};
       for (let i = 0; i < asIds.length; i += 800) {
         const slice = asIds.slice(i, i + 800);
         const { data: items } = await supabase.from("jst_aftersale_received_items")
-          .select("as_id, sku_id, qty, amount").in("as_id", slice);
+          .select("as_id, sku_id, qty, amount, supplier_name").in("as_id", slice);
         for (const it of items ?? []) {
           const k = (it as any).as_id as string;
-          const cur = agg[k] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set<string>() };
+          const cur = agg[k] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set<string>(), suppliers: new Set<string>() };
           cur.qty += Number((it as any).qty ?? 0);
           cur.amt += Number((it as any).amount ?? 0);
           cur.cnt += 1;
           if ((it as any).sku_id) cur.skus.add((it as any).sku_id);
+          const sn = ((it as any).supplier_name ?? "").trim();
+          if (sn) cur.suppliers.add(sn);
           agg[k] = cur;
         }
       }
 
       let rows = (data ?? []).map((r: any) => {
-        const a = agg[r.as_id] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set() };
+        const a = agg[r.as_id] ?? { qty: 0, amt: 0, cnt: 0, skus: new Set(), suppliers: new Set() };
         const noOrig = !r.so_id || r.so_id === "" || r.so_id === "-1";
         const abnormal = a.cnt === 0 || noOrig || !r.status;
+        const suppliers = Array.from(a.suppliers);
         return {
           ...r, item_qty: a.qty, item_amt: a.amt, item_count: a.cnt,
           sku_count: a.skus.size, no_origin: noOrig, abnormal,
+          suppliers,
+          supplier_label: suppliers.length === 0 ? "-" : suppliers.length === 1 ? suppliers[0] : `${suppliers[0]} 等 ${suppliers.length} 家`,
         };
       });
 
