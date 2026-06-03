@@ -9,7 +9,7 @@ import {
 } from "../_shared/jst-client.ts";
 
 const SYNC_TYPE = "refund_orders";
-const METHOD_PATH = "refund/list/query";
+const METHOD_PATH = "refund/single/query";
 const PAGE_SIZE = 50;
 
 async function runSync(fromIso: string, toIso: string, logId: string) {
