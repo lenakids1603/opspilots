@@ -115,7 +115,6 @@ function useDeliveryItems() {
           const t = evaluateDelivery({
             purchase_qty,
             received_qty,
-            manual_delivery_closed: (r as any).manual_delivery_closed,
           });
           return {
             id: r.id,
