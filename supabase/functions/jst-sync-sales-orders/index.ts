@@ -10,6 +10,7 @@ import {
   resolveCaller, resolveWindow, sleep, RATE_DELAY_MS, MAX_PAGE_NO,
 } from "../_shared/jst-client.ts";
 import { handleJobActions, PageResult, ProcessPageArgs } from "../_shared/jst-sync-job.ts";
+import { classifySalesOrder } from "../_shared/orderClassify.ts";
 
 const SYNC_TYPE = "sales_orders";
 const METHOD_PATH = "orders/single/query";
@@ -92,7 +93,31 @@ async function upsertSalesOrder(o: any): Promise<{ orderId: string; itemsUpserte
     receiver_mobile_masked: null,
     raw_data: safeRaw,
     synced_at: new Date().toISOString(),
-  };
+  } as any;
+
+  // ERP 内部订单生命周期分类
+  // 关联退款表判断 hasRefund（如果存在则更精确判定"发货后退货"）
+  let hasRefund = false;
+  try {
+    const { data: rf } = await admin
+      .from("jst_refund_orders")
+      .select("id")
+      .or(`o_id.eq.${jstOId}${o.so_id ? `,so_id.eq.${o.so_id}` : ""}`)
+      .gt("refund_amount", 0)
+      .limit(1);
+    hasRefund = !!(rf && rf.length);
+  } catch (_e) { /* ignore */ }
+  const cls = classifySalesOrder({
+    status: orderRow.status,
+    paid_amount: orderRow.paid_amount,
+    pay_time: orderRow.pay_time,
+    io_id: orderRow.io_id,
+    io_date: orderRow.io_date,
+    l_id: orderRow.l_id,
+  }, { hasRefund });
+  orderRow.internal_order_type = cls.code;
+  orderRow.internal_order_type_name = cls.name;
+  orderRow.internal_order_type_updated_at = new Date().toISOString();
 
   const { data: up, error } = await admin
     .from("jst_sales_orders").upsert(orderRow, { onConflict: "jst_o_id" }).select("id").single();

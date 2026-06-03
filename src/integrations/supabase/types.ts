@@ -1092,6 +1092,9 @@ export type Database = {
           free_amount: number
           freight: number
           id: string
+          internal_order_type: string | null
+          internal_order_type_name: string | null
+          internal_order_type_updated_at: string | null
           io_date: string | null
           io_id: string | null
           jst_o_id: string
@@ -1128,6 +1131,9 @@ export type Database = {
           free_amount?: number
           freight?: number
           id?: string
+          internal_order_type?: string | null
+          internal_order_type_name?: string | null
+          internal_order_type_updated_at?: string | null
           io_date?: string | null
           io_id?: string | null
           jst_o_id: string
@@ -1164,6 +1170,9 @@ export type Database = {
           free_amount?: number
           freight?: number
           id?: string
+          internal_order_type?: string | null
+          internal_order_type_name?: string | null
+          internal_order_type_updated_at?: string | null
           io_date?: string | null
           io_id?: string | null
           jst_o_id?: string
@@ -3200,6 +3209,21 @@ export type Database = {
     Functions: {
       can_read_finance: { Args: { _uid: string }; Returns: boolean }
       can_write_finance: { Args: { _uid: string }; Returns: boolean }
+      classify_jst_sales_order: {
+        Args: {
+          _has_refund?: boolean
+          _io_date: string
+          _io_id: string
+          _l_id: string
+          _paid_amount: number
+          _pay_time: string
+          _status: string
+        }
+        Returns: {
+          code: string
+          name: string
+        }[]
+      }
       get_email_by_identifier: {
         Args: { _identifier: string }
         Returns: string
@@ -3242,6 +3266,10 @@ export type Database = {
       recalc_purchase_order_aggregates: {
         Args: { _po_id: string }
         Returns: undefined
+      }
+      refresh_jst_sales_order_classification: {
+        Args: { _limit?: number }
+        Returns: number
       }
       supplier_id_of: { Args: { _uid: string }; Returns: string }
     }

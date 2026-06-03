@@ -109,7 +109,7 @@ function useOrderList(filters: Filters, page: number, sortKey: SortKey, sortDir:
     queryKey: ["sales_orders_list", filters, page, sortKey, sortDir],
     queryFn: async () => {
       let q = supabase.from("jst_sales_orders")
-        .select("id, jst_o_id, so_id, shop_id, shop_name, status, order_type, created_time, modified_time, pay_time, paid_amount, pay_amount, io_id, io_date, l_id, lc_id, logistics_company", { count: "exact" });
+        .select("id, jst_o_id, so_id, shop_id, shop_name, status, internal_order_type, internal_order_type_name, order_type, created_time, modified_time, pay_time, paid_amount, pay_amount, io_id, io_date, l_id, lc_id, logistics_company", { count: "exact" });
       q = applyFilters(q, filters);
       q = q.order(sortKey, { ascending: sortDir === "asc", nullsFirst: false });
       if (sortKey !== "jst_o_id") {
@@ -321,6 +321,7 @@ export default function SalesOrdersListPage() {
               <SortHead sortKey="jst_o_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>聚水潭单号</SortHead>
               <SortHead sortKey="shop_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>店铺</SortHead>
               <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
+              <TableHead>订单类型</TableHead>
               <SortHead sortKey="created_time" currentKey={sortKey} dir={sortDir} onSort={onSort}>创建时间</SortHead>
               <SortHead sortKey="modified_time" currentKey={sortKey} dir={sortDir} onSort={onSort}>修改时间</SortHead>
               <SortHead sortKey="pay_time" currentKey={sortKey} dir={sortDir} onSort={onSort}>支付时间</SortHead>
@@ -332,10 +333,10 @@ export default function SalesOrdersListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {listQ.isLoading && <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
-            {listQ.error && <TableRow><TableCell colSpan={12} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
+            {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
+            {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
             {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
-              <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
+              <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                 暂无订单。请到「聚水潭同步 → 订单 API」发起一次同步，或扩大日期范围。
               </TableCell></TableRow>
             )}
@@ -345,6 +346,7 @@ export default function SalesOrdersListPage() {
                 <TableCell className="font-mono text-xs">{r.jst_o_id}</TableCell>
                 <TableCell className="text-xs">{r.shop_name || r.shop_id || "-"}</TableCell>
                 <TableCell><Badge variant="outline">{zhStatus(r.status)}</Badge></TableCell>
+                <TableCell><Badge variant="secondary">{r.internal_order_type_name || "待识别"}</Badge></TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.created_time, { withSeconds: false })}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.modified_time, { withSeconds: false })}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.pay_time, { withSeconds: false })}</TableCell>
@@ -389,6 +391,7 @@ export default function SalesOrdersListPage() {
                   <div><span className="text-muted-foreground">聚水潭单号：</span>{detailRow.jst_o_id}</div>
                   <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name || detailRow.shop_id || "-"}</div>
                   <div><span className="text-muted-foreground">状态：</span>{zhStatus(detailRow.status)}</div>
+                  <div><span className="text-muted-foreground">内部分类：</span>{detailRow.internal_order_type_name || "待识别"}</div>
                   <div><span className="text-muted-foreground">订单类型：</span>{detailRow.order_type || "-"}</div>
                   <div><span className="text-muted-foreground">实付金额：</span>{fmtMoney(detailRow.paid_amount)}</div>
                   <div><span className="text-muted-foreground">应付金额：</span>{fmtMoney(detailRow.pay_amount)}</div>
