@@ -16,6 +16,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { Search, Download, FileJson, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import { RemainingShipTime } from "@/components/ops/RemainingShipTime";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import {
