@@ -394,14 +394,9 @@ export default function InboundOrdersPage() {
   };
 
 
-  const onExport = () => {
-    if (tab === "byStyle") {
-      // 款式 Tab 的导出在子组件内自行处理
-      toast({ title: "请使用「按款式统计」卡片内的导出按钮" });
-      return;
-    }
+  const onExportByOrder = () => {
     const rows = listQ.data?.rows ?? [];
-    if (!rows.length) return toast({ title: "无数据可导出" });
+    if (!rows.length) return toast({ title: "无入库单数据可导出" });
     const headers = ["入库日期", "入库单号", "JST入库ID", "采购单号", "供应商", "仓库", "状态", "入库件数", "入库金额", "明细行数", "JST修改时间"];
     const lines = [headers.join(",")];
     for (const r of rows) {
@@ -416,6 +411,11 @@ export default function InboundOrdersPage() {
     a.href = URL.createObjectURL(blob);
     a.download = `入库单列表_${todayCN()}.csv`;
     a.click();
+  };
+
+  const onExportByStyle = () => {
+    if (styleExportRef.current) styleExportRef.current();
+    else toast({ title: "按款式数据尚未加载" });
   };
 
   const s = statsQ.data;
