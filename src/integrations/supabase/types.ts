@@ -996,6 +996,204 @@ export type Database = {
         }
         Relationships: []
       }
+      jst_sales_order_items: {
+        Row: {
+          amount: number
+          created_at: string
+          i_id: string | null
+          id: string
+          item_index: number
+          item_unique_key: string
+          jst_item_id: string | null
+          jst_o_id: string
+          paid_amount: number
+          pic: string | null
+          product_name: string | null
+          qty: number
+          raw_item_data: Json | null
+          refund_status: string | null
+          sale_price: number
+          sales_order_id: string
+          shop_id: string | null
+          shop_sku_id: string | null
+          sku_code: string | null
+          sku_id: string | null
+          sku_name: string | null
+          so_id: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          i_id?: string | null
+          id?: string
+          item_index?: number
+          item_unique_key: string
+          jst_item_id?: string | null
+          jst_o_id: string
+          paid_amount?: number
+          pic?: string | null
+          product_name?: string | null
+          qty?: number
+          raw_item_data?: Json | null
+          refund_status?: string | null
+          sale_price?: number
+          sales_order_id: string
+          shop_id?: string | null
+          shop_sku_id?: string | null
+          sku_code?: string | null
+          sku_id?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          i_id?: string | null
+          id?: string
+          item_index?: number
+          item_unique_key?: string
+          jst_item_id?: string | null
+          jst_o_id?: string
+          paid_amount?: number
+          pic?: string | null
+          product_name?: string | null
+          qty?: number
+          raw_item_data?: Json | null
+          refund_status?: string | null
+          sale_price?: number
+          sales_order_id?: string
+          shop_id?: string | null
+          shop_sku_id?: string | null
+          sku_code?: string | null
+          sku_id?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jst_sales_orders: {
+        Row: {
+          buyer_message: string | null
+          created_at: string
+          created_time: string | null
+          f_weight: number
+          free_amount: number
+          freight: number
+          id: string
+          io_date: string | null
+          io_id: string | null
+          jst_o_id: string
+          l_id: string | null
+          labels: Json | null
+          lc_id: string | null
+          logistics_company: string | null
+          merge_so_id: string | null
+          modified_time: string | null
+          order_type: string | null
+          paid_amount: number
+          pay_amount: number
+          pay_time: string | null
+          raw_data: Json | null
+          receiver_city: string | null
+          receiver_district: string | null
+          receiver_mobile_masked: string | null
+          receiver_province: string | null
+          seller_remark: string | null
+          shop_id: string | null
+          shop_name: string | null
+          so_id: string | null
+          status: string | null
+          sync_batch_id: string | null
+          synced_at: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          buyer_message?: string | null
+          created_at?: string
+          created_time?: string | null
+          f_weight?: number
+          free_amount?: number
+          freight?: number
+          id?: string
+          io_date?: string | null
+          io_id?: string | null
+          jst_o_id: string
+          l_id?: string | null
+          labels?: Json | null
+          lc_id?: string | null
+          logistics_company?: string | null
+          merge_so_id?: string | null
+          modified_time?: string | null
+          order_type?: string | null
+          paid_amount?: number
+          pay_amount?: number
+          pay_time?: string | null
+          raw_data?: Json | null
+          receiver_city?: string | null
+          receiver_district?: string | null
+          receiver_mobile_masked?: string | null
+          receiver_province?: string | null
+          seller_remark?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          sync_batch_id?: string | null
+          synced_at?: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          buyer_message?: string | null
+          created_at?: string
+          created_time?: string | null
+          f_weight?: number
+          free_amount?: number
+          freight?: number
+          id?: string
+          io_date?: string | null
+          io_id?: string | null
+          jst_o_id?: string
+          l_id?: string | null
+          labels?: Json | null
+          lc_id?: string | null
+          logistics_company?: string | null
+          merge_so_id?: string | null
+          modified_time?: string | null
+          order_type?: string | null
+          paid_amount?: number
+          pay_amount?: number
+          pay_time?: string | null
+          raw_data?: Json | null
+          receiver_city?: string | null
+          receiver_district?: string | null
+          receiver_mobile_masked?: string | null
+          receiver_province?: string | null
+          seller_remark?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          sync_batch_id?: string | null
+          synced_at?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: []
+      }
       jst_sales_refund_daily_summary: {
         Row: {
           business_entity_id: string

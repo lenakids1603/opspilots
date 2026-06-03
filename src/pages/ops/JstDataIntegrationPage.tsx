@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
+import { SalesOrdersRecentPreview } from "@/components/ops/SalesOrdersRecentPreview";
 
 
 // ============================================================
@@ -578,7 +579,7 @@ export default function JstDataIntegrationPage() {
     { key: "base", label: "基础API", tone: "ok" },
     { key: "product", label: "商品API", tone: "warn" },
     { key: "inventory", label: "库存API", tone: "muted" },
-    { key: "order", label: "订单API", tone: "muted" },
+    { key: "order", label: "订单API", tone: tabTone(["sales_orders"]) },
     { key: "logistics", label: "物流API", tone: "muted" },
     { key: "purchase", label: "采购API", tone: tabTone(["purchase_orders"]) },
     { key: "receipt", label: "入库API", tone: tabTone(["purchase_inbound_orders", "purchase_receipts", "purchase_in"]) },
@@ -880,10 +881,34 @@ export default function JstDataIntegrationPage() {
             </TabsContent>
 
             {/* ====== 订单API ====== */}
-            <TabsContent value="order" className="m-0 p-5 space-y-3">
+            <TabsContent value="order" className="m-0 p-5 space-y-4">
+              <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+                聚水潭销售订单同步（断点续跑）：调用 <code>/open/orders/single/query</code>，按修改时间窗口分页拉取，自动 upsert 到 <code>jst_sales_orders</code> + <code>jst_sales_order_items</code>。隐私字段（收件人姓名/手机/详细地址）不会落库，仅保留省/市/区用于地域分析。
+              </div>
+              <InboundSyncJobPanel
+                title="销售订单同步任务（断点续跑）"
+                syncType="sales_orders"
+                functionName="jst-sync-sales-orders"
+                startAction="start_sales_job"
+                tickAction="tick_sales_job"
+                cancelAction="cancel_sales_job"
+                unitLabel="订单"
+                toastTitle="已创建销售订单同步任务"
+                presets={[
+                  { label: "同步最近 1 小时", hours: 1, requested_range: "1h" },
+                  { label: "同步今天", hours: 24, requested_range: "today" },
+                  { label: "同步最近 3 天", days: 3, requested_range: "3d" },
+                ]}
+                onJobFinished={() => {
+                  qc.invalidateQueries({ queryKey: ["jst_sales_orders_recent"] });
+                }}
+              />
+
+              <SalesOrdersRecentPreview />
+
               <div className="rounded-md border border-amber-300 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
                 <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-                店铺映射未完成时，只允许 raw 同步，不更新正式 GMV/GSV/退款汇总。
+                以下为保留的旧版 raw 同步（写 <code>jst_sales_refund_raw</code>，用于退款分析）。店铺映射未完成时只允许 raw 同步，不更新正式 GMV/GSV/退款汇总。
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={triggerRun.isPending}
@@ -891,11 +916,9 @@ export default function JstDataIntegrationPage() {
                   同步今日 raw
                 </Button>
                 <Button size="sm" variant="outline" disabled={triggerRun.isPending}
-                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
-                  同步最近 7 天
+                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天 raw" })}>
+                  同步最近 7 天 raw
                 </Button>
-                <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步店铺销售日汇总（受限）</Button>
-                <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步商品 SKU 销售汇总（受限）</Button>
               </div>
             </TabsContent>
 

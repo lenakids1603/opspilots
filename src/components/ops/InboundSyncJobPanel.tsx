@@ -29,6 +29,13 @@ const STATUS_COLOR: Record<string, string> = {
   waiting_next_tick: "bg-blue-100 text-blue-700",
 };
 
+interface Preset {
+  label: string;
+  days?: number;
+  hours?: number;
+  requested_range?: string;
+}
+
 interface Props {
   onJobFinished?: (job: any) => void;
   title?: string;
@@ -45,6 +52,8 @@ interface Props {
   unitLabel?: string;
   emptyText?: string;
   toastTitle?: string;
+  /** Custom preset buttons. Defaults to 1/7/30 days. */
+  presets?: Preset[];
 }
 
 export function InboundSyncJobPanel({
@@ -59,7 +68,13 @@ export function InboundSyncJobPanel({
   unitLabel = "入库单",
   emptyText,
   toastTitle,
+  presets,
 }: Props) {
+  const effectivePresets: Preset[] = presets ?? [
+    { label: "同步最近 1 天", days: 1, requested_range: "1d" },
+    { label: "同步最近 7 天", days: 7, requested_range: "7d" },
+    { label: "同步最近 30 天", days: 30, requested_range: "30d" },
+  ];
   const qc = useQueryClient();
   const [jobId, setJobId] = useState<string | null>(null);
   const [tickError, setTickError] = useState<string | null>(null);
@@ -111,14 +126,13 @@ export function InboundSyncJobPanel({
   });
 
   const startMut = useMutation({
-    mutationFn: async (days: number) => {
-      const { data, error } = await supabase.functions.invoke(functionName, {
-        body: {
-          action: startAction,
-          days,
-          requested_range: days <= 1 ? "1d" : days <= 7 ? "7d" : "30d",
-        },
-      });
+    mutationFn: async (preset: Preset) => {
+      const body: any = { action: startAction };
+      if (preset.hours != null) body.hours = preset.hours;
+      if (preset.days != null) body.days = preset.days;
+      body.requested_range = preset.requested_range
+        ?? (preset.hours != null ? `${preset.hours}h` : (preset.days != null ? `${preset.days}d` : "custom"));
+      const { data, error } = await supabase.functions.invoke(functionName, { body });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
       return data as { job_id: string; total_windows: number; reused?: boolean };
@@ -218,15 +232,19 @@ export function InboundSyncJobPanel({
           <div className="flex-1" />
           {showStartButtons && (
             <div className="flex flex-wrap gap-2">
-              <Button size="default" variant="default" className="h-9" disabled={startMut.isPending}
-                onClick={() => startMut.mutate(1)}>
-                <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />
-                同步最近 1 天
-              </Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(7)}>同步最近 7 天</Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(30)}>同步最近 30 天</Button>
+              {effectivePresets.map((p, idx) => (
+                <Button
+                  key={`${p.label}-${idx}`}
+                  size="default"
+                  variant={idx === 0 ? "default" : "outline"}
+                  className={idx === 0 ? "h-9" : "h-9 border-primary/40 text-primary hover:bg-primary/5"}
+                  disabled={startMut.isPending}
+                  onClick={() => startMut.mutate(p)}
+                >
+                  {idx === 0 && <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />}
+                  {p.label}
+                </Button>
+              ))}
             </div>
           )}
         </div>
