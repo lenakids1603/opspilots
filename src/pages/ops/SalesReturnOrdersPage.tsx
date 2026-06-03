@@ -327,7 +327,7 @@ export default function SalesReturnOrdersPage() {
     for (let i = 0; i < asIds.length; i += 800) {
       const slice = asIds.slice(i, i + 800);
       const { data } = await supabase.from("jst_aftersale_received_items")
-        .select("as_id, sku_id, name, qty, r_qty, amount").in("as_id", slice);
+        .select("as_id, sku_id, name, qty, r_qty, amount, supplier_name").in("as_id", slice);
       items.push(...(data ?? []));
     }
     const XLSX = await import("xlsx");
