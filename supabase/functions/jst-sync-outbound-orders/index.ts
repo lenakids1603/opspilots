@@ -12,15 +12,45 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
-// 最小安全字段集（先跑通 code=130 再加字段）
-const INOUT_FLDS = [
+const INOUT_FLDS_SAFE = [
   "io_id", "so_id", "o_id", "shop_id", "shop_name", "wh_id", "warehouse",
-  "status", "logistics_company", "l_id", "modified", "io_date", "send_date", "qty",
+  "status", "modified", "io_date", "send_date", "qty",
 ].join(",");
 
-const INOUT_ITEM_FLDS = [
+const INOUT_ITEM_FLDS_FULL = [
   "io_id", "ioi_id", "sku_id", "i_id", "oi_id", "name", "properties_value", "qty",
 ].join(",");
+
+type FieldVariant = "none" | "inout_only" | "item_qty" | "item_io_sku_qty" | "item_full";
+
+function resolveFieldVariant(value: unknown): FieldVariant {
+  return ["none", "inout_only", "item_qty", "item_io_sku_qty", "item_full"].includes(String(value))
+    ? String(value) as FieldVariant
+    : "none";
+}
+
+function buildRequestBiz(page: number, from: Date, to: Date, variant: FieldVariant) {
+  const biz: Record<string, unknown> = {
+    page_index: page,
+    page_size: PAGE_SIZE,
+    modified_begin: fmtBJ(from),
+    modified_end: fmtBJ(to),
+  };
+  if (variant !== "none") biz.InoutFlds = INOUT_FLDS_SAFE;
+  if (variant === "item_qty") biz.InoutItemFlds = "qty";
+  if (variant === "item_io_sku_qty") biz.InoutItemFlds = "io_id,sku_id,qty";
+  if (variant === "item_full") biz.InoutItemFlds = INOUT_ITEM_FLDS_FULL;
+  return biz;
+}
+
+function requestPreview(biz: Record<string, unknown>, variant: FieldVariant) {
+  const preview: Record<string, unknown> = { field_variant: variant };
+  for (const key of ["page_index", "page_size", "modified_begin", "modified_end", "start_time", "end_time", "InoutFlds", "InoutItemFlds"]) {
+    if (key in biz) preview[key] = biz[key];
+  }
+  preview.value_types = Object.fromEntries(Object.entries(preview).map(([key, value]) => [key, Array.isArray(value) ? "array" : typeof value]));
+  return preview;
+}
 
 function splitProps(v: string | null): { color: string | null; size: string | null } {
   if (!v) return { color: null, size: null };
