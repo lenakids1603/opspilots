@@ -237,7 +237,13 @@ function whLabel(set: Set<string>) {
   return `${arr.length} 个仓库`;
 }
 
-export default function InboundByStyleTab({ filters }: { filters: ByStyleFilters }) {
+type Props = {
+  filters: ByStyleFilters;
+  exportRef?: React.MutableRefObject<(() => void) | null>;
+  hideHeaderExport?: boolean;
+};
+
+export default function InboundByStyleTab({ filters, exportRef, hideHeaderExport }: Props) {
   const aggQ = useStyleAggregate(filters);
   const [page, setPage] = useState(0);
   const [detailKey, setDetailKey] = useState<string | null>(null);
@@ -286,6 +292,11 @@ export default function InboundByStyleTab({ filters }: { filters: ByStyleFilters
     a.download = `入库款式统计_${todayCN()}.csv`;
     a.click();
   };
+
+  useEffect(() => {
+    if (exportRef) exportRef.current = exportRows;
+    return () => { if (exportRef) exportRef.current = null; };
+  });
 
   // SKU 维度聚合（详情用）
   const skuBreakdown = useMemo(() => {
@@ -361,9 +372,11 @@ export default function InboundByStyleTab({ filters }: { filters: ByStyleFilters
         <div className="text-xs text-muted-foreground">
           按「款号 + 供应商」聚合 · 当前筛选 {totalCount} 个款式
         </div>
-        <Button size="sm" variant="outline" onClick={exportRows}>
-          <Download className="w-4 h-4 mr-1" />导出当前 Tab
-        </Button>
+        {!hideHeaderExport && (
+          <Button size="sm" variant="outline" onClick={exportRows}>
+            <Download className="w-4 h-4 mr-1" />导出当前 Tab
+          </Button>
+        )}
       </div>
       <Table>
         <TableHeader>

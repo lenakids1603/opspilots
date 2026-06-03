@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ops/PageHeader";
@@ -46,9 +46,12 @@ type Filters = {
 };
 
 function defaultFilters(): Filters {
-  const today = todayCN();
+  const end = todayCN();
+  const d = new Date(`${end}T00:00:00+08:00`);
+  d.setUTCDate(d.getUTCDate() - 6);
+  const start = beijingYMD(d);
   return {
-    startDate: today, endDate: today, supplier: "", warehouse: "", ioNo: "", poNo: "", sku: "",
+    startDate: start, endDate: end, supplier: "", warehouse: "", ioNo: "", poNo: "", sku: "",
     status: "all", hasPo: "all", hasItems: "all", abnormal: "all",
   };
 }
@@ -340,7 +343,8 @@ export default function InboundOrdersPage() {
   const [detailRow, setDetailRow] = useState<any | null>(null);
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [tab, setTab] = useState<"byOrder" | "byStyle">("byOrder");
+  const [tab, setTab] = useState<"byOrder" | "byStyle">("byStyle");
+  const styleExportRef = useRef<(() => void) | null>(null);
 
   const [sortKey, setSortKey] = useState<InboundSortKey>("io_date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -390,14 +394,9 @@ export default function InboundOrdersPage() {
   };
 
 
-  const onExport = () => {
-    if (tab === "byStyle") {
-      // 款式 Tab 的导出在子组件内自行处理
-      toast({ title: "请使用「按款式统计」卡片内的导出按钮" });
-      return;
-    }
+  const onExportByOrder = () => {
     const rows = listQ.data?.rows ?? [];
-    if (!rows.length) return toast({ title: "无数据可导出" });
+    if (!rows.length) return toast({ title: "无入库单数据可导出" });
     const headers = ["入库日期", "入库单号", "JST入库ID", "采购单号", "供应商", "仓库", "状态", "入库件数", "入库金额", "明细行数", "JST修改时间"];
     const lines = [headers.join(",")];
     for (const r of rows) {
@@ -412,6 +411,11 @@ export default function InboundOrdersPage() {
     a.href = URL.createObjectURL(blob);
     a.download = `入库单列表_${todayCN()}.csv`;
     a.click();
+  };
+
+  const onExportByStyle = () => {
+    if (styleExportRef.current) styleExportRef.current();
+    else toast({ title: "按款式数据尚未加载" });
   };
 
   const s = statsQ.data;
@@ -503,7 +507,8 @@ export default function InboundOrdersPage() {
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("month")}>本月</Button>
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("all")}>全部</Button>
           <div className="flex-1" />
-          <Button size="sm" variant="outline" onClick={onExport}><Download className="w-4 h-4 mr-1" />导出</Button>
+          <Button size="sm" variant="outline" onClick={onExportByStyle}><Download className="w-4 h-4 mr-1" />按款式导出</Button>
+          <Button size="sm" variant="outline" onClick={onExportByOrder}><Download className="w-4 h-4 mr-1" />按入库单导出</Button>
         </div>
         <div className="text-xs text-muted-foreground border-t pt-2">
           说明：同步任务按 <span className="font-medium text-foreground">聚水潭修改时间 (modified)</span> 拉取，列表筛选按 <span className="font-medium text-foreground">业务入库日期 (io_date)</span>。
@@ -597,7 +602,7 @@ export default function InboundOrdersPage() {
         </TabsContent>
 
         <TabsContent value="byStyle">
-          <InboundByStyleTab filters={filters} />
+          <InboundByStyleTab filters={filters} exportRef={styleExportRef} hideHeaderExport />
         </TabsContent>
       </Tabs>
 
