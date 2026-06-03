@@ -9,7 +9,7 @@ import {
 } from "../_shared/jst-client.ts";
 
 const SYNC_TYPE = "aftersale_received";
-const METHOD_PATH = "aftersale/receive/query";
+const METHOD_PATH = "aftersale/received/query";
 const PAGE_SIZE = 50;
 
 async function runSync(fromIso: string, toIso: string, logId: string) {
