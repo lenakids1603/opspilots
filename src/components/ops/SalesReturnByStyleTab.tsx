@@ -70,8 +70,17 @@ function useAgg(filters: SrByStyleFilters) {
   return useQuery({
     queryKey: ["sr_by_style", filters],
     queryFn: async () => {
+      // 店铺映射：jst_shop_id → name
+      const { data: shopsData } = await supabase.from("shops")
+        .select("jst_shop_id, name").is("deleted_at", null).not("jst_shop_id", "is", null).limit(5000);
+      const shopMap = new Map<string, string>();
+      for (const s of shopsData ?? []) {
+        const k = String((s as any).jst_shop_id ?? "").trim();
+        if (k) shopMap.set(k, (s as any).name ?? "");
+      }
+
       let q = supabase.from("jst_aftersale_received_orders")
-        .select("id, as_id, status, received_date, modified_at_jst, warehouse, shop_name, so_id, o_id, outer_as_id")
+        .select("id, as_id, status, received_date, modified_at_jst, warehouse, shop_id, shop_name, so_id, o_id, outer_as_id")
         .limit(5000);
       q = applyOrderFilters(q, filters);
       const { data: ords, error } = await q;
