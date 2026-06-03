@@ -103,7 +103,8 @@ function useStats() {
 type SortDir = "asc" | "desc";
 type SortKey =
   | "modified_time" | "created_time" | "pay_time"
-  | "so_id" | "jst_o_id" | "shop_name" | "status" | "paid_amount";
+  | "so_id" | "jst_o_id" | "shop_name" | "status" | "paid_amount"
+  | "internal_order_type" | "plan_delivery_date";
 
 function useOrderList(filters: Filters, page: number, sortKey: SortKey, sortDir: SortDir) {
   return useQuery({
