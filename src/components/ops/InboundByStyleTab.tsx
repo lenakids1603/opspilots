@@ -293,6 +293,11 @@ export default function InboundByStyleTab({ filters, exportRef, hideHeaderExport
     a.click();
   };
 
+  useEffect(() => {
+    if (exportRef) exportRef.current = exportRows;
+    return () => { if (exportRef) exportRef.current = null; };
+  });
+
   // SKU 维度聚合（详情用）
   const skuBreakdown = useMemo(() => {
     if (!detailRow) return [] as any[];
