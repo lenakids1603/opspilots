@@ -143,6 +143,39 @@ function useShopMap() {
   });
 }
 
+// 通过 SKU 编码 → ops_skus → ops_products 解析供应商名称
+async function resolveSupplierBySku(skuCodes: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const codes = Array.from(new Set(skuCodes.filter(Boolean)));
+  for (let i = 0; i < codes.length; i += 500) {
+    const slice = codes.slice(i, i + 500);
+    const { data: skus } = await supabase.from("ops_skus")
+      .select("sku_code, product_id").in("sku_code", slice);
+    const pidSet = Array.from(new Set((skus ?? []).map((s: any) => s.product_id).filter(Boolean)));
+    const pidToSupplier = new Map<string, string>();
+    if (pidSet.length) {
+      const { data: prods } = await supabase.from("ops_products")
+        .select("id, supplier_id, supplier_name_snapshot").in("id", pidSet);
+      const supIds = Array.from(new Set((prods ?? []).map((p: any) => p.supplier_id).filter(Boolean)));
+      const supIdToName = new Map<string, string>();
+      if (supIds.length) {
+        const { data: sups } = await supabase.from("ops_suppliers").select("id, name").in("id", supIds);
+        for (const s of sups ?? []) supIdToName.set((s as any).id, (s as any).name ?? "");
+      }
+      for (const p of prods ?? []) {
+        const sn = (p as any).supplier_name_snapshot || supIdToName.get((p as any).supplier_id) || "";
+        if (sn) pidToSupplier.set((p as any).id, sn);
+      }
+    }
+    for (const s of skus ?? []) {
+      const sup = pidToSupplier.get((s as any).product_id);
+      if (sup) out.set((s as any).sku_code, sup);
+    }
+  }
+  return out;
+}
+
+
 function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: SortDir) {
   return useQuery({
     queryKey: ["sr_list", filters, page, sortKey, sortDir],
