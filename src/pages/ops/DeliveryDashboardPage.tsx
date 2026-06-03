@@ -37,8 +37,6 @@ const fmtMoney = (n?: number | null) =>
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
 
-const EXCLUDED_STATUSES = ["Delete", "delete", "deleted"];
-const EXCLUDED_IN = `(${EXCLUDED_STATUSES.join(",")})`;
 
 type RangeKey = "today" | "week" | "30d" | "custom";
 type StatusKey = "all" | "overdue" | "today" | "week" | "producing" | "partial" | "done";
