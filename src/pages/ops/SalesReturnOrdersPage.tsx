@@ -175,6 +175,8 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
 
       const asIds = (data ?? []).map((r: any) => r.as_id);
       const agg: Record<string, { qty: number; amt: number; cnt: number; skus: Set<string>; suppliers: Set<string> }> = {};
+      // 收集所有 items 先（JST 售后接口未返供应商名，需要后续通过 SKU → ops_products 回填）
+      const allItemRows: { as_id: string; sku_id: string | null; supplier_name: string | null }[] = [];
       for (let i = 0; i < asIds.length; i += 800) {
         const slice = asIds.slice(i, i + 800);
         const { data: items } = await supabase.from("jst_aftersale_received_items")
@@ -186,10 +188,42 @@ function useList(filters: Filters, page: number, sortKey: SortKey, sortDir: Sort
           cur.amt += Number((it as any).amount ?? 0);
           cur.cnt += 1;
           if ((it as any).sku_id) cur.skus.add((it as any).sku_id);
-          const sn = ((it as any).supplier_name ?? "").trim();
-          if (sn) cur.suppliers.add(sn);
           agg[k] = cur;
+          allItemRows.push({ as_id: k, sku_id: (it as any).sku_id ?? null, supplier_name: (it as any).supplier_name ?? null });
         }
+      }
+
+      // 通过 SKU 解析供应商：ops_skus → ops_products.supplier_name_snapshot / ops_suppliers
+      const skuCodes = Array.from(new Set(allItemRows.map(i => i.sku_id).filter(Boolean))) as string[];
+      const skuToSupplier = new Map<string, string>();
+      for (let i = 0; i < skuCodes.length; i += 500) {
+        const slice = skuCodes.slice(i, i + 500);
+        const { data: skus } = await supabase.from("ops_skus")
+          .select("sku_code, product_id").in("sku_code", slice);
+        const pidSet = Array.from(new Set((skus ?? []).map((s: any) => s.product_id).filter(Boolean)));
+        const pidToSupplier = new Map<string, string>();
+        if (pidSet.length) {
+          const { data: prods } = await supabase.from("ops_products")
+            .select("id, supplier_id, supplier_name_snapshot").in("id", pidSet);
+          const supIds = Array.from(new Set((prods ?? []).map((p: any) => p.supplier_id).filter(Boolean)));
+          const supIdToName = new Map<string, string>();
+          if (supIds.length) {
+            const { data: sups } = await supabase.from("ops_suppliers").select("id, name").in("id", supIds);
+            for (const s of sups ?? []) supIdToName.set((s as any).id, (s as any).name ?? "");
+          }
+          for (const p of prods ?? []) {
+            const sn = (p as any).supplier_name_snapshot || supIdToName.get((p as any).supplier_id) || "";
+            if (sn) pidToSupplier.set((p as any).id, sn);
+          }
+        }
+        for (const s of skus ?? []) {
+          const sup = pidToSupplier.get((s as any).product_id);
+          if (sup) skuToSupplier.set((s as any).sku_code, sup);
+        }
+      }
+      for (const row of allItemRows) {
+        const sn = (row.supplier_name ?? "").trim() || skuToSupplier.get(row.sku_id ?? "") || "";
+        if (sn) agg[row.as_id]?.suppliers.add(sn);
       }
 
       let rows = (data ?? []).map((r: any) => {
