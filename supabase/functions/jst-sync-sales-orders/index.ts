@@ -99,13 +99,12 @@ async function upsertSalesOrder(o: any): Promise<{ orderId: string; itemsUpserte
   // 关联退款表判断 hasRefund（如果存在则更精确判定"发货后退货"）
   let hasRefund = false;
   try {
-    const { data: rf } = await admin
-      .from("jst_refund_orders")
-      .select("id")
-      .or(`o_id.eq.${jstOId}${o.so_id ? `,so_id.eq.${o.so_id}` : ""}`)
-      .gt("refund_amount", 0)
-      .limit(1);
-    hasRefund = !!(rf && rf.length);
+    const orFilter = `o_id.eq.${jstOId}${o.so_id ? `,so_id.eq.${o.so_id}` : ""}`;
+    const [rfRes, asRes] = await Promise.all([
+      admin.from("jst_refund_orders").select("id").or(orFilter).gt("refund_amount", 0).limit(1),
+      admin.from("jst_aftersale_received_orders").select("id").or(orFilter).limit(1),
+    ]);
+    hasRefund = !!((rfRes.data && rfRes.data.length) || (asRes.data && asRes.data.length));
   } catch (_e) { /* ignore */ }
   const cls = classifySalesOrder({
     status: orderRow.status,

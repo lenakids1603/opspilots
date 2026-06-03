@@ -3267,6 +3267,10 @@ export type Database = {
         Args: { _po_id: string }
         Returns: undefined
       }
+      reclassify_jst_sales_orders_by_keys: {
+        Args: { _o_ids?: string[]; _so_ids?: string[] }
+        Returns: number
+      }
       refresh_jst_sales_order_classification: {
         Args: { _limit?: number }
         Returns: number
