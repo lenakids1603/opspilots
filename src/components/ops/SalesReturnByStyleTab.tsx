@@ -300,9 +300,6 @@ export default function SalesReturnByStyleTab({ filters, exportRef }: Props) {
             <TableHead className="text-right">销退单数</TableHead>
             <TableHead className="text-right">原始订单数</TableHead>
             <TableHead className="text-right">SKU 数</TableHead>
-            <TableHead>最近销退</TableHead>
-            <TableHead>首次销退</TableHead>
-            <TableHead>仓库</TableHead>
             <TableHead>异常</TableHead>
             <TableHead>操作</TableHead>
           </TableRow>
