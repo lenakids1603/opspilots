@@ -18,11 +18,23 @@ function splitProps(v: string | null): { color: string | null; size: string | nu
   return { color: parts[0] ?? null, size: parts[1] ?? null };
 }
 
+const ITEM_FIELDS = ["items", "skus", "items_list", "order_items", "details", "item_list", "orderitems"];
+function pickItems(r: any): { list: any[]; field: string | null } {
+  for (const f of ITEM_FIELDS) {
+    const v = r?.[f];
+    if (Array.isArray(v) && v.length > 0) return { list: v, field: f };
+  }
+  return { list: [], field: null };
+}
+
 async function runSync(fromIso: string, toIso: string, logId: string) {
   const winFrom = new Date(fromIso);
   const winTo = new Date(toIso);
   let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
+  let ordersWithoutItems = 0;
+  let detectedItemField: string | null = null;
   const errors: string[] = [];
+  const errorTypes: Record<string, number> = {};
 
   try {
     while (true) {
@@ -40,6 +52,9 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
         const ioId = String(r.io_id ?? r.ioId ?? "");
         if (!ioId) continue;
         try {
+          const { list: itemList, field: itemField } = pickItems(r);
+          if (itemField && !detectedItemField) detectedItemField = itemField;
+          const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? 0), 0);
           const row = {
             io_id: ioId,
             o_id: r.o_id ?? null,
@@ -55,7 +70,7 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
             io_date: parseJstBeijingDateTime(r.io_date),
             consign_time: parseJstBeijingDateTime(r.consign_time ?? r.consigntime),
             modified_at_jst: parseJstBeijingDateTime(r.modified),
-            qty: Number(r.qty ?? 0),
+            qty: aggQty > 0 ? aggQty : Number(r.qty ?? 0),
             raw_data: r,
             synced_at: new Date().toISOString(),
           };
@@ -68,15 +83,21 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
           orders++;
           const outboundOrderId = up.id as string;
 
-          const itemList: any[] = r.items ?? [];
-          for (const it of itemList) {
+          if (itemList.length === 0) {
+            ordersWithoutItems++;
+          }
+          for (let idx = 0; idx < itemList.length; idx++) {
+            const it = itemList[idx];
             const skuId = it.sku_id != null ? String(it.sku_id) : null;
+            const oiId = it.oi_id != null ? String(it.oi_id) : null;
+            const ioiId = it.ioi_id != null ? String(it.ioi_id) : null;
             const props = splitProps(it.properties_value ?? null);
+            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}|${idx}`;
             const itemRow = {
               outbound_order_id: outboundOrderId,
               io_id: ioId,
-              oi_id: it.oi_id != null ? String(it.oi_id) : null,
-              ioi_id: it.ioi_id != null ? String(it.ioi_id) : null,
+              oi_id: oiId,
+              ioi_id: ioiId,
               sku_id: skuId,
               i_id: it.i_id != null ? String(it.i_id) : null,
               name: it.name ?? null,
@@ -86,25 +107,31 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
               qty: Number(it.qty ?? 0),
               amount: Number(it.amount ?? 0),
               pic: it.pic ?? null,
+              item_unique_key: itemUniqueKey,
               raw_data: it,
               synced_at: new Date().toISOString(),
             };
             const { error: itErr } = await admin
               .from("jst_outbound_order_items")
-              .upsert(itemRow, { onConflict: "io_id,ioi_id,sku_id,oi_id" });
+              .upsert(itemRow, { onConflict: "item_unique_key" });
             if (itErr) throw itErr;
             items++;
           }
+          if (page === 1 && orders <= 1) {
+            console.log(`[outbound] sample io_id=${ioId} items_field=${itemField ?? "(none)"} item_count=${itemList.length} top_keys=${Object.keys(r).join(",")}`);
+          }
         } catch (we) {
           failed++;
-          errors.push(`io_id=${ioId}: ${(we as Error).message}`);
+          const msg = (we as Error).message ?? String(we);
+          errorTypes[msg] = (errorTypes[msg] ?? 0) + 1;
+          if (errors.length < 10) errors.push(`io_id=${ioId}: ${msg}`);
         }
       }
 
       await admin.from("jst_sync_logs").update({
         fetched_orders_count: orders,
         fetched_items_count: items,
-        message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · has_next=${hasNext}`,
+        message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · 失败 ${failed} · has_next=${hasNext}`,
         heartbeat_at: new Date().toISOString(),
       }).eq("id", logId);
 
@@ -112,13 +139,28 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       page++;
     }
 
+    const noItemsNote = orders > 0 && items === 0
+      ? ` · 接口未返回明细字段（已尝试 ${ITEM_FIELDS.join("/")}）`
+      : detectedItemField ? ` · 明细字段=${detectedItemField}` : "";
+    const status = failed === 0
+      ? "success"
+      : orders === 0
+        ? "failed"
+        : "partial_failed";
+    const detailLines = [
+      `failed_total=${failed}`,
+      `orders_without_items=${ordersWithoutItems}`,
+      `detected_item_field=${detectedItemField ?? "(none)"}`,
+      `error_types=${JSON.stringify(errorTypes).slice(0, 600)}`,
+      `samples=${errors.slice(0, 5).join(" | ").slice(0, 600)}`,
+    ];
     await admin.from("jst_sync_logs").update({
-      status: errors.length && orders === 0 ? "failed" : (errors.length ? "partial_failed" : "success"),
+      status,
       ended_at: new Date().toISOString(),
       fetched_orders_count: orders,
       fetched_items_count: items,
-      message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}`,
-      error_detail: errors.length ? errors.slice(0, 10).join(" | ").slice(0, 1500) : null,
+      message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}${noItemsNote}`,
+      error_detail: failed > 0 ? detailLines.join(" | ").slice(0, 1800) : null,
     }).eq("id", logId);
   } catch (e: any) {
     const err = e as any;
