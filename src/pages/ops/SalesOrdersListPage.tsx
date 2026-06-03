@@ -265,15 +265,15 @@ export default function SalesOrdersListPage() {
   const onExport = () => {
     const rows = listQ.data?.rows ?? [];
     if (!rows.length) return toast({ title: "无订单数据可导出" });
-    const headers = ["修改时间", "创建时间", "支付时间", "线上订单号", "聚水潭单号", "店铺", "状态", "实付金额", "商品件数", "出库单号", "物流单号", "物流公司"];
-    const lines = [headers.join(",")];
-    for (const r of rows) {
-      lines.push([
-        formatDateTimeCN(r.modified_time), formatDateTimeCN(r.created_time), formatDateTimeCN(r.pay_time),
-        r.so_id ?? "", r.jst_o_id ?? "", r.shop_name ?? "", r.status ?? "",
-        Number(r.paid_amount ?? 0).toFixed(2), r.item_count, r.io_id ?? "", r.l_id ?? "", r.logistics_company ?? "",
-      ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
-    }
+      const headers = ["线上订单号", "聚水潭单号", "店铺", "状态", "订单类型", "支付时间", "约定发货时间", "实付金额", "商品件数", "出库单号", "物流单号", "物流公司"];
+      const lines = [headers.join(",")];
+      for (const r of rows) {
+        lines.push([
+          r.so_id ?? "", r.jst_o_id ?? "", r.shop_name ?? "", r.status ?? "", r.internal_order_type_name ?? "",
+          formatDateTimeCN(r.pay_time), formatDateTimeCN(r.plan_delivery_date),
+          Number(r.paid_amount ?? 0).toFixed(2), r.item_count, r.io_id ?? "", r.l_id ?? "", r.logistics_company ?? "",
+        ].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
+      }
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
