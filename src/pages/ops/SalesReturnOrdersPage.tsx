@@ -335,7 +335,9 @@ export default function SalesReturnOrdersPage() {
       .replace(/[\/: ]/g, "").slice(0, 12);
     const main = rows.map((r: any) => ({
       "销退单号": r.as_id, "原始订单号": r.so_id ?? "", "售后/退款单号": r.outer_as_id ?? "",
-      "店铺": r.shop_name ?? "", "仓库": r.warehouse ?? "", "状态": r.status ?? "",
+      "店铺": resolveShop(r), "店铺ID": r.shop_id ?? "", "JST店铺名": r.shop_name ?? "",
+      "供应商": (r.suppliers ?? []).join(" / "),
+      "仓库": r.warehouse ?? "", "状态": r.status ?? "",
       "销退件数": r.item_qty, "销退金额": r.item_amt, "SKU 数": r.sku_count,
       "销退时间": formatDateTimeCN(r.received_date, { withSeconds: false }),
       "修改时间": formatDateTimeCN(r.modified_at_jst, { withSeconds: false }),
@@ -343,6 +345,7 @@ export default function SalesReturnOrdersPage() {
     }));
     const detail = items.map(it => ({
       "销退单号": it.as_id, "SKU": it.sku_id ?? "", "商品名称": it.name ?? "",
+      "供应商": it.supplier_name ?? "",
       "件数": Number(it.qty ?? 0), "退款数": Number(it.r_qty ?? 0), "金额": Number(it.amount ?? 0),
     }));
     const wb = XLSX.utils.book_new();
