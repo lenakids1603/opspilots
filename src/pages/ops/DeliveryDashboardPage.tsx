@@ -518,7 +518,7 @@ export default function DeliveryDashboardPage() {
             <span className="mx-2">·</span>
             当前查询区间 <span className="font-mono">{rangeBounds.start} ~ {rangeBounds.end}</span>（已逾期始终展示）
             <span className="mx-2">·</span>
-            <span className="text-[11px]">交付完成容差 <span className="font-mono text-foreground">{Math.round(DELIVERY_COMPLETION_TOLERANCE_RATE * 100)}%</span>（达标后不再显示）</span>
+            <span className="text-[11px] text-blue-700">当前仅统计状态为「已确认」的采购单</span>
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap text-[12px]">
