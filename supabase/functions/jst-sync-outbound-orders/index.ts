@@ -12,6 +12,19 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
+const INOUT_FLDS = [
+  "io_id", "so_id", "o_id", "shop_id", "shop_name", "wh_id", "warehouse",
+  "wms_co_id", "status", "logistics_company", "l_name", "l_id", "lc_id",
+  "modified", "io_date", "send_date", "consign_time", "qty", "items", "skus",
+].join(",");
+
+const INOUT_ITEM_FLDS = [
+  "io_id", "ioi_id", "sku_id", "shop_sku_id", "i_id", "shop_i_id", "oi_id",
+  "outer_oi_id", "name", "pic", "properties_value", "qty", "sale_price",
+  "sale_amount", "sale_base_price", "buyer_paid_amount", "seller_income_amount",
+  "combine_sku_id", "combine_sku_qty", "raw_so_id", "is_gift",
+].join(",");
+
 function splitProps(v: string | null): { color: string | null; size: string | null } {
   if (!v) return { color: null, size: null };
   const parts = String(v).split(/[,;|，；]/).map((s) => s.trim()).filter(Boolean);
@@ -33,6 +46,8 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
   let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
   let ordersWithoutItems = 0;
   let detectedItemField: string | null = null;
+  let firstTopKeys: string[] = [];
+  const sampleShapes: any[] = [];
   const errors: string[] = [];
   const errorTypes: Record<string, number> = {};
 
@@ -40,10 +55,14 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
     while (true) {
       if (page > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
       await sleep(RATE_DELAY_MS);
-      const data = await callOpenweb(METHOD_PATH, {
+      const requestBiz = {
         page_index: page, page_size: PAGE_SIZE,
         modified_begin: fmtBJ(winFrom), modified_end: fmtBJ(winTo),
-      });
+        InoutFlds: INOUT_FLDS,
+        InoutItemFlds: INOUT_ITEM_FLDS,
+      };
+      console.log(`[outbound] FINAL REQUEST path=/open/${METHOD_PATH} params=${JSON.stringify(requestBiz)}`);
+      const data = await callOpenweb(METHOD_PATH, requestBiz);
       apiCount++;
       const list: any[] = data.datas ?? data.list ?? data.orders ?? [];
       const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === PAGE_SIZE);
@@ -54,7 +73,7 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
         try {
           const { list: itemList, field: itemField } = pickItems(r);
           if (itemField && !detectedItemField) detectedItemField = itemField;
-          const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? 0), 0);
+          const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0), 0);
           const row = {
             io_id: ioId,
             o_id: r.o_id ?? null,
@@ -86,26 +105,36 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
           if (itemList.length === 0) {
             ordersWithoutItems++;
           }
+          if (sampleShapes.length < 5) {
+            if (firstTopKeys.length === 0) firstTopKeys = Object.keys(r);
+            sampleShapes.push({
+              io_id: ioId,
+              item_field: itemField,
+              item_count: itemList.length,
+              top_keys: Object.keys(r).slice(0, 80),
+              first_item_keys: itemList[0] ? Object.keys(itemList[0]).slice(0, 80) : [],
+            });
+          }
           for (let idx = 0; idx < itemList.length; idx++) {
             const it = itemList[idx];
-            const skuId = it.sku_id != null ? String(it.sku_id) : null;
+            const skuId = it.sku_id != null ? String(it.sku_id) : it.shop_sku_id != null ? String(it.shop_sku_id) : null;
             const oiId = it.oi_id != null ? String(it.oi_id) : null;
             const ioiId = it.ioi_id != null ? String(it.ioi_id) : null;
             const props = splitProps(it.properties_value ?? null);
-            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}|${idx}`;
+            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}`;
             const itemRow = {
               outbound_order_id: outboundOrderId,
               io_id: ioId,
               oi_id: oiId,
               ioi_id: ioiId,
               sku_id: skuId,
-              i_id: it.i_id != null ? String(it.i_id) : null,
-              name: it.name ?? null,
+              i_id: it.i_id != null ? String(it.i_id) : it.item_id != null ? String(it.item_id) : null,
+              name: it.name ?? it.sku_name ?? null,
               properties_value: it.properties_value ?? null,
               color: props.color,
               size: props.size,
-              qty: Number(it.qty ?? 0),
-              amount: Number(it.amount ?? 0),
+              qty: Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0),
+              amount: Number(it.amount ?? it.sale_amount ?? 0),
               pic: it.pic ?? null,
               item_unique_key: itemUniqueKey,
               raw_data: it,
@@ -133,6 +162,17 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
         fetched_items_count: items,
         message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · 失败 ${failed} · has_next=${hasNext}`,
         heartbeat_at: new Date().toISOString(),
+        metadata: {
+          final_api_path: `/open/${METHOD_PATH}`,
+          request_fields: { InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS },
+          last_request: { page_index: page, page_size: PAGE_SIZE, start_time: fmtBJ(winFrom), end_time: fmtBJ(winTo) },
+          detected_item_field: detectedItemField,
+          top_keys: firstTopKeys,
+          samples: sampleShapes,
+          failed_total: failed,
+          orders_without_items: ordersWithoutItems,
+          error_types: errorTypes,
+        },
       }).eq("id", logId);
 
       if (!hasNext || list.length === 0) break;
@@ -151,6 +191,7 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       `failed_total=${failed}`,
       `orders_without_items=${ordersWithoutItems}`,
       `detected_item_field=${detectedItemField ?? "(none)"}`,
+      `top_keys=${firstTopKeys.join(",").slice(0, 600)}`,
       `error_types=${JSON.stringify(errorTypes).slice(0, 600)}`,
       `samples=${errors.slice(0, 5).join(" | ").slice(0, 600)}`,
     ];
@@ -161,6 +202,16 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       fetched_items_count: items,
       message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}${noItemsNote}`,
       error_detail: failed > 0 ? detailLines.join(" | ").slice(0, 1800) : null,
+      metadata: {
+        final_api_path: `/open/${METHOD_PATH}`,
+        request_fields: { InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS },
+        detected_item_field: detectedItemField,
+        top_keys: firstTopKeys,
+        samples: sampleShapes,
+        failed_total: failed,
+        orders_without_items: ordersWithoutItems,
+        error_types: errorTypes,
+      },
     }).eq("id", logId);
   } catch (e: any) {
     const err = e as any;
@@ -191,6 +242,16 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       fetched_items_count: items,
       message: friendly,
       error_detail: detail.slice(0, 1500),
+      metadata: {
+        final_api_path: `/open/${METHOD_PATH}`,
+        request_fields: { InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS },
+        detected_item_field: detectedItemField,
+        top_keys: firstTopKeys,
+        samples: sampleShapes,
+        failed_total: failed,
+        orders_without_items: ordersWithoutItems,
+        error_types: errorTypes,
+      },
     }).eq("id", logId);
   }
 }
