@@ -66,7 +66,7 @@ const GROUPS: Group[] = [
     title: "数据中心", icon: Database,
     items: [
       { title: "数据中心", url: "/data-center" },
-      { title: "聚水潭数据接入详情", url: "/data-center/jst-integration" },
+      { title: "聚水潭同步", url: "/data-center/jst-integration" },
     ],
   },
   {
@@ -104,7 +104,7 @@ export function OpsSidebar() {
       </div>
 
       {/* Menu */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
+      <nav className="ops-sidebar-scroll flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         <NavLink
           to="/"
           end
