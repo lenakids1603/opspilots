@@ -385,7 +385,7 @@ export default function SalesOrdersListPage() {
               <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
               <SortHead sortKey="internal_order_type" currentKey={sortKey} dir={sortDir} onSort={onSort}>订单类型</SortHead>
               <SortHead sortKey="pay_time" currentKey={sortKey} dir={sortDir} onSort={onSort}>支付时间</SortHead>
-              <SortHead sortKey="plan_delivery_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>剩余发货时间</SortHead>
+              <SortHead sortKey="plan_delivery_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>发货时效</SortHead>
               <SortHead sortKey="paid_amount" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">实付金额</SortHead>
               <TableHead className="text-right">商品件数</TableHead>
               <TableHead>出库单号</TableHead>
@@ -409,7 +409,7 @@ export default function SalesOrdersListPage() {
                 <TableCell><Badge variant="outline">{zhStatus(r.status)}</Badge></TableCell>
                 <TableCell><Badge variant="secondary">{r.internal_order_type_name || "待识别"}</Badge></TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.pay_time, { withSeconds: false })}</TableCell>
-                <TableCell><RemainingShipTime planDeliveryDate={r.plan_delivery_date} shipped={!!r.io_id || !!r.io_date} /></TableCell>
+                <TableCell><RemainingShipTime planDeliveryDate={r.plan_delivery_date} internalOrderType={r.internal_order_type} ioId={r.io_id} ioDate={r.io_date} lId={r.l_id} /></TableCell>
                 <TableCell className="text-right tabular-nums">{r.paid_amount > 0 ? fmtMoney(r.paid_amount) : "-"}</TableCell>
                 <TableCell className="text-right">{fmtInt(r.item_count)}</TableCell>
                 <TableCell className="font-mono text-xs">{r.io_id ?? "-"}</TableCell>
