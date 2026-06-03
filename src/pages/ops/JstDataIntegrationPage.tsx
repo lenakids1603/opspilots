@@ -921,7 +921,10 @@ export default function JstDataIntegrationPage() {
             <div className="text-xs text-muted-foreground py-6 text-center">暂无自动同步计划</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {modules.slice(0, 6).map((m) => (
+              {modules
+                .filter((m) => !/_backfill_/.test(m.module_key))
+                .slice(0, 9)
+                .map((m) => (
                 <div key={m.module_key} className="border border-border rounded-md p-3 flex items-center gap-3">
                   <div className="bg-muted/60 rounded px-2 py-1.5 text-xs font-mono text-center min-w-[58px]">
                     {(m.sync_frequency ?? "—").slice(0, 8)}
