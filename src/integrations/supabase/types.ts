@@ -540,6 +540,316 @@ export type Database = {
           },
         ]
       }
+      jst_aftersale_received_items: {
+        Row: {
+          amount: number
+          as_id: string
+          batch_no: string | null
+          created_at: string
+          id: string
+          name: string | null
+          pic: string | null
+          properties_value: string | null
+          qty: number
+          r_qty: number
+          raw_data: Json | null
+          received_order_id: string
+          sku_id: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          as_id: string
+          batch_no?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          pic?: string | null
+          properties_value?: string | null
+          qty?: number
+          r_qty?: number
+          raw_data?: Json | null
+          received_order_id: string
+          sku_id?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          as_id?: string
+          batch_no?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          pic?: string | null
+          properties_value?: string | null
+          qty?: number
+          r_qty?: number
+          raw_data?: Json | null
+          received_order_id?: string
+          sku_id?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jst_aftersale_received_items_received_order_id_fkey"
+            columns: ["received_order_id"]
+            isOneToOne: false
+            referencedRelation: "jst_aftersale_received_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jst_aftersale_received_orders: {
+        Row: {
+          as_id: string
+          created_at: string
+          id: string
+          l_id: string | null
+          logistics_company: string | null
+          modified_at_jst: string | null
+          o_id: string | null
+          outer_as_id: string | null
+          raw_data: Json | null
+          received_date: string | null
+          shop_id: string | null
+          shop_name: string | null
+          so_id: string | null
+          status: string | null
+          synced_at: string
+          updated_at: string
+          warehouse: string | null
+          wh_id: string | null
+          wms_co_id: string | null
+        }
+        Insert: {
+          as_id: string
+          created_at?: string
+          id?: string
+          l_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          outer_as_id?: string | null
+          raw_data?: Json | null
+          received_date?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          updated_at?: string
+          warehouse?: string | null
+          wh_id?: string | null
+          wms_co_id?: string | null
+        }
+        Update: {
+          as_id?: string
+          created_at?: string
+          id?: string
+          l_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          outer_as_id?: string | null
+          raw_data?: Json | null
+          received_date?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          updated_at?: string
+          warehouse?: string | null
+          wh_id?: string | null
+          wms_co_id?: string | null
+        }
+        Relationships: []
+      }
+      jst_refund_order_items: {
+        Row: {
+          amount: number
+          as_id: string
+          asi_id: string | null
+          batch_no: string | null
+          created_at: string
+          id: string
+          name: string | null
+          outer_oi_id: string | null
+          pic: string | null
+          price: number
+          properties_value: string | null
+          qty: number
+          r_qty: number
+          raw_data: Json | null
+          refund_order_id: string
+          sku_id: string | null
+          sku_type: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          synced_at: string
+          type: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          as_id: string
+          asi_id?: string | null
+          batch_no?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          outer_oi_id?: string | null
+          pic?: string | null
+          price?: number
+          properties_value?: string | null
+          qty?: number
+          r_qty?: number
+          raw_data?: Json | null
+          refund_order_id: string
+          sku_id?: string | null
+          sku_type?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          as_id?: string
+          asi_id?: string | null
+          batch_no?: string | null
+          created_at?: string
+          id?: string
+          name?: string | null
+          outer_oi_id?: string | null
+          pic?: string | null
+          price?: number
+          properties_value?: string | null
+          qty?: number
+          r_qty?: number
+          raw_data?: Json | null
+          refund_order_id?: string
+          sku_id?: string | null
+          sku_type?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jst_refund_order_items_refund_order_id_fkey"
+            columns: ["refund_order_id"]
+            isOneToOne: false
+            referencedRelation: "jst_refund_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jst_refund_orders: {
+        Row: {
+          as_date: string | null
+          as_id: string
+          confirm_date: string | null
+          created_at: string
+          created_at_jst: string | null
+          freight: number
+          good_status: string | null
+          id: string
+          l_id: string | null
+          logistics_company: string | null
+          modified_at_jst: string | null
+          o_id: string | null
+          outer_as_id: string | null
+          payment_amount: number
+          question_reason: string | null
+          question_type: string | null
+          raw_data: Json | null
+          refund_amount: number
+          remark: string | null
+          shop_id: string | null
+          shop_name: string | null
+          shop_status: string | null
+          so_id: string | null
+          status: string | null
+          synced_at: string
+          type: string | null
+          updated_at: string
+          warehouse: string | null
+        }
+        Insert: {
+          as_date?: string | null
+          as_id: string
+          confirm_date?: string | null
+          created_at?: string
+          created_at_jst?: string | null
+          freight?: number
+          good_status?: string | null
+          id?: string
+          l_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          outer_as_id?: string | null
+          payment_amount?: number
+          question_reason?: string | null
+          question_type?: string | null
+          raw_data?: Json | null
+          refund_amount?: number
+          remark?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          shop_status?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+          warehouse?: string | null
+        }
+        Update: {
+          as_date?: string | null
+          as_id?: string
+          confirm_date?: string | null
+          created_at?: string
+          created_at_jst?: string | null
+          freight?: number
+          good_status?: string | null
+          id?: string
+          l_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          outer_as_id?: string | null
+          payment_amount?: number
+          question_reason?: string | null
+          question_type?: string | null
+          raw_data?: Json | null
+          refund_amount?: number
+          remark?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          shop_status?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          type?: string | null
+          updated_at?: string
+          warehouse?: string | null
+        }
+        Relationships: []
+      }
       jst_sales_refund_daily_summary: {
         Row: {
           business_entity_id: string
