@@ -385,7 +385,7 @@ export default function SalesOrdersListPage() {
               <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
               <SortHead sortKey="internal_order_type" currentKey={sortKey} dir={sortDir} onSort={onSort}>订单类型</SortHead>
               <SortHead sortKey="pay_time" currentKey={sortKey} dir={sortDir} onSort={onSort}>支付时间</SortHead>
-              <SortHead sortKey="plan_delivery_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>剩余发货时间</SortHead>
+              <SortHead sortKey="plan_delivery_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>发货时效</SortHead>
               <SortHead sortKey="paid_amount" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">实付金额</SortHead>
               <TableHead className="text-right">商品件数</TableHead>
               <TableHead>出库单号</TableHead>
