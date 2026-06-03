@@ -333,10 +333,10 @@ export default function SalesOrdersListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {listQ.isLoading && <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
-            {listQ.error && <TableRow><TableCell colSpan={12} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
+            {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
+            {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
             {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
-              <TableRow><TableCell colSpan={12} className="text-center py-12 text-muted-foreground">
+              <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
                 暂无订单。请到「聚水潭同步 → 订单 API」发起一次同步，或扩大日期范围。
               </TableCell></TableRow>
             )}
