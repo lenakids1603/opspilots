@@ -883,23 +883,25 @@ export default function JstDataIntegrationPage() {
 
             {/* ====== 订单API ====== */}
             <TabsContent value="order" className="m-0 p-5 space-y-3">
-              <div className="rounded-md border border-amber-300 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
-                <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-                店铺映射未完成时，只允许 raw 同步，不更新正式 GMV/GSV/退款汇总。
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" disabled={triggerRun.isPending}
-                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 1, trigger_type: "manual", label: "同步今日销售与退款（raw）" })}>
-                  同步今日 raw
-                </Button>
-                <Button size="sm" variant="outline" disabled={triggerRun.isPending}
-                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
-                  同步最近 7 天
-                </Button>
-                <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步店铺销售日汇总（受限）</Button>
-                <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步商品 SKU 销售汇总（受限）</Button>
+              <SalesOrdersSyncCard />
+              <div className="rounded-md border border-amber-300 bg-amber-50/60 px-4 py-3 text-xs text-amber-800 space-y-2">
+                <div className="font-medium flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5" />销售/退款汇总（依赖店铺映射）</div>
+                <div>店铺映射未完成时，只允许 raw 同步，不更新正式 GMV/GSV/退款汇总。</div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" disabled={triggerRun.isPending}
+                    onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 1, trigger_type: "manual", label: "同步今日销售与退款（raw）" })}>
+                    同步今日 raw
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={triggerRun.isPending}
+                    onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天" })}>
+                    同步最近 7 天
+                  </Button>
+                  <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步店铺销售日汇总（受限）</Button>
+                  <Button size="sm" variant="outline" disabled title="店铺映射完成后可用">同步商品 SKU 销售汇总（受限）</Button>
+                </div>
               </div>
             </TabsContent>
+
 
             {/* ====== 物流API ====== */}
             <TabsContent value="logistics" className="m-0">
