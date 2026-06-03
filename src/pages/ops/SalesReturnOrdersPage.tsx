@@ -429,9 +429,6 @@ export default function SalesReturnOrdersPage() {
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("month")}>本月</Button>
           <Button size="sm" variant="outline" onClick={() => applyQuickRange("all")}>全部</Button>
           <div className="flex-1" />
-          <Button size="sm" variant="default" disabled={syncMut.isPending} onClick={() => syncMut.mutate()}>
-            <RefreshCw className={`w-4 h-4 mr-1 ${syncMut.isPending ? "animate-spin" : ""}`} />同步销售退仓
-          </Button>
           <Button size="sm" variant="outline" onClick={onExportByStyle}><Download className="w-4 h-4 mr-1" />按款号导出</Button>
           <Button size="sm" variant="outline" onClick={onExportByOrder}><Download className="w-4 h-4 mr-1" />按销退单号导出</Button>
         </div>
