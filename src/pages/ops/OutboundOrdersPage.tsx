@@ -22,6 +22,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
+import { zhStatus } from "@/lib/statusLabel";
 import OutboundByStyleTab from "@/components/ops/OutboundByStyleTab";
 
 const PAGE_SIZE = 20;
@@ -452,7 +453,7 @@ export default function OutboundOrdersPage() {
                       <TableCell className="font-mono text-xs">{r.o_id ?? "-"}</TableCell>
                       <TableCell className="text-xs">{r.shop_name || "-"}</TableCell>
                       <TableCell className="text-xs">{r.warehouse || "-"}</TableCell>
-                      <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{zhStatus(r.status)}</Badge></TableCell>
                       <TableCell className="text-xs">{r.logistics_company || "-"}</TableCell>
                       <TableCell className="font-mono text-xs">{r.l_id || "-"}</TableCell>
                       <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
@@ -508,7 +509,7 @@ export default function OutboundOrdersPage() {
                   <div><span className="text-muted-foreground">订单号：</span>{detailRow.o_id ?? "-"}</div>
                   <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name || "-"}</div>
                   <div><span className="text-muted-foreground">仓库：</span>{detailRow.warehouse || "-"}</div>
-                  <div><span className="text-muted-foreground">出库状态：</span>{detailRow.status || "-"}</div>
+                  <div><span className="text-muted-foreground">出库状态：</span>{zhStatus(detailRow.status)}</div>
                   <div><span className="text-muted-foreground">快递公司：</span>{detailRow.logistics_company || "-"}</div>
                   <div><span className="text-muted-foreground">快递单号：</span>{detailRow.l_id || "-"}</div>
                   <div><span className="text-muted-foreground">商品总数：</span>{fmtInt(detailRow.item_qty)}</div>

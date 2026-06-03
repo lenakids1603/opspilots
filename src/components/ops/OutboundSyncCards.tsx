@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import { toast } from "@/hooks/use-toast";
 import { RefreshCw, Activity, Eye } from "lucide-react";
+import { zhStatus } from "@/lib/statusLabel";
 
 const FUNCTION_NAME = "jst-sync-outbound-orders";
 const SYNC_TYPE = "outbound_orders";
@@ -228,7 +229,7 @@ export function OutboundSyncCards() {
                     <TableCell className="font-mono text-xs">{r.o_id ?? "—"}</TableCell>
                     <TableCell className="text-xs">{r.shop_name ?? "—"}</TableCell>
                     <TableCell className="text-xs">{r.warehouse ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{r.status ?? "—"}</TableCell>
+                    <TableCell className="text-xs">{zhStatus(r.status)}</TableCell>
                     <TableCell className="text-xs">{r.logistics_company ?? "—"}</TableCell>
                     <TableCell className="font-mono text-xs">{r.l_id ?? "—"}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap">{fmt(r.io_date)}</TableCell>
@@ -274,7 +275,7 @@ export function OutboundSyncCards() {
                 <div><span className="text-muted-foreground">订单号：</span>{detailQ.data.order.o_id ?? "—"}</div>
                 <div><span className="text-muted-foreground">店铺：</span>{detailQ.data.order.shop_name ?? "—"}</div>
                 <div><span className="text-muted-foreground">仓库：</span>{detailQ.data.order.warehouse ?? "—"}</div>
-                <div><span className="text-muted-foreground">出库状态：</span>{detailQ.data.order.status ?? "—"}</div>
+                <div><span className="text-muted-foreground">出库状态：</span>{zhStatus(detailQ.data.order.status)}</div>
                 <div><span className="text-muted-foreground">快递公司：</span>{detailQ.data.order.logistics_company ?? "—"}</div>
                 <div><span className="text-muted-foreground">快递单号：</span><span className="font-mono">{detailQ.data.order.l_id ?? "—"}</span></div>
                 <div><span className="text-muted-foreground">出库时间：</span>{fmt(detailQ.data.order.io_date)}</div>

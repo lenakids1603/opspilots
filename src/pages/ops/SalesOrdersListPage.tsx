@@ -21,6 +21,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
+import { zhStatus } from "@/lib/statusLabel";
 
 const PAGE_SIZE = 20;
 const fmtMoney = (n: number | null | undefined) =>
@@ -343,7 +344,7 @@ export default function SalesOrdersListPage() {
                 <TableCell className="font-mono text-xs">{r.so_id ?? "-"}</TableCell>
                 <TableCell className="font-mono text-xs">{r.jst_o_id}</TableCell>
                 <TableCell className="text-xs">{r.shop_name || r.shop_id || "-"}</TableCell>
-                <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{zhStatus(r.status)}</Badge></TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.created_time, { withSeconds: false })}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.modified_time, { withSeconds: false })}</TableCell>
                 <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.pay_time, { withSeconds: false })}</TableCell>
@@ -387,7 +388,7 @@ export default function SalesOrdersListPage() {
                   <div><span className="text-muted-foreground">线上订单号：</span>{detailRow.so_id ?? "-"}</div>
                   <div><span className="text-muted-foreground">聚水潭单号：</span>{detailRow.jst_o_id}</div>
                   <div><span className="text-muted-foreground">店铺：</span>{detailRow.shop_name || detailRow.shop_id || "-"}</div>
-                  <div><span className="text-muted-foreground">状态：</span>{detailRow.status || "-"}</div>
+                  <div><span className="text-muted-foreground">状态：</span>{zhStatus(detailRow.status)}</div>
                   <div><span className="text-muted-foreground">订单类型：</span>{detailRow.order_type || "-"}</div>
                   <div><span className="text-muted-foreground">实付金额：</span>{fmtMoney(detailRow.paid_amount)}</div>
                   <div><span className="text-muted-foreground">应付金额：</span>{fmtMoney(detailRow.pay_amount)}</div>

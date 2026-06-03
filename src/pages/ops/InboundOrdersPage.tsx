@@ -22,6 +22,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   formatDateCN, formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
+import { zhStatus } from "@/lib/statusLabel";
 import InboundByStyleTab from "@/components/ops/InboundByStyleTab";
 
 
@@ -568,7 +569,7 @@ export default function InboundOrdersPage() {
                       <TableCell className="font-mono text-xs">{r.external_po_id ?? "-"}</TableCell>
                       <TableCell>{r.supplier_name || "-"}</TableCell>
                       <TableCell className="text-xs">{r.warehouse_name || "-"}</TableCell>
-                      <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
+                      <TableCell><Badge variant="outline">{zhStatus(r.status)}</Badge></TableCell>
                       <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
                       <TableCell className="text-right">{r.item_amt > 0 ? fmtMoney(r.item_amt) : "-"}</TableCell>
                       <TableCell className="text-right">{fmtInt(r.item_count)}</TableCell>
@@ -623,7 +624,7 @@ export default function InboundOrdersPage() {
                   <div><span className="text-muted-foreground">入库日期：</span>{formatDateTimeCN(detailRow.io_date)}</div>
                   <div><span className="text-muted-foreground">供应商：</span>{detailRow.supplier_name || "-"}</div>
                   <div><span className="text-muted-foreground">仓库：</span>{detailRow.warehouse_name || "-"}</div>
-                  <div><span className="text-muted-foreground">状态：</span>{detailRow.status || "-"}</div>
+                  <div><span className="text-muted-foreground">状态：</span>{zhStatus(detailRow.status)}</div>
                   <div><span className="text-muted-foreground">采购单号：</span>{detailRow.external_po_id ?? "-"}</div>
                   <div><span className="text-muted-foreground">JST 修改时间：</span>{formatDateTimeCN(detailRow.jst_modified_at)}</div>
                   <div><span className="text-muted-foreground">创建时间：</span>{formatDateTimeCN(detailRow.created_at)}</div>
