@@ -29,6 +29,7 @@ import InboundOrdersPage from "./pages/ops/InboundOrdersPage";
 import OutboundOrdersPage from "./pages/ops/OutboundOrdersPage";
 import SalesReturnOrdersPage from "./pages/ops/SalesReturnOrdersPage";
 import DeliveryDashboardPage from "./pages/ops/DeliveryDashboardPage";
+import SalesOrdersListPage from "./pages/ops/SalesOrdersListPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
 import SupplierPlaceholder from "./pages/supplier/SupplierPlaceholder";
@@ -54,6 +55,7 @@ const App = () => (
           <Route path="/signup" element={<Signup />} />
           <Route path="/" element={wrap(<OverviewPage />)} />
           <Route path="/operations/analysis" element={wrap(<OpsPlaceholder breadcrumb={["运营分析"]} title="运营分析" description="销售、直播、达人、短视频引流等多维度运营数据分析" columns={["日期", "平台", "店铺", "销售额", "退款额", "净销售额", "操作"]} />)} />
+          <Route path="/operations/sales-orders" element={wrap(<SalesOrdersListPage />)} />
           <Route path="/suppliers" element={wrap(<SuppliersPage />)} />
           <Route path="/products" element={wrap(<ProductsPage />)} />
           

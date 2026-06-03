@@ -28,7 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
-import { SalesOrdersRecentPreview } from "@/components/ops/SalesOrdersRecentPreview";
+
 
 
 // ============================================================
@@ -904,7 +904,6 @@ export default function JstDataIntegrationPage() {
                 }}
               />
 
-              <SalesOrdersRecentPreview />
 
               <div className="rounded-md border border-amber-300 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
                 <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
