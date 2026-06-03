@@ -237,7 +237,13 @@ function whLabel(set: Set<string>) {
   return `${arr.length} 个仓库`;
 }
 
-export default function InboundByStyleTab({ filters }: { filters: ByStyleFilters }) {
+type Props = {
+  filters: ByStyleFilters;
+  exportRef?: React.MutableRefObject<(() => void) | null>;
+  hideHeaderExport?: boolean;
+};
+
+export default function InboundByStyleTab({ filters, exportRef, hideHeaderExport }: Props) {
   const aggQ = useStyleAggregate(filters);
   const [page, setPage] = useState(0);
   const [detailKey, setDetailKey] = useState<string | null>(null);
