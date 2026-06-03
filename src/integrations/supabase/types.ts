@@ -3025,6 +3025,13 @@ export type Database = {
         Returns: boolean
       }
       is_ops_internal: { Args: { _uid: string }; Returns: boolean }
+      jst_cancel_all_running_syncs: {
+        Args: never
+        Returns: {
+          cancelled_jobs: number
+          cancelled_logs: number
+        }[]
+      }
       jst_resync_shop_mappings_from_shops: {
         Args: never
         Returns: {
