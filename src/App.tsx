@@ -71,7 +71,7 @@ const App = () => (
 
           {/* 供应商系统 */}
           <Route path="/suppliers/overview" element={wrap(<OpsPlaceholder breadcrumb={["供应商系统", "供应商总览"]} title="供应商总览" description="核心供应商业绩、交期、质量指标全景" columns={["供应商", "在途订单", "本月入库", "应付金额", "交期达成率", "客诉数"]} />)} />
-          <Route path="/suppliers/po-alerts" element={wrap(<OpsPlaceholder breadcrumb={["供应商系统", "采购超时预警"]} title="采购超时预警" description="采购单交期超时、未发货订单联动预警" columns={["采购单号", "供应商", "款号", "应交日期", "已超期天数", "状态", "操作"]} />)} />
+          <Route path="/suppliers/po-alerts" element={wrap(<OpsPlaceholder breadcrumb={["运维系统", "订单超时预警"]} title="订单超时预警" description="订单交期超时、未发货订单联动预警" columns={["订单号", "供应商", "款号", "应交日期", "已超期天数", "状态", "操作"]} />)} />
 
           {/* 采购系统 */}
           <Route path="/purchase/orders" element={wrap(<PurchaseOrderManagementPage />)} />
