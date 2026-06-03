@@ -1,5 +1,5 @@
 // 货期交付看板 - 交付容差 / 短溢装完结规则
-// 这里集中定义所有与「交付完成判断」相关的常量与函数，
+// 仅用于看板数据展示层，不修改数据库、不修改采购单状态、不写入任何数据。
 // 后续若改为按供应商 / 品类 / 采购单配置，请在此文件内扩展。
 
 export const DELIVERY_COMPLETION_TOLERANCE_RATE = 0.98;
@@ -8,14 +8,11 @@ export type DeliveryCompletionType =
   | "normal"     // 正常完成 (received >= purchase)
   | "tolerance"  // 容差完成 (>= 98%)
   | "over"       // 超交完成
-  | "short"      // 短交完成 (手动)
-  | "manual"     // 手动完结
   | "pending";   // 仍在交付中
 
 export interface ToleranceInput {
   purchase_qty: number;
   received_qty: number;
-  manual_delivery_closed?: boolean | null;
 }
 
 export interface ToleranceResult {
@@ -24,12 +21,11 @@ export interface ToleranceResult {
   raw_pending_qty: number;
   effective_pending_qty: number;
   completion_rate: number;             // 0~1+
-  short_delivered_qty: number;         // 短交数量（仅当容差完成 / 手动完结时 >0）
+  short_delivered_qty: number;         // 短交数量（容差完成时 >0）
   over_delivered_qty: number;          // 超交数量
   is_tolerance_completed: boolean;
   is_over_delivered: boolean;
-  is_manual_closed: boolean;
-  is_delivery_completed: boolean;      // 总体是否视为已完成（=不再显示在看板）
+  is_delivery_completed: boolean;      // 是否视为已完成（=不再显示在看板）
   completion_type: DeliveryCompletionType;
 }
 
@@ -39,17 +35,15 @@ export function evaluateDelivery(
 ): ToleranceResult {
   const purchase = Math.max(0, Number(input.purchase_qty ?? 0));
   const inbound = Math.max(0, Number(input.received_qty ?? 0));
-  const manualClosed = !!input.manual_delivery_closed;
 
   const rawPending = Math.max(purchase - inbound, 0);
   const completionRate = purchase > 0 ? inbound / purchase : (inbound > 0 ? 1 : 0);
   const isOver = purchase > 0 && inbound > purchase;
   const isTolerance = !isOver && purchase > 0 && inbound >= purchase * toleranceRate;
-  const isCompleted = manualClosed || isOver || isTolerance || (purchase === 0 && inbound === 0);
+  const isCompleted = isOver || isTolerance || (purchase === 0 && inbound === 0);
 
   let completionType: DeliveryCompletionType = "pending";
-  if (manualClosed) completionType = "manual";
-  else if (isOver) completionType = "over";
+  if (isOver) completionType = "over";
   else if (purchase > 0 && inbound >= purchase) completionType = "normal";
   else if (isTolerance) completionType = "tolerance";
 
@@ -59,11 +53,10 @@ export function evaluateDelivery(
     raw_pending_qty: rawPending,
     effective_pending_qty: isCompleted ? 0 : rawPending,
     completion_rate: completionRate,
-    short_delivered_qty: isTolerance || manualClosed ? Math.max(purchase - inbound, 0) : 0,
+    short_delivered_qty: isTolerance ? Math.max(purchase - inbound, 0) : 0,
     over_delivered_qty: isOver ? inbound - purchase : 0,
     is_tolerance_completed: isTolerance,
     is_over_delivered: isOver,
-    is_manual_closed: manualClosed,
     is_delivery_completed: isCompleted,
     completion_type: completionType,
   };
