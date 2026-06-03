@@ -136,6 +136,44 @@ function useOrderList(filters: Filters, page: number, sortKey: SortKey, sortDir:
   });
 }
 
+const TYPE_ORDER: { code: string; name: string }[] = [
+  { code: "unpaid_cancelled", name: "未付款取消" },
+  { code: "paid_cancelled_before_ship", name: "付款后未发货退款" },
+  { code: "returned_after_ship", name: "发货后退货" },
+  { code: "paid_pending_ship", name: "已付款待发货" },
+  { code: "shipped", name: "已发货" },
+  { code: "unknown", name: "待识别" },
+];
+
+function useTypeStats(filters: Filters) {
+  return useQuery({
+    queryKey: ["sales_orders_type_stats", filters],
+    queryFn: async () => {
+      const counts: Record<string, number> = {};
+      await Promise.all([
+        ...TYPE_ORDER.map(async (t) => {
+          let q = supabase.from("jst_sales_orders")
+            .select("id", { count: "exact", head: true })
+            .eq("internal_order_type", t.code);
+          q = applyFilters(q, filters);
+          const { count } = await q;
+          counts[t.code] = count ?? 0;
+        }),
+        (async () => {
+          let q = supabase.from("jst_sales_orders")
+            .select("id", { count: "exact", head: true })
+            .is("internal_order_type", null);
+          q = applyFilters(q, filters);
+          const { count } = await q;
+          counts["_null"] = count ?? 0;
+        })(),
+      ]);
+      return counts;
+    },
+    retry: 1,
+  });
+}
+
 function useOrderItems(orderId: string | null) {
   return useQuery({
     queryKey: ["sales_order_items", orderId],
