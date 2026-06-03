@@ -77,6 +77,14 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
             const outerOiId = it.outer_oi_id != null ? String(it.outer_oi_id) : null;
             const qty = Number(it.qty ?? 0);
             const price = Number(it.price ?? 0);
+            const itemType = it.type ?? null;
+            const itemUniqueKey = [
+              asId || "",
+              asiId || "",
+              skuId || "",
+              outerOiId || "",
+              itemType || "",
+            ].join("|");
             const itemRow = {
               refund_order_id: refundOrderId,
               as_id: asId,
@@ -89,19 +97,19 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
               r_qty: Number(it.r_qty ?? 0),
               price,
               amount: Number(it.amount ?? qty * price),
-              type: it.type ?? null,
+              type: itemType,
               outer_oi_id: outerOiId,
               sku_type: it.sku_type ?? null,
               supplier_id: it.supplier_id != null ? String(it.supplier_id) : null,
               supplier_name: it.supplier_name ?? null,
               batch_no: it.batch_no ?? null,
+              item_unique_key: itemUniqueKey,
               raw_data: it,
               synced_at: new Date().toISOString(),
             };
-            const onConflict = asiId ? "as_id,asi_id" : "as_id,sku_id,outer_oi_id";
             const { error: itErr } = await admin
               .from("jst_refund_order_items")
-              .upsert(itemRow, { onConflict });
+              .upsert(itemRow, { onConflict: "item_unique_key" });
             if (itErr) throw itErr;
             items++;
           }
