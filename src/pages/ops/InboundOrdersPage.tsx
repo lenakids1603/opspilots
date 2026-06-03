@@ -343,7 +343,8 @@ export default function InboundOrdersPage() {
   const [detailRow, setDetailRow] = useState<any | null>(null);
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [tab, setTab] = useState<"byOrder" | "byStyle">("byOrder");
+  const [tab, setTab] = useState<"byOrder" | "byStyle">("byStyle");
+  const styleExportRef = useRef<(() => void) | null>(null);
 
   const [sortKey, setSortKey] = useState<InboundSortKey>("io_date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
