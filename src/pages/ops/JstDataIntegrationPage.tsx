@@ -121,8 +121,11 @@ function usePurchaseLogs() {
           "purchase_receipts",
           "purchase_in",
           "purchase",
+          "outbound_orders",
+          "refund_orders",
+          "aftersale_received",
         ])
-        .order("started_at", { ascending: false }).limit(100);
+        .order("started_at", { ascending: false }).limit(200);
       if (error) throw error;
       return data ?? [];
     },
