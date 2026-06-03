@@ -533,17 +533,38 @@ export default function JstDataIntegrationPage() {
     },
   ];
 
-  // Tabs metadata
+  // Tab 状态点：根据 jst_sync_logs 中各 sync_type 的最近一次状态计算
+  const logsBySyncType = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const p of purchaseLogs as any[]) {
+      const cur = m[p.sync_type];
+      if (!cur || new Date(p.started_at).getTime() > new Date(cur.started_at).getTime()) m[p.sync_type] = p;
+    }
+    return m;
+  }, [purchaseLogs]);
+  const tabTone = (syncTypes: string[]): "ok" | "warn" | "error" | "running" | "muted" => {
+    const candidates = syncTypes.map((t) => logsBySyncType[t]).filter(Boolean);
+    if (candidates.length === 0) return "muted";
+    candidates.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+    const s = String(candidates[0].status ?? "");
+    if (s === "running") return "running";
+    if (s === "success") return "ok";
+    if (s === "failed") return "error";
+    if (s === "partial_failed" || s === "partial" || s === "timeout_partial") return "warn";
+    return "muted";
+  };
+
+  // Tabs metadata（状态点基于真实同步日志）
   const TABS: { key: string; label: string; tone: "ok" | "warn" | "error" | "running" | "muted" }[] = [
     { key: "base", label: "基础API", tone: "ok" },
     { key: "product", label: "商品API", tone: "warn" },
     { key: "inventory", label: "库存API", tone: "muted" },
     { key: "order", label: "订单API", tone: "muted" },
     { key: "logistics", label: "物流API", tone: "muted" },
-    { key: "purchase", label: "采购API", tone: "ok" },
-    { key: "receipt", label: "入库API", tone: "ok" },
-    { key: "outbound", label: "出库API", tone: "muted" },
-    { key: "aftersales", label: "售后API", tone: "muted" },
+    { key: "purchase", label: "采购API", tone: tabTone(["purchase_orders"]) },
+    { key: "receipt", label: "入库API", tone: tabTone(["purchase_inbound_orders", "purchase_receipts", "purchase_in"]) },
+    { key: "outbound", label: "出库API", tone: tabTone(["outbound_orders"]) },
+    { key: "aftersales", label: "售后API", tone: tabTone(["refund_orders", "aftersale_received"]) },
   ];
 
   // ------------------------------------------------------------
