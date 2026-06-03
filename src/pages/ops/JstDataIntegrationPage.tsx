@@ -1032,6 +1032,20 @@ export default function JstDataIntegrationPage() {
           <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-border">
             <h3 className="text-sm font-semibold">同步日志</h3>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-9"
+                disabled={cancelAllMut.isPending}
+                onClick={() => {
+                  if (window.confirm("确定要终止所有运行中的同步任务吗？此操作会将正在运行的同步标记为已终止。")) {
+                    cancelAllMut.mutate();
+                  }
+                }}
+              >
+                <StopCircle className="w-3.5 h-3.5 mr-1" />
+                {cancelAllMut.isPending ? "终止中…" : "终止所有进程"}
+              </Button>
               <Select value={triggerFilter} onValueChange={setTriggerFilter}>
                 <SelectTrigger className="w-[120px] h-9"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="过滤" /></SelectTrigger>
                 <SelectContent>
