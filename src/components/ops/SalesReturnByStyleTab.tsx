@@ -32,6 +32,7 @@ type Order = {
 type Item = {
   as_id: string; sku_id: string | null; name: string | null;
   qty: number; r_qty: number; amount: number; supplier_name: string | null;
+  _style: string;
 };
 type StyleRow = {
   key: string; style_no: string; product_name: string; shop_name: string; supplier_name: string;
