@@ -674,6 +674,146 @@ export type Database = {
         }
         Relationships: []
       }
+      jst_outbound_order_items: {
+        Row: {
+          amount: number
+          color: string | null
+          created_at: string
+          i_id: string | null
+          id: string
+          io_id: string
+          ioi_id: string | null
+          name: string | null
+          oi_id: string | null
+          outbound_order_id: string
+          pic: string | null
+          properties_value: string | null
+          qty: number
+          raw_data: Json | null
+          size: string | null
+          sku_id: string | null
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          color?: string | null
+          created_at?: string
+          i_id?: string | null
+          id?: string
+          io_id: string
+          ioi_id?: string | null
+          name?: string | null
+          oi_id?: string | null
+          outbound_order_id: string
+          pic?: string | null
+          properties_value?: string | null
+          qty?: number
+          raw_data?: Json | null
+          size?: string | null
+          sku_id?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          color?: string | null
+          created_at?: string
+          i_id?: string | null
+          id?: string
+          io_id?: string
+          ioi_id?: string | null
+          name?: string | null
+          oi_id?: string | null
+          outbound_order_id?: string
+          pic?: string | null
+          properties_value?: string | null
+          qty?: number
+          raw_data?: Json | null
+          size?: string | null
+          sku_id?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jst_outbound_order_items_outbound_order_id_fkey"
+            columns: ["outbound_order_id"]
+            isOneToOne: false
+            referencedRelation: "jst_outbound_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jst_outbound_orders: {
+        Row: {
+          consign_time: string | null
+          created_at: string
+          id: string
+          io_date: string | null
+          io_id: string
+          l_id: string | null
+          lc_id: string | null
+          logistics_company: string | null
+          modified_at_jst: string | null
+          o_id: string | null
+          qty: number
+          raw_data: Json | null
+          shop_id: string | null
+          shop_name: string | null
+          so_id: string | null
+          status: string | null
+          synced_at: string
+          updated_at: string
+          warehouse: string | null
+          wms_co_id: string | null
+        }
+        Insert: {
+          consign_time?: string | null
+          created_at?: string
+          id?: string
+          io_date?: string | null
+          io_id: string
+          l_id?: string | null
+          lc_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          qty?: number
+          raw_data?: Json | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          updated_at?: string
+          warehouse?: string | null
+          wms_co_id?: string | null
+        }
+        Update: {
+          consign_time?: string | null
+          created_at?: string
+          id?: string
+          io_date?: string | null
+          io_id?: string
+          l_id?: string | null
+          lc_id?: string | null
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          qty?: number
+          raw_data?: Json | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          updated_at?: string
+          warehouse?: string | null
+          wms_co_id?: string | null
+        }
+        Relationships: []
+      }
       jst_refund_order_items: {
         Row: {
           amount: number
