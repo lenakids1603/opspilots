@@ -12,17 +12,14 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
+// 最小安全字段集（先跑通 code=130 再加字段）
 const INOUT_FLDS = [
   "io_id", "so_id", "o_id", "shop_id", "shop_name", "wh_id", "warehouse",
-  "wms_co_id", "status", "logistics_company", "l_name", "l_id", "lc_id",
-  "modified", "io_date", "send_date", "consign_time", "qty", "items", "skus",
+  "status", "logistics_company", "l_id", "modified", "io_date", "send_date", "qty",
 ].join(",");
 
 const INOUT_ITEM_FLDS = [
-  "io_id", "ioi_id", "sku_id", "shop_sku_id", "i_id", "shop_i_id", "oi_id",
-  "outer_oi_id", "name", "pic", "properties_value", "qty", "sale_price",
-  "sale_amount", "sale_base_price", "buyer_paid_amount", "seller_income_amount",
-  "combine_sku_id", "combine_sku_qty", "raw_so_id", "is_gift",
+  "io_id", "ioi_id", "sku_id", "i_id", "oi_id", "name", "properties_value", "qty",
 ].join(",");
 
 function splitProps(v: string | null): { color: string | null; size: string | null } {
