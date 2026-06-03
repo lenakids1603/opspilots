@@ -12,42 +12,21 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
-const INOUT_FLDS_SAFE = [
-  "io_id", "so_id", "o_id", "shop_id", "shop_name", "wh_id", "warehouse",
-  "status", "modified", "io_date", "send_date", "qty",
-].join(",");
-
-const INOUT_ITEM_FLDS_FULL = [
-  "io_id", "ioi_id", "sku_id", "i_id", "oi_id", "name", "properties_value", "qty",
-].join(",");
-
-type FieldVariant = "none" | "inout_only" | "item_qty" | "item_io_sku_qty" | "item_full";
-
-function resolveFieldVariant(value: unknown): FieldVariant {
-  return ["none", "inout_only", "item_qty", "item_io_sku_qty", "item_full"].includes(String(value))
-    ? String(value) as FieldVariant
-    : "none";
-}
-
-function buildRequestBiz(page: number, from: Date, to: Date, variant: FieldVariant) {
-  const biz: Record<string, unknown> = {
+function buildRequestBiz(page: number, from: Date, to: Date) {
+  return {
     page_index: page,
     page_size: PAGE_SIZE,
     modified_begin: fmtBJ(from),
     modified_end: fmtBJ(to),
   };
-  if (variant !== "none") biz.InoutFlds = INOUT_FLDS_SAFE;
-  if (variant === "item_qty") biz.InoutItemFlds = "qty";
-  if (variant === "item_io_sku_qty") biz.InoutItemFlds = "io_id,sku_id,qty";
-  if (variant === "item_full") biz.InoutItemFlds = INOUT_ITEM_FLDS_FULL;
-  return biz;
 }
 
-function requestPreview(biz: Record<string, unknown>, variant: FieldVariant) {
-  const preview: Record<string, unknown> = { field_variant: variant };
-  for (const key of ["page_index", "page_size", "modified_begin", "modified_end", "start_time", "end_time", "InoutFlds", "InoutItemFlds"]) {
+function requestPreview(biz: Record<string, unknown>) {
+  const preview: Record<string, unknown> = {};
+  for (const key of ["page_index", "page_size", "modified_begin", "modified_end"]) {
     if (key in biz) preview[key] = biz[key];
   }
+  preview.field_params_enabled = false;
   preview.value_types = Object.fromEntries(Object.entries(preview).map(([key, value]) => [key, Array.isArray(value) ? "array" : typeof value]));
   return preview;
 }
@@ -67,7 +46,7 @@ function pickItems(r: any): { list: any[]; field: string | null } {
   return { list: [], field: null };
 }
 
-async function runSync(fromIso: string, toIso: string, logId: string, fieldVariant: FieldVariant = "none") {
+async function runSync(fromIso: string, toIso: string, logId: string) {
   const winFrom = new Date(fromIso);
   const winTo = new Date(toIso);
   let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
@@ -83,8 +62,8 @@ async function runSync(fromIso: string, toIso: string, logId: string, fieldVaria
     while (true) {
       if (page > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
       await sleep(RATE_DELAY_MS);
-      const requestBiz = buildRequestBiz(page, winFrom, winTo, fieldVariant);
-      lastRequestPreview = requestPreview(requestBiz, fieldVariant);
+      const requestBiz = buildRequestBiz(page, winFrom, winTo);
+      lastRequestPreview = requestPreview(requestBiz);
       console.log(`[outbound] FINAL REQUEST path=/open/${METHOD_PATH} params=${JSON.stringify(requestBiz)}`);
       const data = await callOpenweb(METHOD_PATH, requestBiz);
       apiCount++;
@@ -188,7 +167,7 @@ async function runSync(fromIso: string, toIso: string, logId: string, fieldVaria
         heartbeat_at: new Date().toISOString(),
         metadata: {
           final_api_path: `/open/${METHOD_PATH}`,
-          request_fields: { field_variant: fieldVariant, field_params_enabled: fieldVariant !== "none" },
+          request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
           request_body_preview: lastRequestPreview,
           detected_item_field: detectedItemField,
           top_keys: firstTopKeys,
@@ -228,8 +207,8 @@ async function runSync(fromIso: string, toIso: string, logId: string, fieldVaria
       error_detail: failed > 0 ? detailLines.join(" | ").slice(0, 1800) : null,
       metadata: {
         final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_variant: fieldVariant, field_params_enabled: fieldVariant !== "none" },
-        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo, fieldVariant), fieldVariant),
+        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
+        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo)),
         detected_item_field: detectedItemField,
         top_keys: firstTopKeys,
         samples: sampleShapes,
@@ -252,8 +231,8 @@ async function runSync(fromIso: string, toIso: string, logId: string, fieldVaria
       err?.url ? `request_url=${err.url}` : null,
       `page_index=${page}`,
       `page_size=${PAGE_SIZE}`,
-      `start_time=${fmtBJ(winFrom)}`,
-      `end_time=${fmtBJ(winTo)}`,
+      `modified_begin=${fmtBJ(winFrom)}`,
+      `modified_end=${fmtBJ(winTo)}`,
       err?.code != null ? `response_code=${err.code}` : null,
       err?.apiMsg ? `response_msg=${err.apiMsg}` : null,
       err?.requestId ? `request_id=${err.requestId}` : null,
@@ -269,8 +248,8 @@ async function runSync(fromIso: string, toIso: string, logId: string, fieldVaria
       error_detail: detail.slice(0, 1500),
       metadata: {
         final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_variant: fieldVariant, field_params_enabled: fieldVariant !== "none" },
-        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo, fieldVariant), fieldVariant),
+        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
+        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo)),
         detected_item_field: detectedItemField,
         top_keys: firstTopKeys,
         samples: sampleShapes,
@@ -295,29 +274,27 @@ Deno.serve(async (req) => {
     }
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const { from, to } = resolveWindow(body);
-    const fieldVariant = resolveFieldVariant(body.field_variant ?? body.fieldVariant ?? body.ab_variant);
 
     const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
       sync_type: SYNC_TYPE,
       status: "running",
       cursor_from: from.toISOString(),
       cursor_to: to.toISOString(),
-      message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)} · 字段参数=${fieldVariant}`,
+      message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)}`,
       metadata: {
         final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_variant: fieldVariant, field_params_enabled: fieldVariant !== "none" },
-        request_body_preview: requestPreview(buildRequestBiz(1, from, to, fieldVariant), fieldVariant),
+        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
+        request_body_preview: requestPreview(buildRequestBiz(1, from, to)),
       },
     }).select("id").single();
     if (logErr) throw logErr;
 
     // @ts-ignore EdgeRuntime
-    EdgeRuntime.waitUntil(runSync(from.toISOString(), to.toISOString(), log.id, fieldVariant));
+    EdgeRuntime.waitUntil(runSync(from.toISOString(), to.toISOString(), log.id));
 
     return new Response(JSON.stringify({
       ok: true, background: true, log_id: log.id,
       cursor_from: from.toISOString(), cursor_to: to.toISOString(),
-      field_variant: fieldVariant,
       message: "同步已在后台启动",
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
