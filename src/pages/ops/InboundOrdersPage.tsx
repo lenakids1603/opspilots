@@ -15,12 +15,14 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Search, Download, Activity, FileJson, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import {
   formatDateCN, formatDateTimeCN, beijingDayRangeToUTC, todayCN, beijingYMD,
 } from "@/lib/datetime";
+import InboundByStyleTab from "@/components/ops/InboundByStyleTab";
 
 
 const PAGE_SIZE = 20;
@@ -338,6 +340,7 @@ export default function InboundOrdersPage() {
   const [detailRow, setDetailRow] = useState<any | null>(null);
   const [rawOpen, setRawOpen] = useState<any | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
+  const [tab, setTab] = useState<"byOrder" | "byStyle">("byOrder");
 
   const [sortKey, setSortKey] = useState<InboundSortKey>("io_date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -388,6 +391,11 @@ export default function InboundOrdersPage() {
 
 
   const onExport = () => {
+    if (tab === "byStyle") {
+      // 款式 Tab 的导出在子组件内自行处理
+      toast({ title: "请使用「按款式统计」卡片内的导出按钮" });
+      return;
+    }
     const rows = listQ.data?.rows ?? [];
     if (!rows.length) return toast({ title: "无数据可导出" });
     const headers = ["入库日期", "入库单号", "JST入库ID", "采购单号", "供应商", "仓库", "状态", "入库件数", "入库金额", "明细行数", "JST修改时间"];
@@ -402,7 +410,7 @@ export default function InboundOrdersPage() {
     const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `入库单_${todayCN()}.csv`;
+    a.download = `入库单列表_${todayCN()}.csv`;
     a.click();
   };
 
@@ -412,9 +420,9 @@ export default function InboundOrdersPage() {
   return (
     <div>
       <PageHeader
-        breadcrumb={["仓库系统", "入库单"]}
-        title="入库单"
-        description="展示从聚水潭同步过来的采购入库单数据，用于查看仓库实际入库、核对采购单到货进度、核对供应商应付款。"
+        breadcrumb={["仓库系统", "入库信息"]}
+        title="入库信息"
+        description="展示从聚水潭同步过来的采购入库单数据，按入库单或按款式两种维度查看。"
         actions={
           <Button size="sm" variant="outline" onClick={() => setDiagOpen(true)}>
             <Activity className="w-4 h-4 mr-1" /> 同步诊断
@@ -511,73 +519,87 @@ export default function InboundOrdersPage() {
 
 
 
-      {/* 列表 */}
-      <Card><CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortHead sortKey="external_io_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库单号</SortHead>
-              <SortHead sortKey="io_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库日期</SortHead>
-              <SortHead sortKey="external_po_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>采购单号</SortHead>
-              <SortHead sortKey="supplier_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>供应商</SortHead>
-              <SortHead sortKey="warehouse_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>仓库</SortHead>
-              <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
-              <SortHead sortKey="item_qty" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库件数</SortHead>
-              <SortHead sortKey="item_amt" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库金额</SortHead>
-              <SortHead sortKey="item_count" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">明细行数</SortHead>
-              <SortHead sortKey="jst_modified_at" currentKey={sortKey} dir={sortDir} onSort={onSort}>JST 修改时间</SortHead>
-              <TableHead>异常</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
-            {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
-            {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
-              <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
-                暂无入库单。如聚水潭已有今日入库,请点击「同步最近 1 天」,然后打开「同步诊断」确认 API 返回数与数据库写入数。
-              </TableCell></TableRow>
-            )}
-            {(listQ.data?.rows ?? []).map((r: any) => {
-              const abnormal = r.item_count === 0;
-              return (
-                <TableRow key={r.id}>
-                  <TableCell className="font-mono text-xs">{r.external_io_id}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.io_date, { withSeconds: false })}</TableCell>
-                  <TableCell className="font-mono text-xs">{r.external_po_id ?? "-"}</TableCell>
-                  <TableCell>{r.supplier_name || "-"}</TableCell>
-                  <TableCell className="text-xs">{r.warehouse_name || "-"}</TableCell>
-                  <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
-                  <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
-                  <TableCell className="text-right">{r.item_amt > 0 ? fmtMoney(r.item_amt) : "-"}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.item_count)}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.jst_modified_at, { withSeconds: false })}</TableCell>
-                  <TableCell>
-                    {abnormal
-                      ? <Badge className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0">无明细</Badge>
-                      : <span className="text-xs text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => { setDetailId(r.id); setDetailRow(r); }}>详情</Button>
-                      <Button size="sm" variant="ghost" onClick={() => setRawOpen(r)}><FileJson className="w-3 h-3" /></Button>
-                    </div>
-                  </TableCell>
+      {/* Tabs: 按入库单 / 按款式 */}
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as any); setPage(0); }}>
+        <TabsList>
+          <TabsTrigger value="byOrder">按入库单查看</TabsTrigger>
+          <TabsTrigger value="byStyle">按款式统计</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="byOrder">
+          {/* 列表 */}
+          <Card><CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHead sortKey="external_io_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库单号</SortHead>
+                  <SortHead sortKey="io_date" currentKey={sortKey} dir={sortDir} onSort={onSort}>入库日期</SortHead>
+                  <SortHead sortKey="external_po_id" currentKey={sortKey} dir={sortDir} onSort={onSort}>采购单号</SortHead>
+                  <SortHead sortKey="supplier_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>供应商</SortHead>
+                  <SortHead sortKey="warehouse_name" currentKey={sortKey} dir={sortDir} onSort={onSort}>仓库</SortHead>
+                  <SortHead sortKey="status" currentKey={sortKey} dir={sortDir} onSort={onSort}>状态</SortHead>
+                  <SortHead sortKey="item_qty" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库件数</SortHead>
+                  <SortHead sortKey="item_amt" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">入库金额</SortHead>
+                  <SortHead sortKey="item_count" currentKey={sortKey} dir={sortDir} onSort={onSort} align="right">明细行数</SortHead>
+                  <SortHead sortKey="jst_modified_at" currentKey={sortKey} dir={sortDir} onSort={onSort}>JST 修改时间</SortHead>
+                  <TableHead>异常</TableHead>
+                  <TableHead>操作</TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {(listQ.data?.count ?? 0) > PAGE_SIZE && (
-          <div className="flex items-center justify-between p-3 border-t">
-            <div className="text-xs text-muted-foreground">共 {listQ.data?.count} 条 · 第 {page + 1} / {Math.ceil((listQ.data!.count) / PAGE_SIZE)} 页</div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(p => p - 1)}>上一页</Button>
-              <Button size="sm" variant="outline" disabled={(page + 1) * PAGE_SIZE >= (listQ.data?.count ?? 0)} onClick={() => setPage(p => p + 1)}>下一页</Button>
-            </div>
-          </div>
-        )}
-      </CardContent></Card>
+              </TableHeader>
+              <TableBody>
+                {listQ.isLoading && <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">加载中...</TableCell></TableRow>}
+                {listQ.error && <TableRow><TableCell colSpan={13} className="text-center py-12 text-rose-600">读取失败：{(listQ.error as any).message}</TableCell></TableRow>}
+                {!listQ.isLoading && !listQ.error && (listQ.data?.rows.length ?? 0) === 0 && (
+                  <TableRow><TableCell colSpan={13} className="text-center py-12 text-muted-foreground">
+                    暂无入库单。如聚水潭已有今日入库,请点击「同步最近 1 天」,然后打开「同步诊断」确认 API 返回数与数据库写入数。
+                  </TableCell></TableRow>
+                )}
+                {(listQ.data?.rows ?? []).map((r: any) => {
+                  const abnormal = r.item_count === 0;
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-mono text-xs">{r.external_io_id}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.io_date, { withSeconds: false })}</TableCell>
+                      <TableCell className="font-mono text-xs">{r.external_po_id ?? "-"}</TableCell>
+                      <TableCell>{r.supplier_name || "-"}</TableCell>
+                      <TableCell className="text-xs">{r.warehouse_name || "-"}</TableCell>
+                      <TableCell><Badge variant="outline">{r.status || "-"}</Badge></TableCell>
+                      <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
+                      <TableCell className="text-right">{r.item_amt > 0 ? fmtMoney(r.item_amt) : "-"}</TableCell>
+                      <TableCell className="text-right">{fmtInt(r.item_count)}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{formatDateTimeCN(r.jst_modified_at, { withSeconds: false })}</TableCell>
+                      <TableCell>
+                        {abnormal
+                          ? <Badge className="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0">无明细</Badge>
+                          : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => { setDetailId(r.id); setDetailRow(r); }}>详情</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setRawOpen(r)}><FileJson className="w-3 h-3" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {(listQ.data?.count ?? 0) > PAGE_SIZE && (
+              <div className="flex items-center justify-between p-3 border-t">
+                <div className="text-xs text-muted-foreground">共 {listQ.data?.count} 条 · 第 {page + 1} / {Math.ceil((listQ.data!.count) / PAGE_SIZE)} 页</div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(p => p - 1)}>上一页</Button>
+                  <Button size="sm" variant="outline" disabled={(page + 1) * PAGE_SIZE >= (listQ.data?.count ?? 0)} onClick={() => setPage(p => p + 1)}>下一页</Button>
+                </div>
+              </div>
+            )}
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="byStyle">
+          <InboundByStyleTab filters={filters} />
+        </TabsContent>
+      </Tabs>
 
       {/* 详情抽屉 */}
       <Sheet open={!!detailId} onOpenChange={(o) => { if (!o) { setDetailId(null); setDetailRow(null); } }}>
