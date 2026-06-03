@@ -121,7 +121,7 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
             const oiId = it.oi_id != null ? String(it.oi_id) : null;
             const ioiId = it.ioi_id != null ? String(it.ioi_id) : null;
             const props = splitProps(it.properties_value ?? null);
-            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}|${idx}`;
+            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}`;
             const itemRow = {
               outbound_order_id: outboundOrderId,
               io_id: ioId,
@@ -231,6 +231,16 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       fetched_items_count: items,
       message: friendly,
       error_detail: detail.slice(0, 1500),
+      metadata: {
+        final_api_path: `/open/${METHOD_PATH}`,
+        request_fields: { InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS },
+        detected_item_field: detectedItemField,
+        top_keys: firstTopKeys,
+        samples: sampleShapes,
+        failed_total: failed,
+        orders_without_items: ordersWithoutItems,
+        error_types: errorTypes,
+      },
     }).eq("id", logId);
   }
 }
