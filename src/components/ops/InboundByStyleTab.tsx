@@ -67,10 +67,12 @@ type StyleRow = {
   last_io: string | null;
 };
 
-function styleOf(sku: string | null | undefined, productName: string | null | undefined) {
+function styleFallback(sku: string | null | undefined, productName: string | null | undefined) {
   const s = (sku ?? "").trim();
   if (s) {
-    // 常见约定 款号-颜色-尺码；取第一个分段
+    // 兜底：取 SKU 起始的纯数字段作为款号（聚水潭款号通常 6-12 位数字前缀）
+    const m = s.match(/^\d{6,12}/);
+    if (m) return m[0];
     const seg = s.split(/[-_/\s]/)[0];
     if (seg) return seg;
   }
