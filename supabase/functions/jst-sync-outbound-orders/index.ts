@@ -1,35 +1,19 @@
-// Edge Function: 聚水潭销售出库单同步（只读）
-// API: /open/orders/out/simple/query  → method path orders/out/simple/query
+// Edge Function: 聚水潭销售出库单同步（只读 + 断点续跑 + 进度条）
+// API: /open/orders/out/simple/query
 // 写入 jst_outbound_orders + jst_outbound_order_items
-// 日志写入 jst_sync_logs, sync_type='outbound_orders'
+// Actions:
+//   - start_outbound_job / tick_outbound_job / cancel_outbound_job (推荐, 走 jst_sync_jobs)
+//   - (无 action) 旧的一次性后台同步, 保留给 cron / 兼容
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
   admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, parseHasNext,
   resolveCaller, resolveWindow, sleep, RATE_DELAY_MS, MAX_PAGE_NO,
 } from "../_shared/jst-client.ts";
+import { handleJobActions, PageResult, ProcessPageArgs } from "../_shared/jst-sync-job.ts";
 
 const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
-
-function buildRequestBiz(page: number, from: Date, to: Date) {
-  return {
-    page_index: page,
-    page_size: PAGE_SIZE,
-    modified_begin: fmtBJ(from),
-    modified_end: fmtBJ(to),
-  };
-}
-
-function requestPreview(biz: Record<string, unknown>) {
-  const preview: Record<string, unknown> = {};
-  for (const key of ["page_index", "page_size", "modified_begin", "modified_end"]) {
-    if (key in biz) preview[key] = biz[key];
-  }
-  preview.field_params_enabled = false;
-  preview.value_types = Object.fromEntries(Object.entries(preview).map(([key, value]) => [key, Array.isArray(value) ? "array" : typeof value]));
-  return preview;
-}
 
 function splitProps(v: string | null): { color: string | null; size: string | null } {
   if (!v) return { color: null, size: null };
@@ -46,217 +30,114 @@ function pickItems(r: any): { list: any[]; field: string | null } {
   return { list: [], field: null };
 }
 
-async function runSync(fromIso: string, toIso: string, logId: string) {
-  const winFrom = new Date(fromIso);
-  const winTo = new Date(toIso);
-  let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
-  let ordersWithoutItems = 0;
-  let detectedItemField: string | null = null;
-  let firstTopKeys: string[] = [];
-  let lastRequestPreview: Record<string, unknown> = {};
-  const sampleShapes: any[] = [];
-  const errors: string[] = [];
-  const errorTypes: Record<string, number> = {};
+async function upsertOutboundOrder(r: any): Promise<{ orderId: string; itemsUpserted: number }> {
+  const ioId = String(r.io_id ?? r.ioId ?? "");
+  if (!ioId) throw new Error("missing io_id");
+  const { list: itemList } = pickItems(r);
+  const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0), 0);
+  const row = {
+    io_id: ioId,
+    o_id: r.o_id ?? null,
+    so_id: r.so_id ?? null,
+    shop_id: r.shop_id != null ? String(r.shop_id) : null,
+    shop_name: r.shop_name ?? null,
+    warehouse: r.warehouse ?? null,
+    wms_co_id: r.wms_co_id != null ? String(r.wms_co_id) : null,
+    status: r.status ?? null,
+    logistics_company: r.logistics_company ?? null,
+    l_id: r.l_id ?? null,
+    lc_id: r.lc_id != null ? String(r.lc_id) : null,
+    io_date: parseJstBeijingDateTime(r.io_date),
+    consign_time: parseJstBeijingDateTime(r.consign_time ?? r.consigntime),
+    modified_at_jst: parseJstBeijingDateTime(r.modified),
+    qty: aggQty > 0 ? aggQty : Number(r.qty ?? 0),
+    raw_data: r,
+    synced_at: new Date().toISOString(),
+  };
+  const { data: up, error } = await admin
+    .from("jst_outbound_orders").upsert(row, { onConflict: "io_id" }).select("id").single();
+  if (error) throw error;
+  let itemsUpserted = 0;
+  for (const it of itemList) {
+    const skuId = it.sku_id != null ? String(it.sku_id) : it.shop_sku_id != null ? String(it.shop_sku_id) : null;
+    const oiId = it.oi_id != null ? String(it.oi_id) : null;
+    const ioiId = it.ioi_id != null ? String(it.ioi_id) : null;
+    const props = splitProps(it.properties_value ?? null);
+    const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}`;
+    const itemRow = {
+      outbound_order_id: up.id, io_id: ioId, oi_id: oiId, ioi_id: ioiId, sku_id: skuId,
+      i_id: it.i_id != null ? String(it.i_id) : it.item_id != null ? String(it.item_id) : null,
+      name: it.name ?? it.sku_name ?? null,
+      properties_value: it.properties_value ?? null,
+      color: props.color, size: props.size,
+      qty: Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0),
+      amount: Number(it.amount ?? it.sale_amount ?? 0),
+      pic: it.pic ?? null, item_unique_key: itemUniqueKey, raw_data: it,
+      synced_at: new Date().toISOString(),
+    };
+    const { error: itErr } = await admin
+      .from("jst_outbound_order_items").upsert(itemRow, { onConflict: "item_unique_key" });
+    if (itErr) throw itErr;
+    itemsUpserted++;
+  }
+  return { orderId: up.id as string, itemsUpserted };
+}
 
+async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
+  const { windowFrom, windowTo, pageIndex, pageSize } = args;
+  await sleep(RATE_DELAY_MS);
+  if (pageIndex > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
+  const data = await callOpenweb(METHOD_PATH, {
+    page_index: pageIndex, page_size: pageSize,
+    modified_begin: fmtBJ(windowFrom), modified_end: fmtBJ(windowTo),
+  });
+  const list: any[] = data.datas ?? data.list ?? data.orders ?? [];
+  const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === pageSize);
+  let mainUpserted = 0, itemUpserted = 0, failed = 0;
+  let lastErr = "";
+  for (const r of list) {
+    try {
+      const res = await upsertOutboundOrder(r);
+      mainUpserted++; itemUpserted += res.itemsUpserted;
+    } catch (we) {
+      failed++; lastErr = String((we as Error).message ?? we);
+    }
+  }
+  return { apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext, errorDetail: lastErr };
+}
+
+// ===== legacy 一次性同步 (保留兼容/cron) =====
+async function runLegacySync(fromIso: string, toIso: string, logId: string) {
+  const winFrom = new Date(fromIso); const winTo = new Date(toIso);
+  let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
   try {
     while (true) {
       if (page > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
-      await sleep(RATE_DELAY_MS);
-      const requestBiz = buildRequestBiz(page, winFrom, winTo);
-      lastRequestPreview = requestPreview(requestBiz);
-      console.log(`[outbound] FINAL REQUEST path=/open/${METHOD_PATH} params=${JSON.stringify(requestBiz)}`);
-      const data = await callOpenweb(METHOD_PATH, requestBiz);
-      apiCount++;
-      const list: any[] = data.datas ?? data.list ?? data.orders ?? [];
-      const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === PAGE_SIZE);
-
-      for (const r of list) {
-        const ioId = String(r.io_id ?? r.ioId ?? "");
-        if (!ioId) continue;
-        try {
-          const { list: itemList, field: itemField } = pickItems(r);
-          if (itemField && !detectedItemField) detectedItemField = itemField;
-          const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0), 0);
-          const row = {
-            io_id: ioId,
-            o_id: r.o_id ?? null,
-            so_id: r.so_id ?? null,
-            shop_id: r.shop_id != null ? String(r.shop_id) : null,
-            shop_name: r.shop_name ?? null,
-            warehouse: r.warehouse ?? null,
-            wms_co_id: r.wms_co_id != null ? String(r.wms_co_id) : null,
-            status: r.status ?? null,
-            logistics_company: r.logistics_company ?? null,
-            l_id: r.l_id ?? null,
-            lc_id: r.lc_id != null ? String(r.lc_id) : null,
-            io_date: parseJstBeijingDateTime(r.io_date),
-            consign_time: parseJstBeijingDateTime(r.consign_time ?? r.consigntime),
-            modified_at_jst: parseJstBeijingDateTime(r.modified),
-            qty: aggQty > 0 ? aggQty : Number(r.qty ?? 0),
-            raw_data: r,
-            synced_at: new Date().toISOString(),
-          };
-          const { data: up, error } = await admin
-            .from("jst_outbound_orders")
-            .upsert(row, { onConflict: "io_id" })
-            .select("id")
-            .single();
-          if (error) throw error;
-          orders++;
-          const outboundOrderId = up.id as string;
-
-          if (itemList.length === 0) {
-            ordersWithoutItems++;
-          }
-          if (sampleShapes.length < 5) {
-            if (firstTopKeys.length === 0) firstTopKeys = Object.keys(r);
-            sampleShapes.push({
-              io_id: ioId,
-              item_field: itemField,
-              item_count: itemList.length,
-              top_keys: Object.keys(r).slice(0, 80),
-              first_item_keys: itemList[0] ? Object.keys(itemList[0]).slice(0, 80) : [],
-            });
-          }
-          for (let idx = 0; idx < itemList.length; idx++) {
-            const it = itemList[idx];
-            const skuId = it.sku_id != null ? String(it.sku_id) : it.shop_sku_id != null ? String(it.shop_sku_id) : null;
-            const oiId = it.oi_id != null ? String(it.oi_id) : null;
-            const ioiId = it.ioi_id != null ? String(it.ioi_id) : null;
-            const props = splitProps(it.properties_value ?? null);
-            const itemUniqueKey = `${ioId}|${ioiId ?? ""}|${skuId ?? ""}|${oiId ?? ""}`;
-            const itemRow = {
-              outbound_order_id: outboundOrderId,
-              io_id: ioId,
-              oi_id: oiId,
-              ioi_id: ioiId,
-              sku_id: skuId,
-              i_id: it.i_id != null ? String(it.i_id) : it.item_id != null ? String(it.item_id) : null,
-              name: it.name ?? it.sku_name ?? null,
-              properties_value: it.properties_value ?? null,
-              color: props.color,
-              size: props.size,
-              qty: Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0),
-              amount: Number(it.amount ?? it.sale_amount ?? 0),
-              pic: it.pic ?? null,
-              item_unique_key: itemUniqueKey,
-              raw_data: it,
-              synced_at: new Date().toISOString(),
-            };
-            const { error: itErr } = await admin
-              .from("jst_outbound_order_items")
-              .upsert(itemRow, { onConflict: "item_unique_key" });
-            if (itErr) throw itErr;
-            items++;
-          }
-          if (page === 1 && orders <= 1) {
-            console.log(`[outbound] sample io_id=${ioId} items_field=${itemField ?? "(none)"} item_count=${itemList.length} top_keys=${Object.keys(r).join(",")}`);
-          }
-        } catch (we) {
-          failed++;
-          const msg = (we as Error).message ?? String(we);
-          errorTypes[msg] = (errorTypes[msg] ?? 0) + 1;
-          if (errors.length < 10) errors.push(`io_id=${ioId}: ${msg}`);
-        }
-      }
-
+      const res = await processOutboundPage({
+        job: { page_size: PAGE_SIZE } as any,
+        windowIndex: 0, windowFrom: winFrom, windowTo: winTo, pageIndex: page, pageSize: PAGE_SIZE,
+      });
+      apiCount++; orders += res.mainUpserted; items += res.itemUpserted; failed += res.failed;
       await admin.from("jst_sync_logs").update({
-        fetched_orders_count: orders,
-        fetched_items_count: items,
-        message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · 失败 ${failed} · has_next=${hasNext}`,
+        fetched_orders_count: orders, fetched_items_count: items,
+        message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · 失败 ${failed} · has_next=${res.hasNext}`,
         heartbeat_at: new Date().toISOString(),
-        metadata: {
-          final_api_path: `/open/${METHOD_PATH}`,
-          request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
-          request_body_preview: lastRequestPreview,
-          detected_item_field: detectedItemField,
-          top_keys: firstTopKeys,
-          samples: sampleShapes,
-          failed_total: failed,
-          orders_without_items: ordersWithoutItems,
-          error_types: errorTypes,
-        },
       }).eq("id", logId);
-
-      if (!hasNext || list.length === 0) break;
+      if (!res.hasNext || res.apiCount === 0) break;
       page++;
     }
-
-    const noItemsNote = orders > 0 && items === 0
-      ? ` · 接口未返回明细字段（已尝试 ${ITEM_FIELDS.join("/")}）`
-      : detectedItemField ? ` · 明细字段=${detectedItemField}` : "";
-    const status = failed === 0
-      ? "success"
-      : orders === 0
-        ? "failed"
-        : "partial_failed";
-    const detailLines = [
-      `failed_total=${failed}`,
-      `orders_without_items=${ordersWithoutItems}`,
-      `detected_item_field=${detectedItemField ?? "(none)"}`,
-      `top_keys=${firstTopKeys.join(",").slice(0, 600)}`,
-      `error_types=${JSON.stringify(errorTypes).slice(0, 600)}`,
-      `samples=${errors.slice(0, 5).join(" | ").slice(0, 600)}`,
-    ];
+    const status = failed === 0 ? "success" : (orders === 0 ? "failed" : "partial_failed");
     await admin.from("jst_sync_logs").update({
-      status,
-      ended_at: new Date().toISOString(),
-      fetched_orders_count: orders,
-      fetched_items_count: items,
-      message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}${noItemsNote}`,
-      error_detail: failed > 0 ? detailLines.join(" | ").slice(0, 1800) : null,
-      metadata: {
-        final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
-        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo)),
-        detected_item_field: detectedItemField,
-        top_keys: firstTopKeys,
-        samples: sampleShapes,
-        failed_total: failed,
-        orders_without_items: ordersWithoutItems,
-        error_types: errorTypes,
-      },
+      status, ended_at: new Date().toISOString(),
+      fetched_orders_count: orders, fetched_items_count: items,
+      message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}`,
     }).eq("id", logId);
   } catch (e: any) {
-    const err = e as any;
-    const isAbort = err?.aborted || err?.name === "AbortError" || /abort/i.test(String(err?.message ?? ""));
-    const isNoPerm = String(err?.code) === "190" || /无API权限|无api权限|无权限/i.test(String(err?.apiMsg ?? err?.message ?? ""));
-    const friendly = isNoPerm
-      ? "聚水潭无API权限，请在开放平台为当前应用申请：销售出库查询 /open/orders/out/simple/query"
-      : isAbort
-        ? "销售出库同步请求超时或被中断，请缩小时间范围。"
-        : `销售出库同步失败 page=${page}`;
-    const detail = [
-      `final_api_path=${METHOD_PATH}`,
-      err?.url ? `request_url=${err.url}` : null,
-      `page_index=${page}`,
-      `page_size=${PAGE_SIZE}`,
-      `modified_begin=${fmtBJ(winFrom)}`,
-      `modified_end=${fmtBJ(winTo)}`,
-      err?.code != null ? `response_code=${err.code}` : null,
-      err?.apiMsg ? `response_msg=${err.apiMsg}` : null,
-      err?.requestId ? `request_id=${err.requestId}` : null,
-      `error_name=${err?.name ?? "Error"}`,
-      `error_message=${String(err?.message ?? err).slice(0, 600)}`,
-    ].filter(Boolean).join(" | ");
     await admin.from("jst_sync_logs").update({
-      status: "failed",
-      ended_at: new Date().toISOString(),
-      fetched_orders_count: orders,
-      fetched_items_count: items,
-      message: friendly,
-      error_detail: detail.slice(0, 1500),
-      metadata: {
-        final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
-        request_body_preview: lastRequestPreview || requestPreview(buildRequestBiz(page, winFrom, winTo)),
-        detected_item_field: detectedItemField,
-        top_keys: firstTopKeys,
-        samples: sampleShapes,
-        failed_total: failed,
-        orders_without_items: ordersWithoutItems,
-        error_types: errorTypes,
-      },
+      status: "failed", ended_at: new Date().toISOString(),
+      fetched_orders_count: orders, fetched_items_count: items,
+      message: `销售出库同步失败 page=${page}`,
+      error_detail: String(e?.message ?? e).slice(0, 1500),
     }).eq("id", logId);
   }
 }
@@ -273,61 +154,54 @@ Deno.serve(async (req) => {
       });
     }
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-    const { from, to } = resolveWindow(body);
+    const action: string = body.action ?? "";
 
-    // 防重复：关闭超时僵尸 running，再检查是否有未超时的 running
+    // 新: 断点续跑 job 协议
+    const jobResp = await handleJobActions({
+      action, body, syncType: SYNC_TYPE, callerUid: caller.uid,
+      processPage: processOutboundPage,
+      startActionName: "start_outbound_job",
+      tickActionName: "tick_outbound_job",
+      cancelActionName: "cancel_outbound_job",
+      config: { pageSize: PAGE_SIZE, maxWindowDays: 3, maxPagesPerRun: 3, timeBudgetSeconds: 45 },
+      resolveWindowFromBody: (b) => resolveWindow(b),
+    });
+    if (jobResp) {
+      // attach cors
+      const text = await jobResp.text();
+      return new Response(text, { status: jobResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // 旧: 一次性后台同步 (兼容)
+    const { from, to } = resolveWindow(body);
     const STALE_MIN = 10;
     const staleCutoff = new Date(Date.now() - STALE_MIN * 60_000).toISOString();
-    await admin.from("jst_sync_logs")
-      .update({
-        status: "timeout_partial",
-        ended_at: new Date().toISOString(),
-        error_detail: `timeout: running > ${STALE_MIN} minutes, marked as stale job`,
-        metadata: { stale_closed: true, stale_closed_at: new Date().toISOString() },
-      })
-      .eq("sync_type", SYNC_TYPE)
-      .eq("status", "running")
-      .lt("started_at", staleCutoff);
+    await admin.from("jst_sync_logs").update({
+      status: "timeout_partial", ended_at: new Date().toISOString(),
+      error_detail: `timeout: running > ${STALE_MIN} minutes`,
+    }).eq("sync_type", SYNC_TYPE).eq("status", "running").lt("started_at", staleCutoff);
 
     const { data: aliveRunning } = await admin.from("jst_sync_logs")
-      .select("id,started_at")
-      .eq("sync_type", SYNC_TYPE)
-      .eq("status", "running")
-      .gte("started_at", staleCutoff)
-      .order("started_at", { ascending: false })
-      .limit(1);
+      .select("id,started_at").eq("sync_type", SYNC_TYPE).eq("status", "running")
+      .gte("started_at", staleCutoff).order("started_at", { ascending: false }).limit(1);
     if (aliveRunning && aliveRunning.length > 0) {
       return new Response(JSON.stringify({
-        ok: false,
-        error: "已有同步任务正在运行，请稍后再试",
-        running_log_id: aliveRunning[0].id,
-        running_started_at: aliveRunning[0].started_at,
+        ok: false, error: "已有同步任务正在运行，请稍后再试",
+        running_log_id: aliveRunning[0].id, running_started_at: aliveRunning[0].started_at,
       }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-
-
     const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
-      sync_type: SYNC_TYPE,
-      status: "running",
-      cursor_from: from.toISOString(),
-      cursor_to: to.toISOString(),
+      sync_type: SYNC_TYPE, status: "running",
+      cursor_from: from.toISOString(), cursor_to: to.toISOString(),
       message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)}`,
-      metadata: {
-        final_api_path: `/open/${METHOD_PATH}`,
-        request_fields: { field_params_enabled: false, note: "正式同步不传 InoutFlds / InoutItemFlds，使用接口默认返回 items" },
-        request_body_preview: requestPreview(buildRequestBiz(1, from, to)),
-      },
     }).select("id").single();
     if (logErr) throw logErr;
-
     // @ts-ignore EdgeRuntime
-    EdgeRuntime.waitUntil(runSync(from.toISOString(), to.toISOString(), log.id));
-
+    EdgeRuntime.waitUntil(runLegacySync(from.toISOString(), to.toISOString(), log.id));
     return new Response(JSON.stringify({
       ok: true, background: true, log_id: log.id,
-      cursor_from: from.toISOString(), cursor_to: to.toISOString(),
-      message: "同步已在后台启动",
+      cursor_from: from.toISOString(), cursor_to: to.toISOString(), message: "同步已在后台启动",
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     return new Response(JSON.stringify({ ok: false, error: (err as Error).message }), {

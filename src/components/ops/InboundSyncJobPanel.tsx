@@ -33,16 +33,18 @@ interface Props {
   onJobFinished?: (job: any) => void;
   title?: string;
   showStartButtons?: boolean;
-  /** sync_type used for last-job lookup & query keys. Defaults to inbound. */
-  syncType?: "purchase_inbound_orders" | "purchase_orders";
-  /** Edge function action names — override for purchase orders */
+  /** sync_type used for last-job lookup & query keys. */
+  syncType?: string;
+  /** Edge function name to invoke. */
+  functionName?: string;
+  /** Edge function action names */
   startAction?: string;
   tickAction?: string;
   cancelAction?: string;
   /** UI labels */
-  unitLabel?: string; // e.g. "入库单" / "采购单"
+  unitLabel?: string;
   emptyText?: string;
-  toastTitle?: string; // e.g. "已创建入库单同步任务"
+  toastTitle?: string;
 }
 
 export function InboundSyncJobPanel({
@@ -50,6 +52,7 @@ export function InboundSyncJobPanel({
   title = "入库单同步任务",
   showStartButtons = true,
   syncType = "purchase_inbound_orders",
+  functionName = "jst-sync-purchase-orders",
   startAction = "start_inbound_job",
   tickAction = "tick_inbound_job",
   cancelAction = "cancel_inbound_job",
@@ -109,7 +112,7 @@ export function InboundSyncJobPanel({
 
   const startMut = useMutation({
     mutationFn: async (days: number) => {
-      const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body: {
           action: startAction,
           days,
@@ -135,7 +138,7 @@ export function InboundSyncJobPanel({
 
   const tickMut = useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body: { action: tickAction, job_id: id },
       });
       if (error) throw new Error(error.message);
@@ -163,7 +166,7 @@ export function InboundSyncJobPanel({
 
   const cancelMut = useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body: { action: cancelAction, job_id: id },
       });
       if (error) throw new Error(error.message);

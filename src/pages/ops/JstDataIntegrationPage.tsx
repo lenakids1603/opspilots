@@ -28,8 +28,6 @@ import { useToast } from "@/hooks/use-toast";
 import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
-import { AftersalesSyncCards } from "@/components/ops/AftersalesSyncCards";
-import { OutboundSyncCompactCard } from "@/components/ops/OutboundSyncCompactCard";
 
 
 // ============================================================
@@ -933,11 +931,45 @@ export default function JstDataIntegrationPage() {
 
 
 
-            <TabsContent value="outbound" className="m-0">
-              <OutboundSyncCompactCard />
+            <TabsContent value="outbound" className="m-0 p-5 space-y-3">
+              <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+                聚水潭销售出库同步（只读 · 断点续跑）：调用 <code>/open/orders/out/simple/query</code>，按修改时间窗口分页拉取，自动 upsert <code>jst_outbound_orders</code> + 明细表。出库单列表请前往【仓库系统 / 出库信息】查看。
+              </div>
+              <InboundSyncJobPanel
+                title="销售出库同步任务（断点续跑）"
+                syncType="outbound_orders"
+                functionName="jst-sync-outbound-orders"
+                startAction="start_outbound_job"
+                tickAction="tick_outbound_job"
+                cancelAction="cancel_outbound_job"
+                unitLabel="出库单"
+                toastTitle="已创建销售出库同步任务"
+              />
             </TabsContent>
-            <TabsContent value="aftersales" className="m-0">
-              <AftersalesSyncCards />
+            <TabsContent value="aftersales" className="m-0 p-5 space-y-3">
+              <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+                聚水潭售后同步（断点续跑）：分为「退货退款单」（关注退款金额/状态/原因）和「销售退仓」（关注仓库实际收货 SKU 与数量），两类数据独立入库，互不混淆。
+              </div>
+              <InboundSyncJobPanel
+                title="退货退款单同步任务（断点续跑）"
+                syncType="refund_orders"
+                functionName="jst-sync-refund-orders"
+                startAction="start_refund_job"
+                tickAction="tick_refund_job"
+                cancelAction="cancel_refund_job"
+                unitLabel="退款单"
+                toastTitle="已创建退货退款单同步任务"
+              />
+              <InboundSyncJobPanel
+                title="销售退仓同步任务（断点续跑）"
+                syncType="aftersale_received"
+                functionName="jst-sync-aftersale-received"
+                startAction="start_aftersale_job"
+                tickAction="tick_aftersale_job"
+                cancelAction="cancel_aftersale_job"
+                unitLabel="退仓单"
+                toastTitle="已创建销售退仓同步任务"
+              />
             </TabsContent>
           </Tabs>
         </CardContent>
