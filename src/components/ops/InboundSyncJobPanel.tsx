@@ -226,17 +226,21 @@ export function InboundSyncJobPanel({
           <div className="flex-1" />
           {showStartButtons && (
             <div className="flex flex-wrap gap-2">
-              <Button size="default" variant="default" className="h-9" disabled={startMut.isPending}
-                onClick={() => startMut.mutate(1)}>
-                <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />
-                同步最近 1 天
-              </Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(7)}>同步最近 7 天</Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(30)}>同步最近 30 天</Button>
+              {(presets ?? [
+                { label: "同步最近 1 天", body: { days: 1, requested_range: "1d" }, variant: "default" as const },
+                { label: "同步最近 7 天", body: { days: 7, requested_range: "7d" }, variant: "outline" as const },
+                { label: "同步最近 30 天", body: { days: 30, requested_range: "30d" }, variant: "outline" as const },
+              ]).map((p, idx) => (
+                <Button key={idx} size="default" variant={p.variant ?? "outline"}
+                  className={p.variant === "default" ? "h-9" : "h-9 border-primary/40 text-primary hover:bg-primary/5"}
+                  disabled={startMut.isPending} onClick={() => startMut.mutate(p.body)}>
+                  {idx === 0 && <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />}
+                  {p.label}
+                </Button>
+              ))}
             </div>
           )}
+
         </div>
 
         {!j && (
