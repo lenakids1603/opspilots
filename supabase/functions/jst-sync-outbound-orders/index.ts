@@ -250,6 +250,11 @@ async function runSync(fromIso: string, toIso: string, logId: string) {
       metadata: {
         final_api_path: `/open/${METHOD_PATH}`,
         request_fields: { InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS },
+        request_body_preview: {
+          page_index: page, page_size: PAGE_SIZE,
+          start_time: fmtBJ(winFrom), end_time: fmtBJ(winTo),
+          InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS,
+        },
         detected_item_field: detectedItemField,
         top_keys: firstTopKeys,
         samples: sampleShapes,
