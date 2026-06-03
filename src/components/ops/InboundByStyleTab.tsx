@@ -16,10 +16,17 @@ import {
 } from "@/lib/datetime";
 
 const PAGE_SIZE = 20;
+const QUERY_BATCH_SIZE = 150;
+
 const fmtMoney = (n: number | null | undefined) =>
   "¥" + Number(n ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 const fmtInt = (n: number | null | undefined) =>
   Number(n ?? 0).toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+
+function formatSupabaseError(prefix: string, error: unknown) {
+  const e = error as { message?: string; details?: string; hint?: string; code?: string };
+  return `${prefix}: ${e.message || "未知错误"}${e.details ? ` | details=${e.details}` : ""}${e.hint ? ` | hint=${e.hint}` : ""}${e.code ? ` | code=${e.code}` : ""}`;
+}
 
 export type ByStyleFilters = {
   startDate: string; endDate: string; supplier: string; warehouse: string;
@@ -103,7 +110,7 @@ function useStyleAggregate(filters: ByStyleFilters) {
         .limit(5000);
       q = applyReceiptFilters(q, filters);
       const { data: recs, error } = await q;
-      if (error) throw error;
+      if (error) throw new Error(formatSupabaseError("主表查询失败", error));
       const receipts = (recs ?? []) as ReceiptMeta[];
       const receiptMap = new Map<string, ReceiptMeta>(receipts.map(r => [r.id, r]));
       const ids = receipts.map(r => r.id);
@@ -111,14 +118,15 @@ function useStyleAggregate(filters: ByStyleFilters) {
 
       // 2) 取入库明细
       const allItems: AggItem[] = [];
-      for (let i = 0; i < ids.length; i += 800) {
-        const slice = ids.slice(i, i + 800);
+      for (let i = 0; i < ids.length; i += QUERY_BATCH_SIZE) {
+        const slice = ids.slice(i, i + QUERY_BATCH_SIZE);
         let iq = supabase.from("purchase_receipt_items")
           .select("receipt_id, sku_no, product_name, product_id, sku_id, received_qty, cost_amount, cost_price, external_po_id, external_io_id")
-          .in("receipt_id", slice);
-        if (filters.sku) iq = iq.ilike("sku_no", `%${filters.sku}%`);
+          .in("receipt_id", slice)
+          .limit(10000);
+        if (filters.sku) iq = iq.ilike("sku_no", `%${filters.sku.replace(/[,()]/g, "")}%`);
         const { data: items, error: itErr } = await iq;
-        if (itErr) throw itErr;
+        if (itErr) throw new Error(formatSupabaseError(`明细查询失败 [batch ${i}-${i + slice.length}, ids=${slice.length}]`, itErr));
         for (const it of items ?? []) {
           allItems.push({
             receipt_id: (it as any).receipt_id,
