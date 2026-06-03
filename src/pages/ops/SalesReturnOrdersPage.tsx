@@ -266,6 +266,10 @@ export default function SalesReturnOrdersPage() {
   const styleExportRef = useRef<((kind: "byStyle" | "byOrder") => void) | null>(null);
 
   const statsQ = useStats();
+  const shopMapQ = useShopMap();
+  const shopMap = shopMapQ.data ?? new Map<string, string>();
+  const resolveShop = (r: any) =>
+    (r?.shop_id && shopMap.get(String(r.shop_id).trim())) || r?.shop_name || "-";
   const listQ = useList(filters, page, sortKey, sortDir);
 
   const onSearch = () => { setPage(0); setFilters(draft); };
