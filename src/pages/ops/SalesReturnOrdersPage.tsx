@@ -509,7 +509,8 @@ export default function SalesReturnOrdersPage() {
                     <TableCell className="font-mono text-xs">{r.as_id}</TableCell>
                     <TableCell className="font-mono text-xs">{r.no_origin ? <span className="text-rose-600">无</span> : r.so_id}</TableCell>
                     <TableCell className="font-mono text-xs">{r.outer_as_id ?? "-"}</TableCell>
-                    <TableCell className="text-xs">{r.shop_name ?? "-"}</TableCell>
+                    <TableCell className="text-xs" title={`shop_id: ${r.shop_id ?? "-"}`}>{resolveShop(r)}</TableCell>
+                    <TableCell className="text-xs max-w-[180px] truncate" title={(r.suppliers ?? []).join(" / ")}>{r.supplier_label ?? "-"}</TableCell>
                     <TableCell className="text-xs">{r.warehouse ?? "-"}</TableCell>
                     <TableCell className="text-xs">{r.status ?? <span className="text-rose-600">空</span>}</TableCell>
                     <TableCell className="text-right">{fmtInt(r.item_qty)}</TableCell>
