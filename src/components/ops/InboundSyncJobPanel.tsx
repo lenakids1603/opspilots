@@ -232,15 +232,19 @@ export function InboundSyncJobPanel({
           <div className="flex-1" />
           {showStartButtons && (
             <div className="flex flex-wrap gap-2">
-              <Button size="default" variant="default" className="h-9" disabled={startMut.isPending}
-                onClick={() => startMut.mutate(1)}>
-                <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />
-                同步最近 1 天
-              </Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(7)}>同步最近 7 天</Button>
-              <Button size="default" variant="outline" className="h-9 border-primary/40 text-primary hover:bg-primary/5"
-                disabled={startMut.isPending} onClick={() => startMut.mutate(30)}>同步最近 30 天</Button>
+              {effectivePresets.map((p, idx) => (
+                <Button
+                  key={`${p.label}-${idx}`}
+                  size="default"
+                  variant={idx === 0 ? "default" : "outline"}
+                  className={idx === 0 ? "h-9" : "h-9 border-primary/40 text-primary hover:bg-primary/5"}
+                  disabled={startMut.isPending}
+                  onClick={() => startMut.mutate(p)}
+                >
+                  {idx === 0 && <RefreshCw className={"w-4 h-4 mr-1 " + (startMut.isPending ? "animate-spin" : "")} />}
+                  {p.label}
+                </Button>
+              ))}
             </div>
           )}
         </div>
