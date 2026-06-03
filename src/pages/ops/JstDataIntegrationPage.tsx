@@ -29,6 +29,7 @@ import { ShopMappingsCard } from "@/components/ops/ShopMappingsCard";
 import { JstConnectionCheckCard } from "@/components/ops/JstConnectionCheckCard";
 import { InboundSyncJobPanel } from "@/components/ops/InboundSyncJobPanel";
 import { AftersalesSyncCards } from "@/components/ops/AftersalesSyncCards";
+import { OutboundSyncCards } from "@/components/ops/OutboundSyncCards";
 
 // ============================================================
 // Types & helpers
