@@ -142,13 +142,16 @@ async function processSalesPage(args: ProcessPageArgs): Promise<PageResult> {
   const { windowFrom, windowTo, pageIndex, pageSize } = args;
   await sleep(RATE_DELAY_MS);
   if (pageIndex > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
-  const data = await callOpenweb(METHOD_PATH, {
-    page_index: pageIndex,
-    page_size: pageSize,
-    start_time: fmtBJ(windowFrom),
-    end_time: fmtBJ(windowTo),
-    date_type: "modified",
-  });
+  // 聚水潭 orders/single/query 使用 modified_begin / modified_end 作为时间窗
+  // 不支持 date_type 参数；时间格式为北京时间字符串 yyyy-MM-dd HH:mm:ss
+  const reqBody = {
+    page_index: Number(pageIndex),
+    page_size: Number(pageSize),
+    modified_begin: fmtBJ(windowFrom),
+    modified_end: fmtBJ(windowTo),
+  };
+  console.log(`[jst-sync-sales-orders] request orders/single/query`, JSON.stringify(reqBody));
+  const data = await callOpenweb(METHOD_PATH, reqBody);
   const list: any[] = data.orders ?? data.datas ?? data.list ?? [];
   const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === pageSize);
   let mainUpserted = 0, itemUpserted = 0, failed = 0;
