@@ -122,13 +122,9 @@ export function InboundSyncJobPanel({
   });
 
   const startMut = useMutation({
-    mutationFn: async (days: number) => {
+    mutationFn: async (body: Record<string, unknown>) => {
       const { data, error } = await supabase.functions.invoke(functionName, {
-        body: {
-          action: startAction,
-          days,
-          requested_range: days <= 1 ? "1d" : days <= 7 ? "7d" : "30d",
-        },
+        body: { action: startAction, ...body },
       });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
@@ -146,6 +142,7 @@ export function InboundSyncJobPanel({
     },
     onError: (e: any) => toast({ title: "启动同步失败", description: e.message, variant: "destructive" }),
   });
+
 
   const tickMut = useMutation({
     mutationFn: async (id: string) => {
