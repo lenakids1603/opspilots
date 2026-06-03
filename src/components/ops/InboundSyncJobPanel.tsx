@@ -29,6 +29,13 @@ const STATUS_COLOR: Record<string, string> = {
   waiting_next_tick: "bg-blue-100 text-blue-700",
 };
 
+interface Preset {
+  label: string;
+  days?: number;
+  hours?: number;
+  requested_range?: string;
+}
+
 interface Props {
   onJobFinished?: (job: any) => void;
   title?: string;
@@ -45,6 +52,8 @@ interface Props {
   unitLabel?: string;
   emptyText?: string;
   toastTitle?: string;
+  /** Custom preset buttons. Defaults to 1/7/30 days. */
+  presets?: Preset[];
 }
 
 export function InboundSyncJobPanel({
