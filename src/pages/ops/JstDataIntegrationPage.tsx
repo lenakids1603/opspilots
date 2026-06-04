@@ -894,47 +894,6 @@ export default function JstDataIntegrationPage() {
                 />
               </div>
 
-              {/* 阶段任务列表 */}
-              <div>
-                <h4 className="text-sm font-semibold mb-2">阶段任务列表（基础API）</h4>
-                <Card>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16">阶段</TableHead>
-                        <TableHead>任务名称</TableHead>
-                        <TableHead>同步模式</TableHead>
-                        <TableHead className="w-[200px]">进度</TableHead>
-                        <TableHead>状态</TableHead>
-                        <TableHead>最近执行</TableHead>
-                        <TableHead className="text-right">操作</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {baseStageTasks.map((t) => (
-                        <TableRow key={t.stage}>
-                          <TableCell>{t.stage}</TableCell>
-                          <TableCell className="font-medium">{t.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{t.mode}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Progress value={t.progress} className={`h-2 ${t.status === "warn" ? "[&>div]:bg-rose-500" : "[&>div]:bg-emerald-500"}`} />
-                              <span className="text-xs tabular-nums w-10 text-right">{t.progress}%</span>
-                            </div>
-                          </TableCell>
-                          <TableCell><StatusBadge value={t.status} /></TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{fmtTime(t.last)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="link" size="sm" className="h-auto p-0" onClick={t.onLog}>
-                              {t.opLabel ?? "日志"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Card>
-              </div>
             </TabsContent>
 
             {/* ====== 商品API ====== */}
