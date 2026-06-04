@@ -1076,15 +1076,33 @@ export default function JstDataIntegrationPage() {
                 size="sm"
                 className="h-9"
                 disabled={cancelAllMut.isPending}
-                onClick={() => {
-                  if (window.confirm("确定要终止所有运行中的同步任务吗？此操作会将正在运行的同步标记为已终止。")) {
-                    cancelAllMut.mutate();
-                  }
-                }}
+                onClick={() => setCancelAllOpen(true)}
               >
                 <StopCircle className="w-3.5 h-3.5 mr-1" />
                 {cancelAllMut.isPending ? "终止中…" : "终止所有进程"}
               </Button>
+              <AlertDialog open={cancelAllOpen} onOpenChange={setCancelAllOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确定要终止所有运行中的同步任务?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      这会将所有 running / pending / partial / waiting_next_tick / stalled 任务，以及 failed 但仍可续跑的任务，统一标记为 cancelled，并同步关闭对应的同步日志。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cancelAllMut.isPending}>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={cancelAllMut.isPending}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        cancelAllMut.mutate(undefined, { onSettled: () => setCancelAllOpen(false) });
+                      }}
+                    >
+                      {cancelAllMut.isPending ? "终止中…" : "确认终止"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               <Select value={triggerFilter} onValueChange={setTriggerFilter}>
                 <SelectTrigger className="w-[120px] h-9"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="过滤" /></SelectTrigger>
                 <SelectContent>
