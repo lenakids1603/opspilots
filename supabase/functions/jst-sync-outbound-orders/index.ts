@@ -6,7 +6,7 @@
 //   - (无 action) 旧的一次性后台同步, 保留给 cron / 兼容
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
-  admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, parseHasNext,
+  admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, computeHasNext, pickList, pickItemsArray,
   resolveCaller, resolveWindow, sleep, RATE_DELAY_MS, MAX_PAGE_NO,
 } from "../_shared/jst-client.ts";
 import { handleJobActions, PageResult, ProcessPageArgs } from "../_shared/jst-sync-job.ts";
@@ -15,19 +15,18 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
+const INOUT_FLDS = "io_id,o_id,so_id,shop_id,shop_name,wh_id,warehouse,wms_co_id,status,logistics_company,l_id,lc_id,io_date,consign_time,modified,qty";
+const INOUT_ITEM_FLDS = "ioi_id,oi_id,sku_id,shop_sku_id,i_id,item_id,name,sku_name,properties_value,qty,sale_qty,total_qty,amount,sale_amount,pic";
+
 function splitProps(v: string | null): { color: string | null; size: string | null } {
   if (!v) return { color: null, size: null };
   const parts = String(v).split(/[,;|，；]/).map((s) => s.trim()).filter(Boolean);
   return { color: parts[0] ?? null, size: parts[1] ?? null };
 }
 
-const ITEM_FIELDS = ["items", "skus", "items_list", "order_items", "details", "item_list", "orderitems"];
 function pickItems(r: any): { list: any[]; field: string | null } {
-  for (const f of ITEM_FIELDS) {
-    const v = r?.[f];
-    if (Array.isArray(v) && v.length > 0) return { list: v, field: f };
-  }
-  return { list: [], field: null };
+  const list = pickItemsArray(r);
+  return { list, field: list.length ? "items" : null };
 }
 
 async function upsertOutboundOrder(r: any): Promise<{ orderId: string; itemsUpserted: number }> {
