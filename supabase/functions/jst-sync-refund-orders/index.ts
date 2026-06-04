@@ -5,7 +5,7 @@
 // (无 action) 旧的一次性同步, 保留兼容
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
-  admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, parseHasNext,
+  admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, computeHasNext, pickList, pickItemsArray,
   resolveCaller, resolveWindow, sleep, RATE_DELAY_MS, MAX_PAGE_NO,
 } from "../_shared/jst-client.ts";
 import { handleJobActions, PageResult, ProcessPageArgs } from "../_shared/jst-sync-job.ts";
