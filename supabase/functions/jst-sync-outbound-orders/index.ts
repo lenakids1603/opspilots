@@ -1,9 +1,6 @@
-// Edge Function: 聚水潭销售出库单同步（只读 + 断点续跑 + 进度条）
+// Edge Function: 聚水潭销售出库单同步（最小请求参数 + 自动 fallback + 详细日志）
 // API: /open/orders/out/simple/query
 // 写入 jst_outbound_orders + jst_outbound_order_items
-// Actions:
-//   - start_outbound_job / tick_outbound_job / cancel_outbound_job (推荐, 走 jst_sync_jobs)
-//   - (无 action) 旧的一次性后台同步, 保留给 cron / 兼容
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
   admin, callOpenweb, fmtBJ, parseJstBeijingDateTime, computeHasNext, pickList, pickItemsArray,
@@ -15,8 +12,22 @@ const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
 const PAGE_SIZE = 50;
 
-const INOUT_FLDS = "io_id,o_id,so_id,shop_id,shop_name,wh_id,warehouse,wms_co_id,status,logistics_company,l_id,lc_id,io_date,consign_time,modified,qty";
-const INOUT_ITEM_FLDS = "ioi_id,oi_id,sku_id,shop_sku_id,i_id,item_id,name,sku_name,properties_value,qty,sale_qty,total_qty,amount,sale_amount,pic";
+// 参数形态：
+//  - "with_status": 最小参数 + status=Confirmed
+//  - "minimal":     仅最小参数（modified_begin/end + page_index/size 字符串）
+type ParamMode = "with_status" | "minimal";
+
+function buildReqBody(mode: ParamMode, pageIndex: number, pageSize: number, from: Date, to: Date) {
+  const size = Math.min(Math.max(Number(pageSize) || PAGE_SIZE, 1), 50);
+  const body: Record<string, unknown> = {
+    page_index: String(pageIndex),
+    page_size: String(size),
+    modified_begin: fmtBJ(from),
+    modified_end: fmtBJ(to),
+  };
+  if (mode === "with_status") body.status = "Confirmed";
+  return body;
+}
 
 function splitProps(v: string | null): { color: string | null; size: string | null } {
   if (!v) return { color: null, size: null };
@@ -24,15 +35,10 @@ function splitProps(v: string | null): { color: string | null; size: string | nu
   return { color: parts[0] ?? null, size: parts[1] ?? null };
 }
 
-function pickItems(r: any): { list: any[]; field: string | null } {
-  const list = pickItemsArray(r);
-  return { list, field: list.length ? "items" : null };
-}
-
 async function upsertOutboundOrder(r: any): Promise<{ orderId: string; itemsUpserted: number }> {
   const ioId = String(r.io_id ?? r.ioId ?? "");
   if (!ioId) throw new Error("missing io_id");
-  const { list: itemList } = pickItems(r);
+  const itemList = pickItemsArray(r);
   const aggQty = itemList.reduce((s, it) => s + Number(it.qty ?? it.sale_qty ?? it.total_qty ?? 0), 0);
   const row = {
     io_id: ioId,
@@ -82,20 +88,56 @@ async function upsertOutboundOrder(r: any): Promise<{ orderId: string; itemsUpse
   return { orderId: up.id as string, itemsUpserted };
 }
 
+// 调用一次接口，遇到 code=130 时自动尝试移除 status 再试一次。
+// 返回结果同时携带最终采用的 mode，方便上层持久化。
+async function callOutbound(initialMode: ParamMode, pageIndex: number, pageSize: number, from: Date, to: Date) {
+  const order: ParamMode[] = initialMode === "minimal" ? ["minimal"] : ["with_status", "minimal"];
+  let lastErr: any = null;
+  for (const mode of order) {
+    const reqBody = buildReqBody(mode, pageIndex, pageSize, from, to);
+    const t0 = Date.now();
+    try {
+      const data = await callOpenweb(METHOD_PATH, reqBody);
+      return { data, mode, reqBody, durationMs: Date.now() - t0, responseCode: "0", responseMsg: "success" };
+    } catch (e: any) {
+      const code = String(e?.code ?? "");
+      lastErr = e;
+      // 仅当确认是参数错误且当前是 with_status 时，才尝试 fallback 去掉 status
+      const isParamErr = code === "130" || /参数无法转换|参数错误/.test(String(e?.apiMsg ?? e?.message ?? ""));
+      if (!(isParamErr && mode === "with_status")) {
+        // 直接抛出，附带 reqBody 给调用方写日志
+        e.requestBody = reqBody;
+        e.responseCode = code || null;
+        e.responseMsg = e?.apiMsg ?? null;
+        e.durationMs = Date.now() - t0;
+        throw e;
+      }
+      // 继续 fallback 到 minimal
+    }
+  }
+  throw lastErr;
+}
+
 async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
-  const { windowFrom, windowTo, pageIndex, pageSize } = args;
+  const { job, windowFrom, windowTo, pageIndex, pageSize } = args;
   await sleep(RATE_DELAY_MS);
   if (pageIndex > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
-  const reqBody = {
-    page_index: pageIndex, page_size: pageSize,
-    modified_begin: fmtBJ(windowFrom), modified_end: fmtBJ(windowTo),
-    InoutFlds: INOUT_FLDS, InoutItemFlds: INOUT_ITEM_FLDS,
-  };
-  const t0 = Date.now();
-  const data = await callOpenweb(METHOD_PATH, reqBody);
-  const durationMs = Date.now() - t0;
+  const meta = (job?.metadata ?? {}) as Record<string, unknown>;
+  const initialMode: ParamMode = meta.param_mode === "minimal" ? "minimal" : "with_status";
+
+  const { data, mode, reqBody, durationMs } = await callOutbound(initialMode, pageIndex, pageSize, windowFrom, windowTo);
+
+  // 持久化采用的 mode（仅在变化时写）
+  if (mode !== initialMode) {
+    try {
+      await admin.from("jst_sync_jobs").update({
+        metadata: { ...meta, param_mode: mode, param_mode_locked_at: new Date().toISOString() },
+      }).eq("id", job.id);
+    } catch (_e) { /* ignore */ }
+  }
+
   const list = pickList(data);
-  const hasNext = computeHasNext(data, list.length, pageSize, pageIndex);
+  const hasNext = computeHasNext(data, list.length, Number(reqBody.page_size), pageIndex);
   let mainUpserted = 0, itemUpserted = 0, failed = 0;
   let lastErr = "";
   for (const r of list) {
@@ -108,44 +150,11 @@ async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
   }
   return {
     apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext,
-    errorDetail: lastErr || undefined, requestBody: reqBody, durationMs,
+    errorDetail: lastErr || undefined,
+    requestBody: { ...reqBody, _param_mode: mode },
+    responseCode: "0", responseMsg: "success",
+    durationMs,
   };
-}
-
-// ===== legacy 一次性同步 (保留兼容/cron) =====
-async function runLegacySync(fromIso: string, toIso: string, logId: string) {
-  const winFrom = new Date(fromIso); const winTo = new Date(toIso);
-  let page = 1, apiCount = 0, orders = 0, items = 0, failed = 0;
-  try {
-    while (true) {
-      if (page > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
-      const res = await processOutboundPage({
-        job: { page_size: PAGE_SIZE } as any,
-        windowIndex: 0, windowFrom: winFrom, windowTo: winTo, pageIndex: page, pageSize: PAGE_SIZE,
-      });
-      apiCount++; orders += res.mainUpserted; items += res.itemUpserted; failed += res.failed;
-      await admin.from("jst_sync_logs").update({
-        fetched_orders_count: orders, fetched_items_count: items,
-        message: `第 ${page} 页 已同步 ${orders} 出库单 / ${items} 明细 · 失败 ${failed} · has_next=${res.hasNext}`,
-        heartbeat_at: new Date().toISOString(),
-      }).eq("id", logId);
-      if (!res.hasNext || res.apiCount === 0) break;
-      page++;
-    }
-    const status = failed === 0 ? "success" : (orders === 0 ? "failed" : "partial_failed");
-    await admin.from("jst_sync_logs").update({
-      status, ended_at: new Date().toISOString(),
-      fetched_orders_count: orders, fetched_items_count: items,
-      message: `销售出库同步完成 · API ${apiCount} 次 · ${orders} 单 / ${items} 明细 · 失败 ${failed}`,
-    }).eq("id", logId);
-  } catch (e: any) {
-    await admin.from("jst_sync_logs").update({
-      status: "failed", ended_at: new Date().toISOString(),
-      fetched_orders_count: orders, fetched_items_count: items,
-      message: `销售出库同步失败 page=${page}`,
-      error_detail: String(e?.message ?? e).slice(0, 1500),
-    }).eq("id", logId);
-  }
 }
 
 Deno.serve(async (req) => {
@@ -162,7 +171,6 @@ Deno.serve(async (req) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const action: string = body.action ?? "";
 
-    // 新: 断点续跑 job 协议
     const jobResp = await handleJobActions({
       action, body, syncType: SYNC_TYPE, callerUid: caller.uid,
       processPage: processOutboundPage,
@@ -173,44 +181,20 @@ Deno.serve(async (req) => {
       resolveWindowFromBody: (b) => resolveWindow(b),
     });
     if (jobResp) {
-      // attach cors
       const text = await jobResp.text();
       return new Response(text, { status: jobResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 旧: 一次性后台同步 (兼容)
-    const { from, to } = resolveWindow(body);
-    const STALE_MIN = 10;
-    const staleCutoff = new Date(Date.now() - STALE_MIN * 60_000).toISOString();
-    await admin.from("jst_sync_logs").update({
-      status: "timeout_partial", ended_at: new Date().toISOString(),
-      error_detail: `timeout: running > ${STALE_MIN} minutes`,
-    }).eq("sync_type", SYNC_TYPE).eq("status", "running").lt("started_at", staleCutoff);
-
-    const { data: aliveRunning } = await admin.from("jst_sync_logs")
-      .select("id,started_at").eq("sync_type", SYNC_TYPE).eq("status", "running")
-      .gte("started_at", staleCutoff).order("started_at", { ascending: false }).limit(1);
-    if (aliveRunning && aliveRunning.length > 0) {
-      return new Response(JSON.stringify({
-        ok: false, error: "已有同步任务正在运行，请稍后再试",
-        running_log_id: aliveRunning[0].id, running_started_at: aliveRunning[0].started_at,
-      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
-      sync_type: SYNC_TYPE, status: "running",
-      cursor_from: from.toISOString(), cursor_to: to.toISOString(),
-      message: `开始同步销售出库 ${fmtBJ(from)} → ${fmtBJ(to)}`,
-    }).select("id").single();
-    if (logErr) throw logErr;
-    // @ts-ignore EdgeRuntime
-    EdgeRuntime.waitUntil(runLegacySync(from.toISOString(), to.toISOString(), log.id));
     return new Response(JSON.stringify({
-      ok: true, background: true, log_id: log.id,
-      cursor_from: from.toISOString(), cursor_to: to.toISOString(), message: "同步已在后台启动",
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: (err as Error).message }), {
+      ok: false, error: "请使用 start_outbound_job / tick_outbound_job / cancel_outbound_job",
+    }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (err: any) {
+    return new Response(JSON.stringify({
+      ok: false, error: (err as Error).message,
+      response_code: err?.responseCode ?? err?.code ?? null,
+      response_msg: err?.responseMsg ?? err?.apiMsg ?? null,
+      request_body: err?.requestBody ?? null,
+    }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
