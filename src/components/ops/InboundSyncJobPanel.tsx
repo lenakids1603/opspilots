@@ -9,6 +9,22 @@ import { toast } from "@/hooks/use-toast";
 import { RefreshCw, PlayCircle, XCircle, Activity } from "lucide-react";
 
 const STALE_RUNNING_MS = 2 * 60_000;
+const ACTIVE_STATUSES = ["pending", "running", "partial", "waiting_next_tick", "stalled"] as const;
+const DISMISS_KEY = "dismissedSyncJobs";
+
+function readDismissed(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(DISMISS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function writeDismissed(syncType: string, jobId: string) {
+  try {
+    const cur = readDismissed();
+    cur[syncType] = jobId;
+    localStorage.setItem(DISMISS_KEY, JSON.stringify(cur));
+  } catch { /* ignore */ }
+}
 
 const fmtInt = (n: any) => (n == null ? "-" : Number(n).toLocaleString("zh-CN"));
 const fmtDT = (s: any) => {
@@ -40,20 +56,17 @@ interface Props {
   onJobFinished?: (job: any) => void;
   title?: string;
   showStartButtons?: boolean;
-  /** sync_type used for last-job lookup & query keys. */
   syncType?: string;
-  /** Edge function name to invoke. */
   functionName?: string;
-  /** Edge function action names */
   startAction?: string;
   tickAction?: string;
   cancelAction?: string;
-  /** UI labels */
   unitLabel?: string;
   emptyText?: string;
   toastTitle?: string;
-  /** Custom preset buttons. Defaults to 1/7/30 days. */
   presets?: Preset[];
+  /** Incremented by parent after "cancel all" succeeds; panel clears local jobId on change. */
+  cancelAllVersion?: number;
 }
 
 export function InboundSyncJobPanel({
@@ -69,6 +82,7 @@ export function InboundSyncJobPanel({
   emptyText,
   toastTitle,
   presets,
+  cancelAllVersion = 0,
 }: Props) {
   const effectivePresets: Preset[] = presets ?? [
     { label: "同步最近 1 天", days: 1, requested_range: "1d" },
@@ -82,7 +96,24 @@ export function InboundSyncJobPanel({
 
   const lastJobKey = ["sync_last_job", syncType];
 
-  // Restore the latest unfinished job on mount
+  // Parent triggered "cancel all" → clear local panel state
+  useEffect(() => {
+    if (cancelAllVersion > 0) {
+      setJobId(null);
+      qc.removeQueries({ queryKey: ["sync_job", syncType] });
+      qc.invalidateQueries({ queryKey: lastJobKey });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelAllVersion]);
+
+  const dismissJob = useCallback((id: string) => {
+    writeDismissed(syncType, id);
+    setJobId(null);
+    qc.removeQueries({ queryKey: ["sync_job", syncType, id] });
+    qc.invalidateQueries({ queryKey: lastJobKey });
+  }, [qc, syncType]);
+
+  // Restore the latest unfinished job on mount — only truly active ones, never dismissed
   const lastJobQ = useQuery({
     queryKey: lastJobKey,
     enabled: !jobId,
@@ -99,10 +130,12 @@ export function InboundSyncJobPanel({
   });
   useEffect(() => {
     const j: any = lastJobQ.data;
-    if (!jobId && j && ["pending", "running", "partial", "waiting_next_tick", "stalled", "failed"].includes(j.status)) {
+    if (!jobId && j && (ACTIVE_STATUSES as readonly string[]).includes(j.status)) {
+      const dismissed = readDismissed()[syncType];
+      if (dismissed && dismissed === j.id) return;
       setJobId(j.id);
     }
-  }, [lastJobQ.data, jobId]);
+  }, [lastJobQ.data, jobId, syncType]);
 
   // Poll active job
   const jobQ = useQuery({
@@ -184,9 +217,17 @@ export function InboundSyncJobPanel({
         body: { action: cancelAction, job_id: id },
       });
       if (error) throw new Error(error.message);
+      if (data?.ok === false) throw new Error(data?.error ?? data?.message ?? "取消失败");
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sync_job", syncType, jobId] }),
+    onSuccess: (_d, id) => {
+      toast({ title: "任务已终止", description: `任务 ${id.slice(0, 8)}… 已标记为 cancelled。` });
+      dismissJob(id);
+      qc.invalidateQueries({ queryKey: ["jst_sync_logs"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_modules"] });
+    },
+    onError: (e: any) => toast({ title: "取消任务失败", description: e.message, variant: "destructive" }),
   });
 
   const j: any = jobQ.data;
@@ -220,6 +261,8 @@ export function InboundSyncJobPanel({
   }, [status, nextPage, isResumable, jobId]);
 
   const emptyMsg = emptyText ?? `暂无正在进行的${unitLabel}同步任务。点击右上角按钮即可创建新任务，任务会以 3 天窗口、每次最多 3 页分批执行，避免 Edge Function 超时。`;
+
+  const canCancel = !!j && ["pending", "running", "partial", "waiting_next_tick", "stalled"].includes(j.status);
 
   return (
     <Card>
@@ -269,12 +312,12 @@ export function InboundSyncJobPanel({
                   <PlayCircle className="w-4 h-4 mr-1" />{tickMut.isPending || isTickingRef.current ? "续跑中..." : "继续同步"}
                 </Button>
               )}
-              {["pending", "running", "partial", "waiting_next_tick", "stalled"].includes(j.status) && (
-                <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(j.id)}>
-                  <XCircle className="w-4 h-4 mr-1" />取消任务
+              {canCancel && (
+                <Button size="sm" variant="ghost" onClick={() => cancelMut.mutate(j.id)} disabled={cancelMut.isPending}>
+                  <XCircle className="w-4 h-4 mr-1" />{cancelMut.isPending ? "取消中..." : "取消任务"}
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => setJobId(null)}>关闭</Button>
+              <Button size="sm" variant="ghost" onClick={() => dismissJob(j.id)}>关闭</Button>
             </div>
 
             <div className="space-y-1">

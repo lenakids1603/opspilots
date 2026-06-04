@@ -18,6 +18,10 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   AlertTriangle, RefreshCw, ChevronDown, FileText, Package, Warehouse, Truck,
   Search, Stethoscope, Store, Users, Building2, ShoppingCart, PackageCheck,
   Link2, Boxes, LineChart, Plug, Download, Filter, Clock, MoreVertical, StopCircle,
@@ -383,16 +387,29 @@ export default function JstDataIntegrationPage() {
     onError: (e: any) => toast({ title: "同步失败", description: e.message, variant: "destructive" }),
   });
 
+  const [cancelAllVersion, setCancelAllVersion] = useState(0);
+  const [cancelAllOpen, setCancelAllOpen] = useState(false);
+
   const cancelAllMut = useMutation({
     mutationFn: async () => {
       const { data, error } = await (supabase as any).rpc("jst_cancel_all_running_syncs");
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(error.message || "RPC 调用失败");
       const row = Array.isArray(data) ? data[0] : data;
-      return { logs: row?.cancelled_logs ?? 0, jobs: row?.cancelled_jobs ?? 0 };
+      return { logs: Number(row?.cancelled_logs ?? 0), jobs: Number(row?.cancelled_jobs ?? 0) };
+    },
+    onMutate: () => {
+      toast({ title: "正在终止同步任务..." });
     },
     onSuccess: (d) => {
-      toast({ title: "已终止运行中的同步", description: `日志 ${d.logs} 条 / 任务 ${d.jobs} 个已标记为终止` });
-      qc.invalidateQueries({ queryKey: ["jst_sync_logs", "purchase"] });
+      if (d.logs === 0 && d.jobs === 0) {
+        toast({ title: "没有可终止的运行中任务", description: "已刷新状态。" });
+      } else {
+        toast({ title: "已终止运行中的同步", description: `日志 ${d.logs} 条 / 任务 ${d.jobs} 个已标记为终止` });
+      }
+      setCancelAllVersion((v) => v + 1);
+      qc.removeQueries({ queryKey: ["sync_job"] });
+      qc.invalidateQueries({ queryKey: ["sync_last_job"] });
+      qc.invalidateQueries({ queryKey: ["jst_sync_logs"] });
       qc.invalidateQueries({ queryKey: ["jst_sync_runs"] });
       qc.invalidateQueries({ queryKey: ["jst_sync_modules"] });
     },
@@ -886,6 +903,7 @@ export default function JstDataIntegrationPage() {
                 聚水潭销售订单同步（断点续跑）：调用 <code>/open/orders/single/query</code>，按修改时间窗口分页拉取，自动 upsert 到 <code>jst_sales_orders</code> + <code>jst_sales_order_items</code>。隐私字段（收件人姓名/手机/详细地址）不会落库，仅保留省/市/区用于地域分析。
               </div>
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="销售订单同步任务（断点续跑）"
                 syncType="sales_orders"
                 functionName="jst-sync-sales-orders"
@@ -930,6 +948,7 @@ export default function JstDataIntegrationPage() {
             {/* ====== 采购API ====== */}
             <TabsContent value="purchase" className="m-0 p-5 space-y-3">
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="采购单同步任务（断点续跑）"
                 syncType="purchase_orders"
                 startAction="start_po_job"
@@ -952,6 +971,7 @@ export default function JstDataIntegrationPage() {
             {/* ====== 入库API ====== */}
             <TabsContent value="receipt" className="m-0 p-5 space-y-3">
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="入库单同步任务（断点续跑）"
                 syncType="purchase_inbound_orders"
                 unitLabel="入库单"
@@ -974,6 +994,7 @@ export default function JstDataIntegrationPage() {
                 聚水潭销售出库同步（只读 · 断点续跑）：调用 <code>/open/orders/out/simple/query</code>，按修改时间窗口分页拉取，自动 upsert <code>jst_outbound_orders</code> + 明细表。出库单列表请前往【仓库系统 / 出库信息】查看。
               </div>
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="销售出库同步任务（断点续跑）"
                 syncType="outbound_orders"
                 functionName="jst-sync-outbound-orders"
@@ -989,6 +1010,7 @@ export default function JstDataIntegrationPage() {
                 聚水潭售后同步（断点续跑）：分为「退货退款单」（关注退款金额/状态/原因）和「销售退仓」（关注仓库实际收货 SKU 与数量），两类数据独立入库，互不混淆。
               </div>
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="退货退款单同步任务（断点续跑）"
                 syncType="refund_orders"
                 functionName="jst-sync-refund-orders"
@@ -999,6 +1021,7 @@ export default function JstDataIntegrationPage() {
                 toastTitle="已创建退货退款单同步任务"
               />
               <InboundSyncJobPanel
+                cancelAllVersion={cancelAllVersion}
                 title="销售退仓同步任务（断点续跑）"
                 syncType="aftersale_received"
                 functionName="jst-sync-aftersale-received"
@@ -1059,15 +1082,33 @@ export default function JstDataIntegrationPage() {
                 size="sm"
                 className="h-9"
                 disabled={cancelAllMut.isPending}
-                onClick={() => {
-                  if (window.confirm("确定要终止所有运行中的同步任务吗？此操作会将正在运行的同步标记为已终止。")) {
-                    cancelAllMut.mutate();
-                  }
-                }}
+                onClick={() => setCancelAllOpen(true)}
               >
                 <StopCircle className="w-3.5 h-3.5 mr-1" />
                 {cancelAllMut.isPending ? "终止中…" : "终止所有进程"}
               </Button>
+              <AlertDialog open={cancelAllOpen} onOpenChange={setCancelAllOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确定要终止所有运行中的同步任务?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      这会将所有 running / pending / partial / waiting_next_tick / stalled 任务，以及 failed 但仍可续跑的任务，统一标记为 cancelled，并同步关闭对应的同步日志。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cancelAllMut.isPending}>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={cancelAllMut.isPending}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        cancelAllMut.mutate(undefined, { onSettled: () => setCancelAllOpen(false) });
+                      }}
+                    >
+                      {cancelAllMut.isPending ? "终止中…" : "确认终止"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               <Select value={triggerFilter} onValueChange={setTriggerFilter}>
                 <SelectTrigger className="w-[120px] h-9"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="过滤" /></SelectTrigger>
                 <SelectContent>
