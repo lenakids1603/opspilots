@@ -162,8 +162,6 @@ async function processSalesPage(args: ProcessPageArgs): Promise<PageResult> {
   const { windowFrom, windowTo, pageIndex, pageSize } = args;
   await sleep(RATE_DELAY_MS);
   if (pageIndex > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
-  // 聚水潭 orders/single/query 使用 modified_begin / modified_end 作为时间窗
-  // 不支持 date_type 参数；时间格式为北京时间字符串 yyyy-MM-dd HH:mm:ss
   const reqBody = {
     page_index: Number(pageIndex),
     page_size: Number(pageSize),
@@ -171,9 +169,11 @@ async function processSalesPage(args: ProcessPageArgs): Promise<PageResult> {
     modified_end: fmtBJ(windowTo),
   };
   console.log(`[jst-sync-sales-orders] request orders/single/query`, JSON.stringify(reqBody));
+  const t0 = Date.now();
   const data = await callOpenweb(METHOD_PATH, reqBody);
-  const list: any[] = data.orders ?? data.datas ?? data.list ?? [];
-  const hasNext = parseHasNext(data.has_next ?? data.hasNext, list.length === pageSize);
+  const durationMs = Date.now() - t0;
+  const list = pickList(data);
+  const hasNext = computeHasNext(data, list.length, pageSize, pageIndex);
   let mainUpserted = 0, itemUpserted = 0, failed = 0;
   let lastErr = "";
   for (const r of list) {
@@ -184,7 +184,11 @@ async function processSalesPage(args: ProcessPageArgs): Promise<PageResult> {
       failed++; lastErr = String((we as Error).message ?? we);
     }
   }
-  return { apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext, errorDetail: lastErr };
+  return {
+    apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext,
+    errorDetail: lastErr || undefined,
+    requestBody: reqBody, durationMs,
+  };
 }
 
 // ===== legacy 一次性同步 (兼容 / cron) =====
