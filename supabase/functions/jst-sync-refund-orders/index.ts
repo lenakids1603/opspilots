@@ -166,8 +166,9 @@ async function runDebugParams(body: any) {
   return { ok: true, window: { from: fmtBJ(from), to: fmtBJ(to) }, results };
 }
 
-
+async function runLegacySync(fromIso: string, toIso: string, logId: string) {
   const winFrom = new Date(fromIso); const winTo = new Date(toIso);
+
   let page = 1, orders = 0, items = 0, failed = 0;
   try {
     while (true) {
