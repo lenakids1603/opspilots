@@ -29,6 +29,10 @@ export interface PageResult {
   failed: number;
   hasNext: boolean;
   errorDetail?: string;
+  requestBody?: any;
+  responseCode?: string | null;
+  responseMsg?: string | null;
+  durationMs?: number;
 }
 
 export interface ProcessPageArgs {
