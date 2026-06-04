@@ -191,6 +191,51 @@ export async function cancelJob(jobId: string) {
   };
 }
 
+function isTransientError(err: any): boolean {
+  if (!err) return false;
+  if (err.transient === true) return true;
+  if (err.aborted === true) return true;
+  const code = String(err.code ?? "");
+  if (code === "ABORTED" || code === "429" || /^5\d\d$/.test(code)) return true;
+  const msg = String(err.message ?? err.apiMsg ?? "");
+  if (/请求超时|timeout|timed out|AbortError|aborted|network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|HTTP 5\d\d|HTTP 429|限流|频率/i.test(msg)) {
+    return true;
+  }
+  return false;
+}
+
+function classifyErrorType(err: any): string {
+  if (err?.errorType) return String(err.errorType);
+  const msg = String(err?.message ?? "");
+  if (/超时|timeout|AbortError|aborted/i.test(msg)) return "timeout";
+  if (/HTTP 5\d\d/.test(msg)) return "http_5xx";
+  if (/HTTP 429|限流|rate/i.test(msg)) return "rate_limited";
+  if (/network|fetch failed|ECONN|ETIMEDOUT|socket/i.test(msg)) return "network";
+  const code = String(err?.code ?? "");
+  if (code === "130") return "param_error";
+  if (code === "190") return "permission";
+  return "unknown";
+}
+
+function splitWindow(win: { from: string; to: string }, parts = 2): Array<{ from: string; to: string }> {
+  const a = new Date(win.from).getTime();
+  const b = new Date(win.to).getTime();
+  if (!(b > a) || parts < 2) return [win];
+  const step = Math.max(60_000, Math.floor((b - a) / parts));
+  const out: Array<{ from: string; to: string }> = [];
+  let cur = a;
+  for (let i = 0; i < parts; i++) {
+    const next = i === parts - 1 ? b : Math.min(cur + step, b);
+    out.push({ from: new Date(cur).toISOString(), to: new Date(next).toISOString() });
+    cur = next;
+    if (cur >= b) break;
+  }
+  return out;
+}
+
+const MAX_RETRY_BEFORE_SPLIT = 2;
+const MAX_SPLIT_TIMES = 3;
+
 export async function tickJob(jobId: string, processPage: ProcessPageFn, config: Partial<JobConfig> = {}) {
   const cfg = { ...DEFAULT_JOB_CONFIG, ...config };
   const tickStart = Date.now();
@@ -204,7 +249,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
   if (job.status === "running" && !staleRunning) return { status: "running", job };
   if (job.status === "failed" && !job.has_next && !(job.next_page_index > 0)) return { status: job.status, job };
 
-  const windows: Array<{ from: string; to: string }> = Array.isArray(job.windows) ? job.windows : [];
+  let windows: Array<{ from: string; to: string }> = Array.isArray(job.windows) ? job.windows : [];
   if (windows.length === 0) {
     await updateJob(jobId, { status: "success", ended_at: new Date().toISOString(), message: "范围为空，无需同步" });
     return { status: "success", job };
@@ -220,6 +265,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
   const maxPages = job.max_pages_per_run ?? cfg.maxPagesPerRun;
   const pageSize = job.page_size ?? cfg.pageSize;
 
+  let metadata: Record<string, any> = (job.metadata && typeof job.metadata === "object") ? { ...job.metadata } : {};
   let windowIndex = job.current_window_index ?? 0;
   let pageIndex = job.next_page_index || 1;
   let totalApi = job.total_api_count ?? 0;
@@ -228,23 +274,33 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
   let totalFailed = job.total_failed ?? 0;
   let pagesThisRun = 0;
   let lastError = "";
+  let transientPause = false;
+  let transientMessage = "";
 
   while (windowIndex < windows.length) {
     if (Date.now() - tickStart > budgetMs) break;
     if (pagesThisRun >= maxPages) break;
+    // 预算预检：剩余不足 10s 时不再发起新的 API 请求
+    if (Date.now() - tickStart > Math.max(0, budgetMs - 10_000)) {
+      transientPause = true;
+      transientMessage = `剩余预算不足，已暂停 · 当前窗口 ${windowIndex + 1}/${windows.length} 下一页=${pageIndex}`;
+      break;
+    }
     const win = windows[windowIndex];
     const winFrom = new Date(win.from);
     const winTo = new Date(win.to);
     const pageStart = Date.now();
     try {
-      const result = await processPage({ job, windowIndex, windowFrom: winFrom, windowTo: winTo, pageIndex, pageSize });
+      const result = await processPage({ job: { ...job, metadata }, windowIndex, windowFrom: winFrom, windowTo: winTo, pageIndex, pageSize });
       pagesThisRun++;
       totalApi += result.apiCount;
       totalMain += result.mainUpserted;
       totalItem += result.itemUpserted;
       totalFailed += result.failed;
-      if (result.failed > 0 && result.errorDetail) {
-        lastError = result.errorDetail.slice(0, 500);
+      if (result.failed > 0 && result.errorDetail) lastError = result.errorDetail.slice(0, 500);
+      // 成功一页：清空该窗口/页的重试计数
+      if (metadata.retry && metadata.retry.windowIndex === windowIndex && metadata.retry.pageIndex === pageIndex) {
+        delete metadata.retry;
       }
       const movedNext = !result.hasNext || result.apiCount === 0;
       const newWindowIndex = movedNext ? windowIndex + 1 : windowIndex;
@@ -252,7 +308,6 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
       const moreAfter = !(movedNext && newWindowIndex >= windows.length);
       const shouldPause = moreAfter && (pagesThisRun >= maxPages || Date.now() - tickStart > Math.max(0, budgetMs - 5000));
 
-      // 记录单页明细日志
       try {
         await admin.from("jst_sync_log_details").insert({
           job_id: job.id, log_id: job.parent_log_id, sync_type: job.sync_type,
@@ -267,7 +322,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
           duration_ms: result.durationMs ?? (Date.now() - pageStart),
           error_detail: result.errorDetail ?? null,
         });
-      } catch (_e) { /* ignore log insert errors */ }
+      } catch (_e) { /* ignore */ }
 
       const pageErrSuffix = result.failed > 0 && result.errorDetail ? ` · 末次错误: ${result.errorDetail.slice(0, 200)}` : "";
       const patch: Record<string, unknown> = {
@@ -283,6 +338,8 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
         total_order_upserted: totalMain,
         total_item_upserted: totalItem,
         total_failed: totalFailed,
+        windows,
+        metadata,
         last_success_at: new Date().toISOString(),
         message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页完成 (本页 ${result.apiCount} 条，主表+${result.mainUpserted}，明细+${result.itemUpserted}，失败 ${result.failed}${result.hasNext ? "，还有下一页" : "，本窗口结束"})${pageErrSuffix}`,
       };
@@ -292,36 +349,109 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
       pageIndex = newPageIndex;
       if (shouldPause) break;
     } catch (err: any) {
-      lastError = String((err as Error).message ?? err).slice(0, 1500);
-      totalFailed++;
+      const errMsg = String((err as Error).message ?? err).slice(0, 1500);
+      const transient = isTransientError(err);
+      const errType = classifyErrorType(err);
+      const durationMs = err?.durationMs ?? (Date.now() - pageStart);
+
+      // 写明细日志（含完整 request_body / error_type）
       try {
         await admin.from("jst_sync_log_details").insert({
           job_id: job.id, log_id: job.parent_log_id, sync_type: job.sync_type,
           window_index: windowIndex, window_from: win.from, window_to: win.to,
           page_index: pageIndex, page_size: pageSize,
-          api_count: 0, has_next: false, main_upserted: 0, item_upserted: 0,
-          failed_count: 1, duration_ms: err?.durationMs ?? (Date.now() - pageStart),
+          api_count: 0, has_next: transient, main_upserted: 0, item_upserted: 0,
+          failed_count: 1, duration_ms: durationMs,
           request_body: err?.requestBody ?? null,
           response_code: err?.responseCode ?? (err?.code != null ? String(err.code) : null),
           response_msg: err?.responseMsg ?? err?.apiMsg ?? null,
-          error_detail: lastError,
+          error_detail: errMsg,
+          error_type: errType,
         });
       } catch (_e) { /* ignore */ }
+
+      if (transient) {
+        // 不增加 totalFailed，保留已同步进度
+        const retry = (metadata.retry && metadata.retry.windowIndex === windowIndex && metadata.retry.pageIndex === pageIndex)
+          ? { ...metadata.retry, count: (metadata.retry.count ?? 0) + 1 }
+          : { windowIndex, pageIndex, count: 1 };
+        metadata.retry = retry;
+        metadata.last_error_type = errType;
+        metadata.last_failed_window_index = windowIndex;
+        metadata.last_failed_page_index = pageIndex;
+
+        let splitInfo = "";
+        if (retry.count >= MAX_RETRY_BEFORE_SPLIT) {
+          const splitCount = (metadata.split_count ?? 0);
+          if (splitCount < MAX_SPLIT_TIMES) {
+            const sub = splitWindow(windows[windowIndex], 2);
+            if (sub.length > 1) {
+              windows = [...windows.slice(0, windowIndex), ...sub, ...windows.slice(windowIndex + 1)];
+              metadata.split_count = splitCount + 1;
+              metadata.last_split_at = new Date().toISOString();
+              delete metadata.retry;
+              pageIndex = 1; // 从拆分后的第一个子窗口的第 1 页重新开始
+              splitInfo = ` · 已自动拆分窗口为 ${sub.length} 段，从第 1 段第 1 页重试`;
+            }
+          } else {
+            splitInfo = ` · 已达最大拆分次数(${MAX_SPLIT_TIMES})`;
+          }
+        }
+
+        transientPause = true;
+        transientMessage = `临时${errType === "timeout" ? "超时" : "错误"}（${errType}），等待重试 · 窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页${splitInfo} · ${errMsg.slice(0, 200)}`;
+        lastError = errMsg;
+        await updateJob(jobId, {
+          status: "waiting_next_tick",
+          ended_at: null,
+          has_next: true,
+          current_window_index: windowIndex,
+          current_window_from: windows[windowIndex]?.from ?? win.from,
+          current_window_to: windows[windowIndex]?.to ?? win.to,
+          next_page_index: pageIndex,
+          total_api_count: totalApi,
+          total_order_upserted: totalMain,
+          total_item_upserted: totalItem,
+          total_failed: totalFailed,
+          windows,
+          metadata,
+          error_detail: errMsg,
+          message: transientMessage,
+        });
+        break;
+      }
+
+      // 不可恢复错误（参数/权限/数据库/upsert）→ failed
+      lastError = errMsg;
+      totalFailed++;
+      metadata.last_error_type = errType;
       await updateJob(jobId, {
         total_failed: totalFailed,
-        error_detail: lastError,
-        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页失败: ${lastError}`,
+        metadata,
+        error_detail: errMsg,
+        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页失败(${errType}): ${errMsg}`,
       });
       break;
     }
   }
 
   const allDone = windowIndex >= windows.length;
-  // 任务级状态：
-  //  - 抛异常 break: failed
-  //  - 全部完成且有 totalFailed>0: success（任务不再续跑，避免前端死循环），但父日志标 partial_failed
-  //  - 全部完成且无失败: success
-  //  - 未完成: partial
+
+  if (transientPause) {
+    // 父日志保持 running，反映已同步进度
+    const msg = `已同步 ${totalMain} 单 / ${totalItem} 明细 · ${transientMessage}`;
+    await admin.from("jst_sync_logs").update({
+      status: "running",
+      ended_at: null,
+      fetched_orders_count: totalMain,
+      fetched_items_count: totalItem,
+      heartbeat_at: new Date().toISOString(),
+      message: msg,
+      error_detail: lastError || "",
+    }).eq("id", job.parent_log_id);
+    return { status: "waiting_next_tick", job: { ...job, status: "waiting_next_tick", metadata, windows } };
+  }
+
   const finalJobStatus = allDone
     ? (lastError && totalMain === 0 && totalItem === 0 ? "failed" : "success")
     : (lastError ? "failed" : "partial");
@@ -341,6 +471,8 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
     current_window_to: windows[Math.min(windowIndex, windows.length - 1)]?.to ?? null,
     next_page_index: pageIndex,
     error_detail: lastError || "",
+    windows,
+    metadata,
     message: allDone
       ? `全部完成 · 窗口 ${windows.length} 个 · 主表 ${totalMain} · 明细 ${totalItem} · 失败 ${totalFailed}${lastError ? ` · 末次错误: ${lastError}` : ""}`
       : (lastError
