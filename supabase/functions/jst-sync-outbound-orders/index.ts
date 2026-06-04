@@ -97,25 +97,29 @@ async function callOutbound(initialMode: ParamMode, pageIndex: number, pageSize:
     const reqBody = buildReqBody(mode, pageIndex, pageSize, from, to);
     const t0 = Date.now();
     try {
-      const data = await callOpenweb(METHOD_PATH, reqBody);
+      const data = await callOpenweb(METHOD_PATH, reqBody, { timeoutMs: 30_000 });
       return { data, mode, reqBody, durationMs: Date.now() - t0, responseCode: "0", responseMsg: "success" };
     } catch (e: any) {
-      const code = String(e?.code ?? "");
       lastErr = e;
       // 仅当确认是参数错误且当前是 with_status 时，才尝试 fallback 去掉 status
+      const code = String(e?.code ?? "");
       const isParamErr = code === "130" || /参数无法转换|参数错误/.test(String(e?.apiMsg ?? e?.message ?? ""));
       if (!(isParamErr && mode === "with_status")) {
-        // 直接抛出，附带 reqBody 给调用方写日志
+        // 附带请求上下文给上层写日志（包括 transient 超时）
         e.requestBody = reqBody;
-        e.responseCode = code || null;
-        e.responseMsg = e?.apiMsg ?? null;
-        e.durationMs = Date.now() - t0;
+        e.apiPath = METHOD_PATH;
+        e.responseCode = e.responseCode ?? (code || null);
+        e.responseMsg = e.responseMsg ?? (e?.apiMsg ?? null);
+        e.durationMs = e.durationMs ?? (Date.now() - t0);
         throw e;
       }
-      // 继续 fallback 到 minimal
     }
   }
-  throw lastErr;
+  if (lastErr) {
+    lastErr.apiPath = METHOD_PATH;
+    throw lastErr;
+  }
+  throw new Error("callOutbound: unknown error");
 }
 
 async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
