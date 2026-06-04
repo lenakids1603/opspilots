@@ -13,6 +13,7 @@ import SuppliersPage from "./pages/ops/SuppliersPage";
 import ProductsPage from "./pages/ops/ProductsPage";
 import SkusPage from "./pages/ops/SkusPage";
 import ProductMappingExceptionsPage from "./pages/ops/ProductMappingExceptionsPage";
+import ProductDetailPage from "./pages/ops/ProductDetailPage";
 
 import SupplierBillsPage from "./pages/ops/SupplierBillsPage";
 import UsersPage from "./pages/ops/UsersPage";
@@ -59,6 +60,7 @@ const App = () => (
           <Route path="/operations/sales-orders" element={wrap(<SalesOrdersListPage />)} />
           <Route path="/suppliers" element={wrap(<SuppliersPage />)} />
           <Route path="/products" element={wrap(<ProductsPage />)} />
+          <Route path="/products/:skuId" element={wrap(<ProductDetailPage />)} />
           
           <Route path="/warehouse/inbound-orders" element={wrap(<InboundOrdersPage />)} />
           <Route path="/warehouse/outbound" element={wrap(<OutboundOrdersPage />)} />

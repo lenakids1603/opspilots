@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/ops/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,6 +34,7 @@ export default function ProductsPage() {
   const [busy, setBusy] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [exceptionCount, setExceptionCount] = useState(0);
+  const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
@@ -146,7 +147,7 @@ export default function ProductsPage() {
               {rows.map((r) => {
                 const img = r.sku_image_url || r.external_image_url;
                 return (
-                  <tr key={r.id} className="border-b hover:bg-muted/40">
+                  <tr key={r.id} className="border-b hover:bg-muted/40 cursor-pointer" onClick={() => navigate(`/products/${r.id}`)}>
                     <td className="p-2">
                       {img ? <img src={img} alt="" className="w-10 h-10 object-cover rounded" /> : <div className="w-10 h-10 rounded bg-muted" />}
                     </td>

@@ -17,11 +17,13 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession:
 type DeriveRow = {
   sku_code: string | null;
   jst_sku_id: string | null;
+  style_no: string | null;
   product_name: string | null;
   sku_name: string | null;
   color: string | null;
   size: string | null;
   pic: string | null;
+  cost_price: number | null;
   supplier_id: string | null;
   supplier_name: string | null;
   shop_id: string | null;
@@ -81,6 +83,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         online_sku_code: r.shop_sku_id ?? null,
         online_product_id: r.jst_item_id ?? null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "sales",
       });
     }
@@ -108,6 +112,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         online_sku_code: null,
         online_product_id: r.i_id ?? null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "outbound",
       });
     }
@@ -133,6 +139,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         supplier_name: r.supplier_name ?? null,
         shop_id: null, online_sku_code: null, online_product_id: null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "refund",
       });
     }
@@ -158,7 +166,65 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         supplier_name: r.supplier_name ?? null,
         shop_id: null, online_sku_code: null, online_product_id: null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "aftersale",
+      });
+    }
+  }
+
+  if (source === "purchase" || source === "all") {
+    const { data, error } = await admin
+      .from("purchase_order_items")
+      .select("sku_no, sku_id, style_no, product_name, color, size, properties_value, product_image_url, unit_price, updated_at, purchase_order:purchase_orders!inner(supplier_id, supplier_name, po_date)")
+      .gte("updated_at", since)
+      .limit(limit);
+    if (error) throw new Error(`purchase: ${error.message}`);
+    for (const r of (data ?? []) as any[]) {
+      const spec = pickSpec(r.properties_value);
+      const po = r.purchase_order ?? {};
+      out.push({
+        sku_code: r.sku_no ?? null,
+        jst_sku_id: r.sku_id ?? null,
+        style_no: r.style_no ?? null,
+        product_name: r.product_name ?? null,
+        sku_name: null,
+        color: r.color ?? spec.color,
+        size: r.size ?? spec.size,
+        pic: r.product_image_url ?? null,
+        cost_price: r.unit_price ?? null,
+        supplier_id: po.supplier_id ?? null,
+        supplier_name: po.supplier_name ?? null,
+        shop_id: null, online_sku_code: null, online_product_id: null,
+        ts: po.po_date ?? r.updated_at ?? null,
+        source: "purchase",
+      });
+    }
+  }
+
+  if (source === "receipt" || source === "all") {
+    const { data, error } = await admin
+      .from("purchase_receipt_items")
+      .select("sku_no, sku_id, product_name, cost_price, updated_at, receipt:purchase_receipts!inner(supplier_name, io_date)")
+      .gte("updated_at", since)
+      .limit(limit);
+    if (error) throw new Error(`receipt: ${error.message}`);
+    for (const r of (data ?? []) as any[]) {
+      const rc = r.receipt ?? {};
+      out.push({
+        sku_code: r.sku_no ?? null,
+        jst_sku_id: r.sku_id ?? null,
+        style_no: null,
+        product_name: r.product_name ?? null,
+        sku_name: null,
+        color: null, size: null,
+        pic: null,
+        cost_price: r.cost_price ?? null,
+        supplier_id: null,
+        supplier_name: rc.supplier_name ?? null,
+        shop_id: null, online_sku_code: null, online_product_id: null,
+        ts: rc.io_date ?? r.updated_at ?? null,
+        source: "receipt",
       });
     }
   }
@@ -173,6 +239,7 @@ type Agg = {
   color: string | null;
   size: string | null;
   pic: string | null;
+  cost_price: number | null;
   supplier_id: string | null;
   supplier_name: string | null;
   style_no: string | null;
@@ -197,8 +264,9 @@ function aggregate(rows: DeriveRow[]): { masters: Agg[]; orphanAliases: DeriveRo
       a = {
         sku_code: r.sku_code, jst_sku_id: r.jst_sku_id,
         product_name: null, color: null, size: null, pic: null,
+        cost_price: null,
         supplier_id: null, supplier_name: null,
-        style_no: deriveStyleNo(r.sku_code),
+        style_no: r.style_no ?? deriveStyleNo(r.sku_code),
         sources: new Set(), first: null, last: null,
         aliases: new Map(),
       };
@@ -210,9 +278,13 @@ function aggregate(rows: DeriveRow[]): { masters: Agg[]; orphanAliases: DeriveRo
     a.color = a.color ?? r.color;
     a.size = a.size ?? r.size;
     a.pic = a.pic ?? r.pic;
+    // 成本优先取入库单的实际成本；其次采购单价
+    if (r.cost_price != null) {
+      if (a.cost_price == null || r.source === "receipt") a.cost_price = r.cost_price;
+    }
     a.supplier_id = a.supplier_id ?? r.supplier_id;
     a.supplier_name = a.supplier_name ?? r.supplier_name;
-    a.style_no = a.style_no ?? deriveStyleNo(a.sku_code);
+    a.style_no = a.style_no ?? r.style_no ?? deriveStyleNo(a.sku_code);
     a.sources.add(r.source);
     if (r.ts) {
       if (!a.first || r.ts < a.first) a.first = r.ts;
@@ -276,6 +348,7 @@ async function upsertMasters(masters: Agg[]) {
       sku_image_url: m.pic,
       external_image_url: m.pic,
       supplier_id: m.supplier_id,
+      cost_price: m.cost_price,
       last_seen_at: m.last,
       first_seen_at: m.first,
       source: Array.from(m.sources).join(","),
@@ -283,11 +356,16 @@ async function upsertMasters(masters: Agg[]) {
     };
 
     if (id) {
-      // 仅在字段为空时补全（避免覆盖人工维护的数据）
+      // 仅在字段为空时补全（避免覆盖人工维护的数据）；cost_price 当来源含 receipt 时允许覆盖
       const ex = existing.get(keyPrimary) ?? {};
       const patch: Record<string, any> = { last_seen_at: payload.last_seen_at, last_synced_at: payload.last_synced_at };
       for (const k of ["jst_sku_id","sku_name","product_name","style_no","color","size","sku_image_url","external_image_url","supplier_id","first_seen_at","source"]) {
         if (!ex[k] && (payload as any)[k]) patch[k] = (payload as any)[k];
+      }
+      // cost_price：优先采用入库来源覆盖；否则仅在原值为空时补
+      if (m.cost_price != null) {
+        const sources = Array.from(m.sources);
+        if (sources.includes("receipt") || ex.cost_price == null) patch.cost_price = m.cost_price;
       }
       const { error } = await admin.from("ops_skus").update(patch).eq("id", id);
       if (!error) { updated++; masterIdMap.set(keyPrimary, id); }
