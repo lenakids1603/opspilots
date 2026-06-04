@@ -291,7 +291,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
       windowIndex = newWindowIndex;
       pageIndex = newPageIndex;
       if (shouldPause) break;
-    } catch (err) {
+    } catch (err: any) {
       lastError = String((err as Error).message ?? err).slice(0, 1500);
       totalFailed++;
       try {
@@ -300,7 +300,10 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
           window_index: windowIndex, window_from: win.from, window_to: win.to,
           page_index: pageIndex, page_size: pageSize,
           api_count: 0, has_next: false, main_upserted: 0, item_upserted: 0,
-          failed_count: 1, duration_ms: Date.now() - pageStart,
+          failed_count: 1, duration_ms: err?.durationMs ?? (Date.now() - pageStart),
+          request_body: err?.requestBody ?? null,
+          response_code: err?.responseCode ?? (err?.code != null ? String(err.code) : null),
+          response_msg: err?.responseMsg ?? err?.apiMsg ?? null,
           error_detail: lastError,
         });
       } catch (_e) { /* ignore */ }
