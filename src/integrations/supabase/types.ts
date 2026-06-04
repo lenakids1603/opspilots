@@ -1547,6 +1547,9 @@ export type Database = {
       }
       jst_sync_jobs: {
         Row: {
+          auto_continue: boolean
+          cancel_requested: boolean
+          cancelled_at: string | null
           created_at: string
           created_by: string | null
           current_page_index: number
@@ -1559,11 +1562,14 @@ export type Database = {
           heartbeat_at: string | null
           id: string
           last_success_at: string | null
+          lock_owner: string | null
+          locked_until: string | null
           max_pages_per_run: number
           max_window_days: number
           message: string
           metadata: Json
           next_page_index: number
+          next_tick_at: string | null
           page_size: number
           parent_log_id: string | null
           requested_from: string
@@ -1583,6 +1589,9 @@ export type Database = {
           windows: Json
         }
         Insert: {
+          auto_continue?: boolean
+          cancel_requested?: boolean
+          cancelled_at?: string | null
           created_at?: string
           created_by?: string | null
           current_page_index?: number
@@ -1595,11 +1604,14 @@ export type Database = {
           heartbeat_at?: string | null
           id?: string
           last_success_at?: string | null
+          lock_owner?: string | null
+          locked_until?: string | null
           max_pages_per_run?: number
           max_window_days?: number
           message?: string
           metadata?: Json
           next_page_index?: number
+          next_tick_at?: string | null
           page_size?: number
           parent_log_id?: string | null
           requested_from: string
@@ -1619,6 +1631,9 @@ export type Database = {
           windows?: Json
         }
         Update: {
+          auto_continue?: boolean
+          cancel_requested?: boolean
+          cancelled_at?: string | null
           created_at?: string
           created_by?: string | null
           current_page_index?: number
@@ -1631,11 +1646,14 @@ export type Database = {
           heartbeat_at?: string | null
           id?: string
           last_success_at?: string | null
+          lock_owner?: string | null
+          locked_until?: string | null
           max_pages_per_run?: number
           max_window_days?: number
           message?: string
           metadata?: Json
           next_page_index?: number
+          next_tick_at?: string | null
           page_size?: number
           parent_log_id?: string | null
           requested_from?: string
@@ -3260,6 +3278,10 @@ export type Database = {
           cancelled_logs: number
         }[]
       }
+      jst_release_job_lock: {
+        Args: { _job_id: string; _owner: string }
+        Returns: undefined
+      }
       jst_resync_shop_mappings_from_shops: {
         Args: never
         Returns: {
@@ -3268,6 +3290,10 @@ export type Database = {
           unmapped_after: number
           updated_count: number
         }[]
+      }
+      jst_try_lock_job: {
+        Args: { _job_id: string; _owner: string; _ttl_seconds?: number }
+        Returns: boolean
       }
       recalc_purchase_order_aggregates: {
         Args: { _po_id: string }

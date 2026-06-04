@@ -181,7 +181,15 @@ Deno.serve(async (req) => {
       startActionName: "start_outbound_job",
       tickActionName: "tick_outbound_job",
       cancelActionName: "cancel_outbound_job",
-      config: { pageSize: PAGE_SIZE, maxWindowDays: 0.25, maxPagesPerRun: 2, timeBudgetSeconds: 35 },
+      functionName: "jst-sync-outbound-orders",
+      // 1 小时窗口，2 页/35s，每页 50；深分页(>10 页) 自动主动拆分
+      config: {
+        pageSize: PAGE_SIZE,
+        maxWindowDays: 1 / 24,
+        maxPagesPerRun: 2,
+        timeBudgetSeconds: 35,
+        proactiveSplitAfterPage: 10,
+      },
       resolveWindowFromBody: (b) => resolveWindow(b),
     });
     if (jobResp) {
