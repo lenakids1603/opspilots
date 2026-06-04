@@ -249,16 +249,31 @@ export function InboundSyncJobPanel({
   const progressValue = status === "success" ? 100 : Math.max(1, Math.min(99, Math.round((currentWindowNumber / totalWindows) * 100)));
 
   // auto-tick resumable states / notify on finish
+  // If backend already drives auto-continue, do NOT also auto-tick from the
+  // frontend — backend lock would no-op anyway, but we want UI consistency.
   useEffect(() => {
     if (!status || !jobId) return;
-    if (isResumable) {
+    const backendAuto = j?.auto_continue !== false;
+    if (isResumable && !backendAuto) {
       requestTick(jobId);
     }
     if (status === "success" || status === "failed" || status === "cancelled") {
       onJobFinished?.(j);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, nextPage, isResumable, jobId]);
+  }, [status, nextPage, isResumable, jobId, j?.auto_continue]);
+
+  // Countdown ticker for next_tick_at so the user sees an active retry timer
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!j?.next_tick_at) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [j?.next_tick_at]);
+  const nextTickInSec = j?.next_tick_at
+    ? Math.max(0, Math.round((new Date(j.next_tick_at).getTime() - nowMs) / 1000))
+    : null;
+  const isAutoRetrying = j?.auto_continue !== false && (status === "waiting_next_tick" || status === "partial");
 
   const emptyMsg = emptyText ?? `暂无正在进行的${unitLabel}同步任务。点击右上角按钮即可创建新任务，任务会以 3 天窗口、每次最多 3 页分批执行，避免 Edge Function 超时。`;
 
@@ -300,6 +315,11 @@ export function InboundSyncJobPanel({
           <div className="rounded border p-3 space-y-2 text-xs bg-muted/30">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge className={STATUS_COLOR[j.status] ?? "bg-slate-100 text-slate-700"}>{j.status}</Badge>
+              {isAutoRetrying && (
+                <Badge variant="secondary" className="bg-sky-100 text-sky-700">
+                  自动重试中{nextTickInSec != null ? ` · ${nextTickInSec}s` : ""}
+                </Badge>
+              )}
               {isRunningStale && <Badge variant="destructive">无心跳，可继续</Badge>}
               <span className="font-mono text-muted-foreground">job {String(j.id).slice(0, 8)}…</span>
               <Badge variant="outline">{j.requested_range || "custom"}</Badge>
@@ -309,7 +329,7 @@ export function InboundSyncJobPanel({
               <div className="flex-1" />
               {isResumable && (
                 <Button size="sm" variant="default" onClick={() => requestTick(j.id)} disabled={tickMut.isPending || isTickingRef.current}>
-                  <PlayCircle className="w-4 h-4 mr-1" />{tickMut.isPending || isTickingRef.current ? "续跑中..." : "继续同步"}
+                  <PlayCircle className="w-4 h-4 mr-1" />{tickMut.isPending || isTickingRef.current ? "重试中..." : (isAutoRetrying ? "立即重试" : "继续同步")}
                 </Button>
               )}
               {canCancel && (
