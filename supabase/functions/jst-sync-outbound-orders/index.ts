@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
       startActionName: "start_outbound_job",
       tickActionName: "tick_outbound_job",
       cancelActionName: "cancel_outbound_job",
-      config: { pageSize: PAGE_SIZE, maxWindowDays: 3, maxPagesPerRun: 3, timeBudgetSeconds: 45 },
+      config: { pageSize: PAGE_SIZE, maxWindowDays: 0.25, maxPagesPerRun: 2, timeBudgetSeconds: 35 },
       resolveWindowFromBody: (b) => resolveWindow(b),
     });
     if (jobResp) {
