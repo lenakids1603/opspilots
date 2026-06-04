@@ -2147,6 +2147,74 @@ export type Database = {
           },
         ]
       }
+      ops_product_mapping_exceptions: {
+        Row: {
+          created_at: string
+          id: string
+          jst_sku_id: string | null
+          online_item_code: string | null
+          online_sku_code: string | null
+          order_no: string | null
+          platform: string | null
+          raw_data: Json | null
+          reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_sku_id: string | null
+          shop_id: string | null
+          shop_name: string | null
+          source_table: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          jst_sku_id?: string | null
+          online_item_code?: string | null
+          online_sku_code?: string | null
+          order_no?: string | null
+          platform?: string | null
+          raw_data?: Json | null
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_sku_id?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          source_table?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          jst_sku_id?: string | null
+          online_item_code?: string | null
+          online_sku_code?: string | null
+          order_no?: string | null
+          platform?: string | null
+          raw_data?: Json | null
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_sku_id?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          source_table?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ops_product_mapping_exceptions_resolved_sku_id_fkey"
+            columns: ["resolved_sku_id"]
+            isOneToOne: false
+            referencedRelation: "ops_skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ops_products: {
         Row: {
           age_range: string | null
@@ -2271,8 +2339,14 @@ export type Database = {
           id: string
           is_primary: boolean | null
           jst_sku_id: string | null
+          modified_at: string | null
+          online_product_name: string | null
+          online_sku_name: string | null
+          online_status: string | null
           platform: string | null
+          raw_data: Json | null
           shop_id: string | null
+          shop_name: string | null
           sku_id: string | null
           updated_at: string
         }
@@ -2286,8 +2360,14 @@ export type Database = {
           id?: string
           is_primary?: boolean | null
           jst_sku_id?: string | null
+          modified_at?: string | null
+          online_product_name?: string | null
+          online_sku_name?: string | null
+          online_status?: string | null
           platform?: string | null
+          raw_data?: Json | null
           shop_id?: string | null
+          shop_name?: string | null
           sku_id?: string | null
           updated_at?: string
         }
@@ -2301,8 +2381,14 @@ export type Database = {
           id?: string
           is_primary?: boolean | null
           jst_sku_id?: string | null
+          modified_at?: string | null
+          online_product_name?: string | null
+          online_sku_name?: string | null
+          online_status?: string | null
           platform?: string | null
+          raw_data?: Json | null
           shop_id?: string | null
+          shop_name?: string | null
           sku_id?: string | null
           updated_at?: string
         }
@@ -2319,76 +2405,97 @@ export type Database = {
       ops_skus: {
         Row: {
           barcode: string | null
+          category: string | null
           color: string | null
           cost_price: number | null
           created_at: string
           external_image_url: string | null
+          first_seen_at: string | null
           id: string
           image_storage_path: string | null
           is_active: boolean | null
           jst_sku_id: string | null
+          last_seen_at: string | null
           last_synced_at: string | null
           product_id: string
+          product_name: string | null
           raw_jst_json: Json | null
           sale_price: number | null
+          season: string | null
           size: string | null
           sku_code: string
           sku_image_url: string | null
           sku_name: string | null
+          source: string | null
           spec: string | null
           spec_name: string | null
           status: string
           stock: number
+          style_no: string | null
           supplier_id: string | null
           updated_at: string
         }
         Insert: {
           barcode?: string | null
+          category?: string | null
           color?: string | null
           cost_price?: number | null
           created_at?: string
           external_image_url?: string | null
+          first_seen_at?: string | null
           id?: string
           image_storage_path?: string | null
           is_active?: boolean | null
           jst_sku_id?: string | null
+          last_seen_at?: string | null
           last_synced_at?: string | null
           product_id: string
+          product_name?: string | null
           raw_jst_json?: Json | null
           sale_price?: number | null
+          season?: string | null
           size?: string | null
           sku_code: string
           sku_image_url?: string | null
           sku_name?: string | null
+          source?: string | null
           spec?: string | null
           spec_name?: string | null
           status?: string
           stock?: number
+          style_no?: string | null
           supplier_id?: string | null
           updated_at?: string
         }
         Update: {
           barcode?: string | null
+          category?: string | null
           color?: string | null
           cost_price?: number | null
           created_at?: string
           external_image_url?: string | null
+          first_seen_at?: string | null
           id?: string
           image_storage_path?: string | null
           is_active?: boolean | null
           jst_sku_id?: string | null
+          last_seen_at?: string | null
           last_synced_at?: string | null
           product_id?: string
+          product_name?: string | null
           raw_jst_json?: Json | null
           sale_price?: number | null
+          season?: string | null
           size?: string | null
           sku_code?: string
           sku_image_url?: string | null
           sku_name?: string | null
+          source?: string | null
           spec?: string | null
           spec_name?: string | null
           status?: string
           stock?: number
+          style_no?: string | null
           supplier_id?: string | null
           updated_at?: string
         }
