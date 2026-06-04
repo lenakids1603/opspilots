@@ -894,47 +894,6 @@ export default function JstDataIntegrationPage() {
                 />
               </div>
 
-              {/* 阶段任务列表 */}
-              <div>
-                <h4 className="text-sm font-semibold mb-2">阶段任务列表（基础API）</h4>
-                <Card>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16">阶段</TableHead>
-                        <TableHead>任务名称</TableHead>
-                        <TableHead>同步模式</TableHead>
-                        <TableHead className="w-[200px]">进度</TableHead>
-                        <TableHead>状态</TableHead>
-                        <TableHead>最近执行</TableHead>
-                        <TableHead className="text-right">操作</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {baseStageTasks.map((t) => (
-                        <TableRow key={t.stage}>
-                          <TableCell>{t.stage}</TableCell>
-                          <TableCell className="font-medium">{t.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{t.mode}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Progress value={t.progress} className={`h-2 ${t.status === "warn" ? "[&>div]:bg-rose-500" : "[&>div]:bg-emerald-500"}`} />
-                              <span className="text-xs tabular-nums w-10 text-right">{t.progress}%</span>
-                            </div>
-                          </TableCell>
-                          <TableCell><StatusBadge value={t.status} /></TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{fmtTime(t.last)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="link" size="sm" className="h-auto p-0" onClick={t.onLog}>
-                              {t.opLabel ?? "日志"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Card>
-              </div>
             </TabsContent>
 
             {/* ====== 商品API ====== */}
@@ -1090,40 +1049,6 @@ export default function JstDataIntegrationPage() {
         </CardContent>
       </Card>
 
-      {/* 五、自动同步计划 */}
-      <Card>
-        <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />自动同步计划
-            </h3>
-            <span className="text-xs text-muted-foreground">{modules.length} 个活跃计划</span>
-          </div>
-          {modules.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-6 text-center">暂无自动同步计划</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {modules
-                .filter((m) => !/_backfill_/.test(m.module_key))
-                .slice(0, 9)
-                .map((m) => (
-                <div key={m.module_key} className="border border-border rounded-md p-3 flex items-center gap-3">
-                  <div className="bg-muted/60 rounded px-2 py-1.5 text-xs font-mono text-center min-w-[58px]">
-                    {(m.sync_frequency ?? "—").slice(0, 8)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{m.module_name}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">
-                      频率：{m.sync_frequency ?? "—"}｜上次：{m.status === "ok" ? "成功" : m.status === "warn" ? "需处理" : "失败"}
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><MoreVertical className="w-3.5 h-3.5" /></Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* 六、同步日志 */}
       <Card id="jst-sync-logs">
