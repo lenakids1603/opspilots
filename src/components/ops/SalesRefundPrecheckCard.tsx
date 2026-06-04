@@ -20,26 +20,24 @@ type Shop = {
   id: string;
   status: string | null;
   is_ignored: boolean | null;
+  is_order_sync_enabled?: boolean | null;
   entity_id: string | null;
   platform_id: string | null;
 };
 
 /**
- * 双层状态语义:
- *   processing_status : mapped / ignored / pending
- *   reporting_status  : ready / incomplete / ignored
- *   ready 条件        : processing_status=mapped 且 已绑主体 且 已绑平台
- *                       且 关联 shop 启用 (status='active' 且 is_ignored=false)
+ * 仅校验"启用 且 参与订单同步"的店铺。
+ * 已停用 / 已关闭订单同步 / 已忽略 的店铺不阻塞同步。
  */
 function useMappingsAndShops() {
   return useQuery({
-    queryKey: ["jst_shop_mappings", "precheck", "v2"],
+    queryKey: ["jst_shop_mappings", "precheck", "v3"],
     queryFn: async () => {
       const [{ data: m, error: e1 }, { data: s, error: e2 }] = await Promise.all([
         supabase.from("jst_shop_mappings")
           .select("id, matched_shop_id, matched_business_entity_id, matched_platform_id, mapping_status"),
-        supabase.from("shops")
-          .select("id, status, is_ignored, entity_id, platform_id").is("deleted_at", null),
+        (supabase as any).from("shops")
+          .select("id, status, is_ignored, is_order_sync_enabled, entity_id, platform_id").is("deleted_at", null),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
@@ -57,13 +55,19 @@ export function useSalesRefundPrecheck() {
     const ignored = mappings.filter((r) => r.mapping_status === "ignored").length;
     const mappedRows = mappings.filter((r) => r.mapping_status === "mapped");
     const mapped = mappedRows.length;
-    const pending = total - mapped - ignored;
 
-    // 在 mapped 中关联到一个启用且参与统计的 shop 才算"参与经营统计"
-    const participating = mappedRows.filter((r) => {
+    // 仅启用 + 参与订单同步 的店铺才参与正式经营统计与校验
+    const isActiveAndSyncing = (s: Shop | undefined | null) =>
+      !!s && s.is_ignored === false && (s.status ?? "active") === "active" && (s.is_order_sync_enabled ?? true) === true;
+
+    const participating = mappedRows.filter((r) => isActiveAndSyncing(r.matched_shop_id ? shopMap.get(r.matched_shop_id) : null));
+
+    // 待处理仅算"未停用 / 未关同步"的（无法确定关联 shop 时计入，避免漏判）
+    const pendingRows = mappings.filter((r) => r.mapping_status !== "mapped" && r.mapping_status !== "ignored");
+    const pending = pendingRows.filter((r) => {
       const s = r.matched_shop_id ? shopMap.get(r.matched_shop_id) : null;
-      return s && s.is_ignored === false && (s.status ?? "active") === "active";
-    });
+      return !s ? true : isActiveAndSyncing(s);
+    }).length;
 
     const noEntity = participating.filter((r) => !r.matched_business_entity_id).length;
     const noPlatform = participating.filter((r) => !r.matched_platform_id).length;
