@@ -53,9 +53,10 @@ function pickSpec(spec: string | null): { color: string | null; size: string | n
 
 function deriveStyleNo(skuCode: string | null): string | null {
   if (!skuCode) return null;
-  // 内部约定：款号通常是 sku_code 去掉颜色/尺码后缀；取 '-' 前段或前 6-10 字符
-  const m = skuCode.match(/^([A-Za-z0-9]+?)(?:[-_].+)?$/);
-  return m ? m[1] : skuCode;
+  // 内部约定：款号通常是 sku_code 去掉颜色/尺码后缀；取首个 '-' 或 '_' 前段
+  const idx = skuCode.search(/[-_]/);
+  if (idx > 0) return skuCode.slice(0, idx);
+  return skuCode;
 }
 
 async function loadRows(source: string, days: number, limit: number): Promise<DeriveRow[]> {
