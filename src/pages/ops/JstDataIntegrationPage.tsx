@@ -298,6 +298,64 @@ function PlaceholderTab({ title, hint, items }: { title: string; hint: string; i
 }
 
 // ============================================================
+// Custom time-range trigger for sales-orders sync
+// ============================================================
+function CustomSalesOrderRange({ onStarted }: { onStarted?: () => void }) {
+  const { toast } = useToast();
+  const nowLocal = () => {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  };
+  const [start, setStart] = useState(() => {
+    const d = new Date(Date.now() - 24 * 3600_000 - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  });
+  const [end, setEnd] = useState(nowLocal());
+  const [pending, setPending] = useState(false);
+
+  const startCustom = async (opts?: { days30?: boolean }) => {
+    setPending(true);
+    try {
+      const body: any = { action: "start_sales_job", requested_range: opts?.days30 ? "30d" : "custom" };
+      if (opts?.days30) {
+        body.days = 30;
+      } else {
+        if (!start || !end) throw new Error("请填写起止时间");
+        body.start_time = new Date(start).toISOString();
+        body.end_time = new Date(end).toISOString();
+      }
+      const { data, error } = await supabase.functions.invoke("jst-sync-sales-orders", { body });
+      if (error) throw new Error(error.message);
+      if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
+      toast({ title: "已创建销售订单同步任务", description: opts?.days30 ? "最近 30 天" : `${start} → ${end}` });
+      onStarted?.();
+    } catch (e: any) {
+      toast({ title: "启动失败", description: e.message, variant: "destructive" });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+      <div className="text-xs text-muted-foreground">指定起止时间（按订单 modified 时间），跨度过大将自动分窗口断点续跑。</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">开始时间</label>
+          <Input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} className="h-8 w-[200px]" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">结束时间</label>
+          <Input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} className="h-8 w-[200px]" />
+        </div>
+        <Button size="sm" disabled={pending} onClick={() => startCustom()}>按指定时间段同步</Button>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => startCustom({ days30: true })}>同步最近 30 天</Button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Main page
 // ============================================================
 export default function JstDataIntegrationPage() {
