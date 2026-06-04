@@ -362,6 +362,11 @@ async function upsertMasters(masters: Agg[]) {
       for (const k of ["jst_sku_id","sku_name","product_name","style_no","color","size","sku_image_url","external_image_url","supplier_id","first_seen_at","source"]) {
         if (!ex[k] && (payload as any)[k]) patch[k] = (payload as any)[k];
       }
+      // cost_price：优先采用入库来源覆盖；否则仅在原值为空时补
+      if (m.cost_price != null) {
+        const sources = Array.from(m.sources);
+        if (sources.includes("receipt") || ex.cost_price == null) patch.cost_price = m.cost_price;
+      }
       const { error } = await admin.from("ops_skus").update(patch).eq("id", id);
       if (!error) { updated++; masterIdMap.set(keyPrimary, id); }
     } else {
