@@ -7,6 +7,7 @@ import {
   resolveCaller, resolveWindow, sleep, RATE_DELAY_MS, MAX_PAGE_NO,
 } from "../_shared/jst-client.ts";
 import { handleJobActions, PageResult, ProcessPageArgs } from "../_shared/jst-sync-job.ts";
+import { loadSkippedShops, shopIdOf, shouldSkipShop, formatSkipNote } from "../_shared/shop-filter.ts";
 
 const SYNC_TYPE = "outbound_orders";
 const METHOD_PATH = "orders/out/simple/query";
@@ -143,8 +144,15 @@ async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
   const list = pickList(data);
   const hasNext = computeHasNext(data, list.length, Number(reqBody.page_size), pageIndex);
   let mainUpserted = 0, itemUpserted = 0, failed = 0;
+  let skippedDisabled = 0, skippedSyncOff = 0;
+  const skippedShopIds = new Set<string>();
+  const sk = await loadSkippedShops();
   let lastErr = "";
   for (const r of list) {
+    const sid = shopIdOf(r);
+    const skip = shouldSkipShop(sid, sk);
+    if (skip === "disabled") { skippedDisabled++; skippedShopIds.add(sid); continue; }
+    if (skip === "sync_off") { skippedSyncOff++; skippedShopIds.add(sid); continue; }
     try {
       const res = await upsertOutboundOrder(r);
       mainUpserted++; itemUpserted += res.itemsUpserted;
@@ -152,9 +160,10 @@ async function processOutboundPage(args: ProcessPageArgs): Promise<PageResult> {
       failed++; lastErr = String((we as Error).message ?? we);
     }
   }
+  const skipNote = formatSkipNote(skippedDisabled, skippedSyncOff, skippedShopIds.size);
   return {
     apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext,
-    errorDetail: lastErr || undefined,
+    errorDetail: (lastErr || skipNote) ? `${lastErr}${skipNote}` : undefined,
     requestBody: { ...reqBody, _param_mode: mode },
     responseCode: "0", responseMsg: "success",
     durationMs,
