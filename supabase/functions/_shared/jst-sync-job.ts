@@ -29,6 +29,10 @@ export interface PageResult {
   failed: number;
   hasNext: boolean;
   errorDetail?: string;
+  requestBody?: any;
+  responseCode?: string | null;
+  responseMsg?: string | null;
+  durationMs?: number;
 }
 
 export interface ProcessPageArgs {
@@ -203,6 +207,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
     const win = windows[windowIndex];
     const winFrom = new Date(win.from);
     const winTo = new Date(win.to);
+    const pageStart = Date.now();
     try {
       const result = await processPage({ job, windowIndex, windowFrom: winFrom, windowTo: winTo, pageIndex, pageSize });
       pagesThisRun++;
@@ -210,13 +215,35 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
       totalMain += result.mainUpserted;
       totalItem += result.itemUpserted;
       totalFailed += result.failed;
+      if (result.failed > 0 && result.errorDetail) {
+        lastError = result.errorDetail.slice(0, 500);
+      }
       const movedNext = !result.hasNext || result.apiCount === 0;
       const newWindowIndex = movedNext ? windowIndex + 1 : windowIndex;
       const newPageIndex = movedNext ? 1 : pageIndex + 1;
       const moreAfter = !(movedNext && newWindowIndex >= windows.length);
       const shouldPause = moreAfter && (pagesThisRun >= maxPages || Date.now() - tickStart > Math.max(0, budgetMs - 5000));
-      await updateJob(jobId, {
-        status: moreAfter ? (shouldPause ? "partial" : "running") : "success",
+
+      // 记录单页明细日志
+      try {
+        await admin.from("jst_sync_log_details").insert({
+          job_id: job.id, log_id: job.parent_log_id, sync_type: job.sync_type,
+          window_index: windowIndex, window_from: win.from, window_to: win.to,
+          page_index: pageIndex, page_size: pageSize,
+          api_count: result.apiCount, has_next: result.hasNext,
+          main_upserted: result.mainUpserted, item_upserted: result.itemUpserted,
+          failed_count: result.failed,
+          request_body: result.requestBody ?? null,
+          response_code: result.responseCode ?? null,
+          response_msg: result.responseMsg ?? null,
+          duration_ms: result.durationMs ?? (Date.now() - pageStart),
+          error_detail: result.errorDetail ?? null,
+        });
+      } catch (_e) { /* ignore log insert errors */ }
+
+      const pageErrSuffix = result.failed > 0 && result.errorDetail ? ` · 末次错误: ${result.errorDetail.slice(0, 200)}` : "";
+      const patch: Record<string, unknown> = {
+        status: moreAfter ? (shouldPause ? "partial" : "running") : (totalFailed > 0 ? "partial" : "success"),
         ended_at: moreAfter ? null : new Date().toISOString(),
         current_window_index: newWindowIndex,
         current_window_from: windows[newWindowIndex]?.from ?? win.from,
@@ -229,14 +256,26 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
         total_item_upserted: totalItem,
         total_failed: totalFailed,
         last_success_at: new Date().toISOString(),
-        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页完成 (本页 ${result.apiCount} 条，主表+${result.mainUpserted}，明细+${result.itemUpserted}${result.hasNext ? "，还有下一页" : "，本窗口结束"})`,
-      });
+        message: `窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页完成 (本页 ${result.apiCount} 条，主表+${result.mainUpserted}，明细+${result.itemUpserted}，失败 ${result.failed}${result.hasNext ? "，还有下一页" : "，本窗口结束"})${pageErrSuffix}`,
+      };
+      if (lastError) patch.error_detail = lastError;
+      await updateJob(jobId, patch);
       windowIndex = newWindowIndex;
       pageIndex = newPageIndex;
       if (shouldPause) break;
     } catch (err) {
-      lastError = String((err as Error).message ?? err).slice(0, 500);
+      lastError = String((err as Error).message ?? err).slice(0, 1500);
       totalFailed++;
+      try {
+        await admin.from("jst_sync_log_details").insert({
+          job_id: job.id, log_id: job.parent_log_id, sync_type: job.sync_type,
+          window_index: windowIndex, window_from: win.from, window_to: win.to,
+          page_index: pageIndex, page_size: pageSize,
+          api_count: 0, has_next: false, main_upserted: 0, item_upserted: 0,
+          failed_count: 1, duration_ms: Date.now() - pageStart,
+          error_detail: lastError,
+        });
+      } catch (_e) { /* ignore */ }
       await updateJob(jobId, {
         total_failed: totalFailed,
         error_detail: lastError,
@@ -247,9 +286,20 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
   }
 
   const allDone = windowIndex >= windows.length;
-  const finalStatus = allDone ? (lastError ? "failed" : "success") : (lastError ? "failed" : "partial");
+  // 任务级状态：
+  //  - 抛异常 break: failed
+  //  - 全部完成且有 totalFailed>0: success（任务不再续跑，避免前端死循环），但父日志标 partial_failed
+  //  - 全部完成且无失败: success
+  //  - 未完成: partial
+  const finalJobStatus = allDone
+    ? (lastError && totalMain === 0 && totalItem === 0 ? "failed" : "success")
+    : (lastError ? "failed" : "partial");
+  const parentLogStatus = allDone
+    ? (totalFailed > 0 ? "partial_failed" : "success")
+    : (lastError ? "failed" : "running");
+
   const tail: Record<string, unknown> = {
-    status: finalStatus,
+    status: finalJobStatus,
     ended_at: allDone || lastError ? new Date().toISOString() : null,
     total_api_count: totalApi,
     total_order_upserted: totalMain,
@@ -261,7 +311,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
     next_page_index: pageIndex,
     error_detail: lastError || "",
     message: allDone
-      ? `全部完成 · 窗口 ${windows.length} 个 · 主表 ${totalMain} · 明细 ${totalItem}${lastError ? ` · 末次错误: ${lastError}` : ""}`
+      ? `全部完成 · 窗口 ${windows.length} 个 · 主表 ${totalMain} · 明细 ${totalItem} · 失败 ${totalFailed}${lastError ? ` · 末次错误: ${lastError}` : ""}`
       : (lastError
         ? `任务失败 · 窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页 · ${lastError}`
         : `本次 tick 已处理 ${pagesThisRun} 页，等待继续 · 当前窗口 ${windowIndex + 1}/${windows.length} 下一页=${pageIndex}`),
@@ -269,7 +319,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
   await updateJob(jobId, tail);
 
   await admin.from("jst_sync_logs").update({
-    status: finalStatus,
+    status: parentLogStatus,
     ended_at: tail.ended_at,
     fetched_orders_count: totalMain,
     fetched_items_count: totalItem,
@@ -278,7 +328,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
     error_detail: lastError || "",
   }).eq("id", job.parent_log_id);
 
-  return { status: finalStatus, job: { ...job, ...tail } };
+  return { status: finalJobStatus, job: { ...job, ...tail } };
 }
 
 /**

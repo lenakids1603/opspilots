@@ -198,12 +198,73 @@ export async function callOpenweb(methodPath: string, biz: Record<string, unknow
     return await callOpenweb(methodPath, biz, 2);
   }
   if (!isOk) {
-    const err: any = new Error(`聚水潭 ${methodPath} 失败 code=${code} msg=${msg || text.slice(0, 200)}`);
+    const codeStr = String(code ?? "");
+    const msgStr = String(msg ?? "");
+    let hint = "";
+    if (codeStr === "190" || /权限|API权限|permission|forbidden|未授权|无权访问/i.test(msgStr)) {
+      hint = "（疑似聚水潭 App 未授权该接口，请到聚水潭开放平台为本 App 申请此 API 的权限）";
+    } else if (/ip|白名单|whitelist/i.test(msgStr)) {
+      hint = "（疑似 IP 白名单未配置，请确认代理出口 IP 已在聚水潭后台加入白名单）";
+    } else if (codeStr === "10004" || /频率|限流|rate/i.test(msgStr)) {
+      hint = "（接口被限流，请降低同步频率或拉长窗口）";
+    }
+    const err: any = new Error(`聚水潭 ${methodPath} 失败 code=${codeStr} msg=${msgStr || text.slice(0, 200)}${hint}`);
     err.code = code; err.apiMsg = msg; err.path = methodPath; err.url = url;
     err.requestId = json.request_id ?? json.requestId ?? null;
+    err.hint = hint;
     throw err;
   }
   return json.data ?? json;
+}
+
+// ===== List / pagination helpers (兼容多种聚水潭返回结构) =====
+const LIST_KEYS = [
+  "orders", "refunds", "refund_list", "after_sales", "aftersales",
+  "receiveds", "datas", "list", "rows", "items",
+];
+export function pickList(data: any, extraKeys: string[] = []): any[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  const keys = [...extraKeys, ...LIST_KEYS];
+  for (const k of keys) {
+    const v = data?.[k];
+    if (Array.isArray(v)) return v;
+  }
+  const inner = data?.data;
+  if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+    for (const k of keys) {
+      const v = inner?.[k];
+      if (Array.isArray(v)) return v;
+    }
+  }
+  return [];
+}
+
+export function pickItemsArray(o: any, extraKeys: string[] = []): any[] {
+  if (!o || typeof o !== "object") return [];
+  const keys = [
+    ...extraKeys,
+    "items", "order_items", "orderitems", "refund_items", "received_items",
+    "skus", "details", "item_list",
+  ];
+  for (const k of keys) {
+    const v = o?.[k];
+    if (Array.isArray(v) && v.length > 0) return v;
+  }
+  return [];
+}
+
+export function computeHasNext(data: any, fetched: number, pageSize: number, pageIndex: number): boolean {
+  if (!data || typeof data !== "object") return false;
+  const hn = data.has_next ?? data.hasNext;
+  if (typeof hn === "boolean") return hn;
+  if (typeof hn === "string") return ["true", "1", "yes", "y"].includes(hn.toLowerCase());
+  if (typeof hn === "number") return hn > 0;
+  const totalPage = Number(data.page_count ?? data.pageCount ?? data.total_page ?? data.totalPage ?? 0);
+  if (totalPage > 0) return pageIndex < totalPage;
+  const totalCount = Number(data.data_count ?? data.dataCount ?? data.total_count ?? data.total ?? 0);
+  if (totalCount > 0 && pageSize > 0) return pageIndex * pageSize < totalCount;
+  return fetched >= pageSize;
 }
 
 export async function resolveCaller(req: Request) {
