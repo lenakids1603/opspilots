@@ -83,6 +83,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         online_sku_code: r.shop_sku_id ?? null,
         online_product_id: r.jst_item_id ?? null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "sales",
       });
     }
@@ -110,6 +112,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         online_sku_code: null,
         online_product_id: r.i_id ?? null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "outbound",
       });
     }
@@ -135,6 +139,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         supplier_name: r.supplier_name ?? null,
         shop_id: null, online_sku_code: null, online_product_id: null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "refund",
       });
     }
@@ -160,6 +166,8 @@ async function loadRows(source: string, days: number, limit: number): Promise<De
         supplier_name: r.supplier_name ?? null,
         shop_id: null, online_sku_code: null, online_product_id: null,
         ts: r.synced_at ?? null,
+        style_no: null,
+        cost_price: null,
         source: "aftersale",
       });
     }
