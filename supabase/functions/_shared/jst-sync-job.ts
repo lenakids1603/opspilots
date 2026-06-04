@@ -156,11 +156,39 @@ async function updateJob(jobId: string, patch: Record<string, unknown>) {
 }
 
 export async function cancelJob(jobId: string) {
-  await admin.from("jst_sync_jobs").update({
+  const { data: existing } = await admin
+    .from("jst_sync_jobs")
+    .select("id, parent_log_id, status")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (!existing) {
+    return { ok: false, cancelled: false, job_id: jobId, error: "任务不存在", updated_job_count: 0, updated_log_count: 0 };
+  }
+  const nowIso = new Date().toISOString();
+  const { data: jobUpd } = await admin.from("jst_sync_jobs").update({
     status: "cancelled",
-    ended_at: new Date().toISOString(),
-    message: "用户已取消",
-  }).eq("id", jobId);
+    has_next: false,
+    ended_at: nowIso,
+    heartbeat_at: nowIso,
+    message: "用户手动终止",
+    error_detail: "用户手动终止",
+  }).eq("id", jobId).select("id");
+  let updatedLogCount = 0;
+  if (existing.parent_log_id) {
+    const { data: logUpd } = await admin.from("jst_sync_logs").update({
+      status: "cancelled",
+      ended_at: nowIso,
+      error_detail: "用户手动终止",
+    }).eq("id", existing.parent_log_id).select("id");
+    updatedLogCount = logUpd?.length ?? 0;
+  }
+  return {
+    ok: true,
+    cancelled: true,
+    job_id: jobId,
+    updated_job_count: jobUpd?.length ?? 0,
+    updated_log_count: updatedLogCount,
+  };
 }
 
 export async function tickJob(jobId: string, processPage: ProcessPageFn, config: Partial<JobConfig> = {}) {
