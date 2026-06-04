@@ -150,7 +150,14 @@ async function getValidAccessToken(): Promise<string> {
   try { return await refreshAccessToken(refreshSeed); } catch { return tok.accessToken; }
 }
 
-export async function callOpenweb(methodPath: string, biz: Record<string, unknown>, attempt = 1): Promise<any> {
+export async function callOpenweb(
+  methodPath: string,
+  biz: Record<string, unknown>,
+  optionsOrAttempt: { timeoutMs?: number; attempt?: number } | number = {},
+): Promise<any> {
+  const opts = typeof optionsOrAttempt === "number" ? { attempt: optionsOrAttempt } : optionsOrAttempt;
+  const timeoutMs = Math.max(5_000, Math.min(opts.timeoutMs ?? 60_000, 90_000));
+  const attempt = opts.attempt ?? 1;
   if (!JST_APP_KEY || !JST_APP_SECRET) throw new Error("缺少 JST_APP_KEY / JST_APP_SECRET");
   const accessToken = await getValidAccessToken();
   const ts = String(Math.floor(Date.now() / 1000));
@@ -167,7 +174,7 @@ export async function callOpenweb(methodPath: string, biz: Record<string, unknow
   const url = `${OPENWEB_BASE}/open/${methodPath.replace(/^\/+/, "")}`;
   const body = new URLSearchParams(params).toString();
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 60_000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let resp: Response;
   try {
     resp = await proxyFetch(url, {
@@ -180,12 +187,24 @@ export async function callOpenweb(methodPath: string, biz: Record<string, unknow
     const name = (e as Error).name;
     const msg = (e as Error).message ?? String(e);
     if (name === "AbortError" || /abort/i.test(msg)) {
-      const err: any = new Error(`聚水潭 ${methodPath} 请求超时(60s)被中断 url=${url}`);
+      const err: any = new Error(`聚水潭 ${methodPath} 请求超时(${Math.round(timeoutMs / 1000)}s)被中断 url=${url}`);
       err.code = "ABORTED"; err.aborted = true; err.path = methodPath;
+      err.transient = true; err.errorType = "timeout";
       throw err;
+    }
+    if (/network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket/i.test(msg)) {
+      (e as any).transient = true;
+      (e as any).errorType = "network";
     }
     throw e;
   } finally { clearTimeout(timer); }
+  if (resp.status === 429 || resp.status >= 500) {
+    const errText = await resp.text().catch(() => "");
+    const err: any = new Error(`聚水潭 ${methodPath} HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+    err.code = String(resp.status); err.path = methodPath;
+    err.transient = true; err.errorType = resp.status === 429 ? "rate_limited" : "http_5xx";
+    throw err;
+  }
   const text = await resp.text();
   let json: any;
   try { json = JSON.parse(text); } catch { throw new Error(`聚水潭 ${methodPath} 返回非 JSON: ${text.slice(0, 200)}`); }
@@ -195,7 +214,7 @@ export async function callOpenweb(methodPath: string, biz: Record<string, unknow
   if (!isOk && attempt === 1 && /token|授权|access_token|令牌/i.test(String(msg))) {
     const seed = (await loadToken())?.refreshToken || JST_REFRESH_TOKEN_SEED;
     if (seed) await refreshAccessToken(seed);
-    return await callOpenweb(methodPath, biz, 2);
+    return await callOpenweb(methodPath, biz, { ...opts, attempt: 2 });
   }
   if (!isOk) {
     const codeStr = String(code ?? "");
@@ -212,6 +231,9 @@ export async function callOpenweb(methodPath: string, biz: Record<string, unknow
     err.code = code; err.apiMsg = msg; err.path = methodPath; err.url = url;
     err.requestId = json.request_id ?? json.requestId ?? null;
     err.hint = hint;
+    if (codeStr === "10004" || /频率|限流|rate/i.test(msgStr)) {
+      err.transient = true; err.errorType = "rate_limited";
+    }
     throw err;
   }
   return json.data ?? json;
