@@ -332,14 +332,6 @@ function aggregate(rows: DeriveRow[]): { masters: Agg[]; orphanAliases: DeriveRo
   return { masters: Array.from(byKey.values()), orphanAliases: orphans };
 }
 
-async function upsertMasters(masters: Agg[]) {
-  let inserted = 0, updated = 0;
-  // 拉已有，按 sku_code / jst_sku_id 命中
-  const skuCodes = masters.map(m => m.sku_code).filter(Boolean) as string[];
-  const jstIds = masters.map(m => m.jst_sku_id).filter(Boolean) as string[];
-
-  const existing = new Map<string, any>();
-  const idByKey = new Map<string, string>();
 
 async function upsertMasters(masters: Agg[]) {
   let inserted = 0, updated = 0;
