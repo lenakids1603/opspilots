@@ -162,10 +162,13 @@ export function InboundSyncJobPanel({
   const startMut = useMutation({
     mutationFn: async (preset: Preset) => {
       const body: any = { action: startAction };
+      if (preset.minutes != null) body.minutes = preset.minutes;
       if (preset.hours != null) body.hours = preset.hours;
       if (preset.days != null) body.days = preset.days;
       body.requested_range = preset.requested_range
-        ?? (preset.hours != null ? `${preset.hours}h` : (preset.days != null ? `${preset.days}d` : "custom"));
+        ?? (preset.minutes != null ? `${preset.minutes}m`
+          : preset.hours != null ? `${preset.hours}h`
+          : (preset.days != null ? `${preset.days}d` : "custom"));
       const { data, error } = await supabase.functions.invoke(functionName, { body });
       if (error) throw new Error(error.message);
       if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
