@@ -34,6 +34,7 @@ export default function ProductsPage() {
   const [busy, setBusy] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [exceptionCount, setExceptionCount] = useState(0);
+  const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
