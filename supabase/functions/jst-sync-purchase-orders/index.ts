@@ -1051,6 +1051,7 @@ async function createSyncJob(opts: {
     next_page_index: 1,
     page_size: INBOUND_JOB_CONFIG.pageSize,
     has_next: true,
+    auto_continue: false,
     max_window_days: INBOUND_JOB_CONFIG.maxWindowDays,
     max_pages_per_run: INBOUND_JOB_CONFIG.maxPagesPerRun,
     time_budget_seconds: INBOUND_JOB_CONFIG.timeBudgetSeconds,
