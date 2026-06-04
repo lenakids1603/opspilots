@@ -1255,7 +1255,18 @@ export default function JstDataIntegrationPage() {
           <SheetHeader>
             <SheetTitle>同步日志详情</SheetTitle>
             <SheetDescription>
-              {detailLog?._source === "purchase_log" ? "来源:jst_sync_logs(采购与入库)" : "来源:jst_sync_runs"}
+              {(() => {
+                if (detailLog?._source !== "purchase_log") return "来源:jst_sync_runs";
+                const mk = detailLog?.module_key;
+                const label =
+                  mk === "purchase_orders" ? "采购API" :
+                  mk === "purchase_inbound_orders" ? "入库API" :
+                  mk === "outbound_orders" ? "出库API" :
+                  mk === "refund_orders" ? "售后API · 退货退款单" :
+                  mk === "aftersale_received" ? "售后API · 销售退仓" :
+                  "采购与入库";
+                return `来源:jst_sync_logs(${label})`;
+              })()}
             </SheetDescription>
           </SheetHeader>
           {detailLog && (
