@@ -3101,10 +3101,13 @@ export type Database = {
           created_at: string
           default_bank_account_id: string | null
           deleted_at: string | null
+          disabled_at: string | null
+          disabled_reason: string | null
           entity_id: string | null
           external_shop_id: string | null
           id: string
           is_ignored: boolean
+          is_order_sync_enabled: boolean
           jst_shop_id: string | null
           last_synced_at: string | null
           name: string
@@ -3123,10 +3126,13 @@ export type Database = {
           created_at?: string
           default_bank_account_id?: string | null
           deleted_at?: string | null
+          disabled_at?: string | null
+          disabled_reason?: string | null
           entity_id?: string | null
           external_shop_id?: string | null
           id?: string
           is_ignored?: boolean
+          is_order_sync_enabled?: boolean
           jst_shop_id?: string | null
           last_synced_at?: string | null
           name: string
@@ -3145,10 +3151,13 @@ export type Database = {
           created_at?: string
           default_bank_account_id?: string | null
           deleted_at?: string | null
+          disabled_at?: string | null
+          disabled_reason?: string | null
           entity_id?: string | null
           external_shop_id?: string | null
           id?: string
           is_ignored?: boolean
+          is_order_sync_enabled?: boolean
           jst_shop_id?: string | null
           last_synced_at?: string | null
           name?: string
