@@ -121,9 +121,11 @@ async function processRefundPage(args: ProcessPageArgs): Promise<PageResult> {
       });
     } catch (_e) { /* ignore */ }
   }
+  const skipNote = formatSkipNote(skippedDisabled, skippedSyncOff, skippedShopIds.size);
   return {
     apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext,
-    errorDetail: lastErr || undefined, requestBody: reqBody, durationMs,
+    errorDetail: (lastErr || skipNote) ? `${lastErr}${skipNote}` : undefined,
+    requestBody: reqBody, durationMs,
     responseCode: (data as any)?.code != null ? String((data as any).code) : null,
     responseMsg: (data as any)?.msg ?? null,
   };
