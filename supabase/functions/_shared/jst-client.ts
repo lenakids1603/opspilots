@@ -315,12 +315,15 @@ export const RATE_DELAY_MS = 260;
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export const MAX_PAGE_NO = 200;
 
-// Resolve aftersale time window. Priority: explicit start/end > hours > days > default 1 day.
+// Resolve aftersale time window. Priority: explicit start/end > minutes > hours > days > default 1 day.
 export function resolveWindow(body: any): { from: Date; to: Date } {
   const to = body.end_time ? new Date(body.end_time) : new Date();
   let from: Date;
   if (body.start_time) {
     from = new Date(body.start_time);
+  } else if (body.minutes != null) {
+    const minutes = Number(body.minutes);
+    from = new Date(to.getTime() - Math.max(1, minutes) * 60_000);
   } else if (body.hours != null) {
     const hours = Number(body.hours);
     from = new Date(to.getTime() - Math.max(1, hours) * 3600_000);

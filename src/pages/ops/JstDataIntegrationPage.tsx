@@ -298,6 +298,64 @@ function PlaceholderTab({ title, hint, items }: { title: string; hint: string; i
 }
 
 // ============================================================
+// Custom time-range trigger for sales-orders sync
+// ============================================================
+function CustomSalesOrderRange({ onStarted }: { onStarted?: () => void }) {
+  const { toast } = useToast();
+  const nowLocal = () => {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  };
+  const [start, setStart] = useState(() => {
+    const d = new Date(Date.now() - 24 * 3600_000 - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  });
+  const [end, setEnd] = useState(nowLocal());
+  const [pending, setPending] = useState(false);
+
+  const startCustom = async (opts?: { days30?: boolean }) => {
+    setPending(true);
+    try {
+      const body: any = { action: "start_sales_job", requested_range: opts?.days30 ? "30d" : "custom" };
+      if (opts?.days30) {
+        body.days = 30;
+      } else {
+        if (!start || !end) throw new Error("请填写起止时间");
+        body.start_time = new Date(start).toISOString();
+        body.end_time = new Date(end).toISOString();
+      }
+      const { data, error } = await supabase.functions.invoke("jst-sync-sales-orders", { body });
+      if (error) throw new Error(error.message);
+      if (data?.ok === false) throw new Error(data?.error ?? "启动失败");
+      toast({ title: "已创建销售订单同步任务", description: opts?.days30 ? "最近 30 天" : `${start} → ${end}` });
+      onStarted?.();
+    } catch (e: any) {
+      toast({ title: "启动失败", description: e.message, variant: "destructive" });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+      <div className="text-xs text-muted-foreground">指定起止时间（按订单 modified 时间），跨度过大将自动分窗口断点续跑。</div>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">开始时间</label>
+          <Input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} className="h-8 w-[200px]" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">结束时间</label>
+          <Input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} className="h-8 w-[200px]" />
+        </div>
+        <Button size="sm" disabled={pending} onClick={() => startCustom()}>按指定时间段同步</Button>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => startCustom({ days30: true })}>同步最近 30 天</Button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // Main page
 // ============================================================
 export default function JstDataIntegrationPage() {
@@ -900,7 +958,7 @@ export default function JstDataIntegrationPage() {
             {/* ====== 订单API ====== */}
             <TabsContent value="order" className="m-0 p-5 space-y-4">
               <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
-                聚水潭销售订单同步（断点续跑）：调用 <code>/open/orders/single/query</code>，按修改时间窗口分页拉取，自动 upsert 到 <code>jst_sales_orders</code> + <code>jst_sales_order_items</code>。隐私字段（收件人姓名/手机/详细地址）不会落库，仅保留省/市/区用于地域分析。
+                聚水潭销售订单同步（断点续跑）：调用 <code>/open/orders/single/query</code>，按修改时间窗口分页拉取，自动 upsert 到 <code>jst_sales_orders</code> + <code>jst_sales_order_items</code>。隐私字段（收件人姓名/手机/详细地址）不会落库，仅保留省/市/区用于地域分析。销售 GMV / GSV / 退款分析 / 订单列表均以此正式表为准。
               </div>
               <InboundSyncJobPanel
                 cancelAllVersion={cancelAllVersion}
@@ -913,30 +971,26 @@ export default function JstDataIntegrationPage() {
                 unitLabel="订单"
                 toastTitle="已创建销售订单同步任务"
                 presets={[
-                  { label: "同步最近 1 小时", hours: 1, requested_range: "1h" },
-                  { label: "同步今天", hours: 24, requested_range: "today" },
-                  { label: "同步最近 3 天", days: 3, requested_range: "3d" },
+                  { label: "最近 10 分钟", minutes: 10, requested_range: "10m" },
+                  { label: "最近 30 分钟", minutes: 30, requested_range: "30m" },
+                  { label: "最近 1 小时", hours: 1, requested_range: "1h" },
+                  { label: "今天", hours: 24, requested_range: "today" },
+                  { label: "最近 3 天", days: 3, requested_range: "3d" },
+                  { label: "最近 7 天", days: 7, requested_range: "7d" },
                 ]}
                 onJobFinished={() => {
                   qc.invalidateQueries({ queryKey: ["jst_sales_orders_recent"] });
                 }}
               />
 
-
-              <div className="rounded-md border border-amber-300 bg-amber-50/60 px-4 py-3 text-xs text-amber-800">
-                <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-                以下为保留的旧版 raw 同步（写 <code>jst_sales_refund_raw</code>，用于退款分析）。店铺映射未完成时只允许 raw 同步，不更新正式 GMV/GSV/退款汇总。
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" disabled={triggerRun.isPending}
-                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 1, trigger_type: "manual", label: "同步今日销售与退款（raw）" })}>
-                  同步今日 raw
-                </Button>
-                <Button size="sm" variant="outline" disabled={triggerRun.isPending}
-                  onClick={() => triggerRun.mutate({ kind: "sales_refund", days: 7, trigger_type: "manual_backfill", label: "同步最近 7 天 raw" })}>
-                  同步最近 7 天 raw
-                </Button>
-              </div>
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm">高级操作（指定时间段 / 最近 30 天）</Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <CustomSalesOrderRange onStarted={() => qc.invalidateQueries({ queryKey: ["sync_last_job", "sales_orders"] })} />
+                </CollapsibleContent>
+              </Collapsible>
             </TabsContent>
 
             {/* ====== 物流API ====== */}
