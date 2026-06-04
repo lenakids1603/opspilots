@@ -74,11 +74,23 @@ async function processRefundPage(args: ProcessPageArgs): Promise<PageResult> {
   if (pageIndex > MAX_PAGE_NO) throw new Error(`分页超过上限 ${MAX_PAGE_NO}`);
   await sleep(RATE_DELAY_MS);
   const reqBody = {
-    page_index: pageIndex, page_size: pageSize,
-    modified_begin: fmtBJ(windowFrom), modified_end: fmtBJ(windowTo),
+    page_index: String(pageIndex),
+    page_size: String(Math.min(Number(pageSize) || 50, 50)),
+    modified_begin: fmtBJ(windowFrom),
+    modified_end: fmtBJ(windowTo),
   };
   const t0 = Date.now();
-  const data = await callOpenweb(METHOD_PATH, reqBody);
+  let data: any;
+  try {
+    data = await callOpenweb(METHOD_PATH, reqBody, { timeoutMs: 30_000 });
+  } catch (e: any) {
+    e.requestBody = reqBody;
+    e.apiPath = METHOD_PATH;
+    e.durationMs = Date.now() - t0;
+    e.responseCode = e.responseCode ?? (e.code != null ? String(e.code) : null);
+    e.responseMsg = e.responseMsg ?? e.apiMsg ?? null;
+    throw e;
+  }
   const durationMs = Date.now() - t0;
   const list = pickList(data, ["refunds", "refund_list"]);
   const hasNext = computeHasNext(data, list.length, pageSize, pageIndex);
@@ -101,11 +113,62 @@ async function processRefundPage(args: ProcessPageArgs): Promise<PageResult> {
       });
     } catch (_e) { /* ignore */ }
   }
-  return { apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext, errorDetail: lastErr || undefined, requestBody: reqBody, durationMs };
+  return {
+    apiCount: list.length, mainUpserted, itemUpserted, failed, hasNext,
+    errorDetail: lastErr || undefined, requestBody: reqBody, durationMs,
+    responseCode: (data as any)?.code != null ? String((data as any).code) : null,
+    responseMsg: (data as any)?.msg ?? null,
+  };
+}
+
+
+async function tryCall(reqBody: any) {
+  const t0 = Date.now();
+  try {
+    const data = await callOpenweb(METHOD_PATH, reqBody, { timeoutMs: 30_000 });
+    const list = pickList(data, ["refunds", "refund_list"]);
+    const first = list[0] ?? null;
+    return {
+      ok: true, duration_ms: Date.now() - t0,
+      req: reqBody,
+      top_keys: data && typeof data === "object" ? Object.keys(data) : [],
+      list_count: list.length,
+      first_row_keys: first ? Object.keys(first) : [],
+    };
+  } catch (e: any) {
+    return {
+      ok: false, duration_ms: Date.now() - t0, req: reqBody,
+      code: e?.code ?? null, message: String(e?.message ?? e).slice(0, 500),
+      apiMsg: e?.apiMsg ?? null,
+    };
+  }
+}
+
+async function runDebugParams(body: any) {
+  const { from, to } = resolveWindow(body);
+  const base = { modified_begin: fmtBJ(from), modified_end: fmtBJ(to) };
+  const cases: Record<string, any> = {
+    A_minimal_strings: { ...base, page_index: "1", page_size: "50" },
+    B_with_date_type_1: { ...base, page_index: "1", page_size: "50", date_type: "1" },
+    C_numbers_compare: { ...base, page_index: 1, page_size: 50 },
+  };
+  const results: Record<string, any> = {};
+  for (const [k, v] of Object.entries(cases)) {
+    results[k] = await tryCall(v);
+    await sleep(500);
+  }
+  await admin.from("jst_sync_logs").insert({
+    sync_type: SYNC_TYPE, status: "success",
+    ended_at: new Date().toISOString(),
+    message: `[debug_refund_params] ${fmtBJ(from)} → ${fmtBJ(to)}`,
+    metadata: results,
+  });
+  return { ok: true, window: { from: fmtBJ(from), to: fmtBJ(to) }, results };
 }
 
 async function runLegacySync(fromIso: string, toIso: string, logId: string) {
   const winFrom = new Date(fromIso); const winTo = new Date(toIso);
+
   let page = 1, orders = 0, items = 0, failed = 0;
   try {
     while (true) {
@@ -154,6 +217,11 @@ Deno.serve(async (req) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const action: string = body.action ?? "";
 
+    if (action === "debug_refund_params") {
+      const out = await runDebugParams(body);
+      return new Response(JSON.stringify(out), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const jobResp = await handleJobActions({
       action, body, syncType: SYNC_TYPE, callerUid: caller.uid,
       processPage: processRefundPage,
@@ -161,13 +229,14 @@ Deno.serve(async (req) => {
       tickActionName: "tick_refund_job",
       cancelActionName: "cancel_refund_job",
       functionName: "jst-sync-refund-orders",
-      config: { pageSize: PAGE_SIZE, maxWindowDays: 1, maxPagesPerRun: 3, timeBudgetSeconds: 40, proactiveSplitAfterPage: 12 },
+      config: { pageSize: PAGE_SIZE, maxWindowDays: 1, maxPagesPerRun: 2, timeBudgetSeconds: 35, proactiveSplitAfterPage: 10 },
       resolveWindowFromBody: (b) => resolveWindow(b),
     });
     if (jobResp) {
       const text = await jobResp.text();
       return new Response(text, { status: jobResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
 
     const { from, to } = resolveWindow(body);
     const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({

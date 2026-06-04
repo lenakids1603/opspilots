@@ -547,6 +547,7 @@ export type Database = {
           batch_no: string | null
           created_at: string
           id: string
+          item_unique_key: string | null
           name: string | null
           pic: string | null
           properties_value: string | null
@@ -566,6 +567,7 @@ export type Database = {
           batch_no?: string | null
           created_at?: string
           id?: string
+          item_unique_key?: string | null
           name?: string | null
           pic?: string | null
           properties_value?: string | null
@@ -585,6 +587,7 @@ export type Database = {
           batch_no?: string | null
           created_at?: string
           id?: string
+          item_unique_key?: string | null
           name?: string | null
           pic?: string | null
           properties_value?: string | null
@@ -610,9 +613,10 @@ export type Database = {
       }
       jst_aftersale_received_orders: {
         Row: {
-          as_id: string
+          as_id: string | null
           created_at: string
           id: string
+          io_id: string | null
           l_id: string | null
           logistics_company: string | null
           modified_at_jst: string | null
@@ -620,6 +624,7 @@ export type Database = {
           outer_as_id: string | null
           raw_data: Json | null
           received_date: string | null
+          received_unique_key: string | null
           shop_id: string | null
           shop_name: string | null
           so_id: string | null
@@ -631,9 +636,10 @@ export type Database = {
           wms_co_id: string | null
         }
         Insert: {
-          as_id: string
+          as_id?: string | null
           created_at?: string
           id?: string
+          io_id?: string | null
           l_id?: string | null
           logistics_company?: string | null
           modified_at_jst?: string | null
@@ -641,6 +647,7 @@ export type Database = {
           outer_as_id?: string | null
           raw_data?: Json | null
           received_date?: string | null
+          received_unique_key?: string | null
           shop_id?: string | null
           shop_name?: string | null
           so_id?: string | null
@@ -652,9 +659,10 @@ export type Database = {
           wms_co_id?: string | null
         }
         Update: {
-          as_id?: string
+          as_id?: string | null
           created_at?: string
           id?: string
+          io_id?: string | null
           l_id?: string | null
           logistics_company?: string | null
           modified_at_jst?: string | null
@@ -662,6 +670,7 @@ export type Database = {
           outer_as_id?: string | null
           raw_data?: Json | null
           received_date?: string | null
+          received_unique_key?: string | null
           shop_id?: string | null
           shop_name?: string | null
           so_id?: string | null
