@@ -551,24 +551,46 @@ export default function OutboundOrdersPage() {
               </section>
 
               <section>
-                <h3 className="font-medium mb-2">C. 原始 JSON</h3>
-                <pre className="bg-muted p-3 rounded text-[11px] overflow-auto max-h-80">{JSON.stringify(detailRow.raw_data, null, 2)}</pre>
+                <h3 className="font-medium mb-2">C. 历史调试数据（raw JSON）</h3>
+                {detailRow.raw_data ? (
+                  <details>
+                    <summary className="text-xs text-muted-foreground cursor-pointer select-none mb-2">
+                      展开历史 raw JSON（默认收起，仅供排查）
+                    </summary>
+                    <pre className="bg-muted p-3 rounded text-[11px] overflow-auto max-h-80">{JSON.stringify(detailRow.raw_data, null, 2)}</pre>
+                  </details>
+                ) : (
+                  <div className="text-xs text-muted-foreground rounded border border-dashed p-3">
+                    新同步默认不保存完整 raw JSON，以避免数据库被海量订单和商品数据撑爆。完整出库明细请以聚水潭为准。
+                  </div>
+                )}
               </section>
             </div>
           )}
         </SheetContent>
       </Sheet>
 
-      {/* 原始 JSON 抽屉 */}
+      {/* 历史调试数据（raw JSON） */}
       <Sheet open={!!rawOpen} onOpenChange={(o) => !o && setRawOpen(null)}>
         <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>出库单原始 JSON</SheetTitle>
+            <SheetTitle>历史调试数据（raw JSON）</SheetTitle>
             <SheetDescription className="font-mono text-xs">{rawOpen?.io_id}</SheetDescription>
           </SheetHeader>
-          <pre className="bg-muted p-3 rounded text-[11px] overflow-auto mt-4">
-            {JSON.stringify(rawOpen?.raw_data, null, 2)}
-          </pre>
+          {rawOpen?.raw_data ? (
+            <details className="mt-4">
+              <summary className="text-xs text-muted-foreground cursor-pointer select-none mb-2">
+                展开历史 raw JSON（默认收起，仅供排查）
+              </summary>
+              <pre className="bg-muted p-3 rounded text-[11px] overflow-auto">
+                {JSON.stringify(rawOpen.raw_data, null, 2)}
+              </pre>
+            </details>
+          ) : (
+            <div className="mt-4 text-xs text-muted-foreground rounded border border-dashed p-3">
+              新同步默认不保存完整 raw JSON，以避免数据库被海量订单和商品数据撑爆。完整出库明细请以聚水潭为准。
+            </div>
+          )}
         </SheetContent>
       </Sheet>
     </div>
