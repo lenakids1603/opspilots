@@ -160,6 +160,10 @@ export default function ProductDetailPage() {
         actions={<Link to="/products"><Button variant="outline" size="sm"><ArrowLeft className="w-4 h-4 mr-1" /> 返回</Button></Link>}
       />
 
+      <div className="mx-6 mb-3 rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+        新架构提示：当前系统只同步活跃商品和近期业务相关商品，并不保存聚水潭全部商品档案。订单 / 出库 / 退款明细以聚水潭为准；新同步默认不保存完整 raw JSON。
+      </div>
+
       <Tabs defaultValue="basic" className="px-6 pb-6">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="basic">基础资料</TabsTrigger>
