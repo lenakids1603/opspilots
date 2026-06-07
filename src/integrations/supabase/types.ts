@@ -683,6 +683,39 @@ export type Database = {
         }
         Relationships: []
       }
+      jst_api_debug_payloads: {
+        Row: {
+          created_at: string
+          endpoint: string | null
+          error_message: string | null
+          expires_at: string | null
+          id: string
+          request_body: Json | null
+          response_sample: Json | null
+          sync_type: string
+        }
+        Insert: {
+          created_at?: string
+          endpoint?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          request_body?: Json | null
+          response_sample?: Json | null
+          sync_type: string
+        }
+        Update: {
+          created_at?: string
+          endpoint?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          request_body?: Json | null
+          response_sample?: Json | null
+          sync_type?: string
+        }
+        Relationships: []
+      }
       jst_outbound_order_items: {
         Row: {
           amount: number
@@ -2713,6 +2746,63 @@ export type Database = {
           },
         ]
       }
+      order_lookup_index: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          has_refund: boolean
+          item_count: number
+          jst_modified: string | null
+          o_id: string
+          order_status: string | null
+          pay_amount: number
+          pay_time: string | null
+          platform: string | null
+          qty: number
+          shop_id: string | null
+          shop_name: string | null
+          so_id: string | null
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          has_refund?: boolean
+          item_count?: number
+          jst_modified?: string | null
+          o_id: string
+          order_status?: string | null
+          pay_amount?: number
+          pay_time?: string | null
+          platform?: string | null
+          qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          has_refund?: boolean
+          item_count?: number
+          jst_modified?: string | null
+          o_id?: string
+          order_status?: string | null
+          pay_amount?: number
+          pay_time?: string | null
+          platform?: string | null
+          qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       platforms: {
         Row: {
           code: string
@@ -3134,6 +3224,531 @@ export type Database = {
           },
         ]
       }
+      sales_daily_summary: {
+        Row: {
+          created_at: string
+          estimated_cost_amount: number
+          estimated_gross_profit: number
+          first_order_time: string | null
+          id: string
+          last_jst_modified: string | null
+          last_order_time: string | null
+          net_amount: number
+          net_qty: number
+          pay_amount: number
+          pay_item_count: number
+          pay_order_count: number
+          pay_qty: number
+          platform: string | null
+          refund_amount: number
+          refund_order_count: number
+          refund_qty: number
+          shop_id: string | null
+          shop_name: string | null
+          summary_date: string
+          summary_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          first_order_time?: string | null
+          id?: string
+          last_jst_modified?: string | null
+          last_order_time?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_item_count?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_order_count?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          summary_date: string
+          summary_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          first_order_time?: string | null
+          id?: string
+          last_jst_modified?: string | null
+          last_order_time?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_item_count?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_order_count?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          summary_date?: string
+          summary_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_hourly_summary: {
+        Row: {
+          created_at: string
+          estimated_cost_amount: number
+          estimated_gross_profit: number
+          first_order_time: string | null
+          id: string
+          last_jst_modified: string | null
+          last_order_time: string | null
+          net_amount: number
+          net_qty: number
+          pay_amount: number
+          pay_item_count: number
+          pay_order_count: number
+          pay_qty: number
+          platform: string | null
+          refund_amount: number
+          refund_order_count: number
+          refund_qty: number
+          shop_id: string | null
+          shop_name: string | null
+          sku_code: string | null
+          style_no: string | null
+          summary_date: string
+          summary_hour: number
+          summary_key: string
+          supplier_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          first_order_time?: string | null
+          id?: string
+          last_jst_modified?: string | null
+          last_order_time?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_item_count?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_order_count?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          sku_code?: string | null
+          style_no?: string | null
+          summary_date: string
+          summary_hour: number
+          summary_key: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          first_order_time?: string | null
+          id?: string
+          last_jst_modified?: string | null
+          last_order_time?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_item_count?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_order_count?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          sku_code?: string | null
+          style_no?: string | null
+          summary_date?: string
+          summary_hour?: number
+          summary_key?: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_order_light_items: {
+        Row: {
+          color: string | null
+          created_at: string
+          created_time: string | null
+          estimated_cost_amount: number
+          estimated_cost_price: number | null
+          has_refund: boolean
+          internal_order_type: string | null
+          internal_order_type_name: string | null
+          io_date: string | null
+          io_id: string | null
+          is_shipped: boolean
+          item_unique_key: string
+          l_id: string | null
+          last_jst_modified: string | null
+          modified_time: string | null
+          o_id: string
+          order_status: string | null
+          paid_amount: number
+          pay_amount: number
+          pay_time: string | null
+          plan_delivery_date: string | null
+          platform: string | null
+          product_name: string | null
+          qty: number
+          refund_status: string | null
+          sale_price: number
+          shop_id: string | null
+          shop_name: string | null
+          size: string | null
+          sku_code: string | null
+          sku_id: string | null
+          sku_name: string | null
+          so_id: string | null
+          style_no: string | null
+          supplier_id: string | null
+          supplier_name: string | null
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          created_time?: string | null
+          estimated_cost_amount?: number
+          estimated_cost_price?: number | null
+          has_refund?: boolean
+          internal_order_type?: string | null
+          internal_order_type_name?: string | null
+          io_date?: string | null
+          io_id?: string | null
+          is_shipped?: boolean
+          item_unique_key: string
+          l_id?: string | null
+          last_jst_modified?: string | null
+          modified_time?: string | null
+          o_id: string
+          order_status?: string | null
+          paid_amount?: number
+          pay_amount?: number
+          pay_time?: string | null
+          plan_delivery_date?: string | null
+          platform?: string | null
+          product_name?: string | null
+          qty?: number
+          refund_status?: string | null
+          sale_price?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_id?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          created_time?: string | null
+          estimated_cost_amount?: number
+          estimated_cost_price?: number | null
+          has_refund?: boolean
+          internal_order_type?: string | null
+          internal_order_type_name?: string | null
+          io_date?: string | null
+          io_id?: string | null
+          is_shipped?: boolean
+          item_unique_key?: string
+          l_id?: string | null
+          last_jst_modified?: string | null
+          modified_time?: string | null
+          o_id?: string
+          order_status?: string | null
+          paid_amount?: number
+          pay_amount?: number
+          pay_time?: string | null
+          plan_delivery_date?: string | null
+          platform?: string | null
+          product_name?: string | null
+          qty?: number
+          refund_status?: string | null
+          sale_price?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_id?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          supplier_id?: string | null
+          supplier_name?: string | null
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_sku_daily_summary: {
+        Row: {
+          color: string | null
+          created_at: string
+          estimated_cost_amount: number
+          estimated_cost_price: number | null
+          estimated_gross_profit: number
+          id: string
+          last_jst_modified: string | null
+          net_amount: number
+          net_qty: number
+          pay_amount: number
+          pay_order_count: number
+          pay_qty: number
+          platform: string | null
+          refund_amount: number
+          refund_qty: number
+          shop_id: string | null
+          shop_name: string | null
+          size: string | null
+          sku_code: string | null
+          sku_name: string | null
+          style_no: string | null
+          summary_date: string
+          summary_key: string
+          supplier_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_cost_price?: number | null
+          estimated_gross_profit?: number
+          id?: string
+          last_jst_modified?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_name?: string | null
+          style_no?: string | null
+          summary_date: string
+          summary_key: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_cost_price?: number | null
+          estimated_gross_profit?: number
+          id?: string
+          last_jst_modified?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_order_count?: number
+          pay_qty?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_name?: string | null
+          style_no?: string | null
+          summary_date?: string
+          summary_key?: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sales_style_daily_summary: {
+        Row: {
+          created_at: string
+          estimated_cost_amount: number
+          estimated_gross_profit: number
+          id: string
+          last_jst_modified: string | null
+          net_amount: number
+          net_qty: number
+          pay_amount: number
+          pay_order_count: number
+          pay_qty: number
+          pay_sku_count: number
+          platform: string | null
+          refund_amount: number
+          refund_qty: number
+          shop_id: string | null
+          shop_name: string | null
+          style_no: string | null
+          summary_date: string
+          summary_key: string
+          supplier_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          id?: string
+          last_jst_modified?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_order_count?: number
+          pay_qty?: number
+          pay_sku_count?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          style_no?: string | null
+          summary_date: string
+          summary_key: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          estimated_cost_amount?: number
+          estimated_gross_profit?: number
+          id?: string
+          last_jst_modified?: string | null
+          net_amount?: number
+          net_qty?: number
+          pay_amount?: number
+          pay_order_count?: number
+          pay_qty?: number
+          pay_sku_count?: number
+          platform?: string | null
+          refund_amount?: number
+          refund_qty?: number
+          shop_id?: string | null
+          shop_name?: string | null
+          style_no?: string | null
+          summary_date?: string
+          summary_key?: string
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shipping_risk_orders: {
+        Row: {
+          color: string | null
+          created_at: string
+          id: string
+          is_timeout: boolean
+          item_unique_key: string
+          jst_modified: string | null
+          last_checked_at: string
+          latest_ship_time: string | null
+          o_id: string
+          order_status: string | null
+          pay_time: string | null
+          platform: string | null
+          qty: number
+          receiver_province: string | null
+          remaining_hours: number | null
+          risk_level: string | null
+          shop_id: string | null
+          shop_name: string | null
+          size: string | null
+          sku_code: string | null
+          sku_name: string | null
+          so_id: string | null
+          style_no: string | null
+          supplier_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_timeout?: boolean
+          item_unique_key: string
+          jst_modified?: string | null
+          last_checked_at?: string
+          latest_ship_time?: string | null
+          o_id: string
+          order_status?: string | null
+          pay_time?: string | null
+          platform?: string | null
+          qty?: number
+          receiver_province?: string | null
+          remaining_hours?: number | null
+          risk_level?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_timeout?: boolean
+          item_unique_key?: string
+          jst_modified?: string | null
+          last_checked_at?: string
+          latest_ship_time?: string | null
+          o_id?: string
+          order_status?: string | null
+          pay_time?: string | null
+          platform?: string | null
+          qty?: number
+          receiver_province?: string | null
+          remaining_hours?: number | null
+          risk_level?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          size?: string | null
+          sku_code?: string | null
+          sku_name?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          supplier_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       shop_bank_account_bindings: {
         Row: {
           bank_account_id: string
@@ -3356,6 +3971,10 @@ export type Database = {
       }
     }
     Functions: {
+      backfill_sales_summary_from_legacy: {
+        Args: { _from?: string; _max_orders?: number; _to?: string }
+        Returns: Json
+      }
       can_read_finance: { Args: { _uid: string }; Returns: boolean }
       can_write_finance: { Args: { _uid: string }; Returns: boolean }
       classify_jst_sales_order: {
@@ -3431,6 +4050,10 @@ export type Database = {
       refresh_jst_sales_order_classification: {
         Args: { _limit?: number }
         Returns: number
+      }
+      refresh_sales_summaries_for_order_items: {
+        Args: { _item_keys: string[] }
+        Returns: Json
       }
       supplier_id_of: { Args: { _uid: string }; Returns: string }
     }
