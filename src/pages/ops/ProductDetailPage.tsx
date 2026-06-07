@@ -239,13 +239,39 @@ export default function ProductDetailPage() {
         </TabsContent>
 
         <TabsContent value="sales">
-          <Card className="p-4">
-            <DataTable
-              columns={["订单号", "店铺", "商品名", "SKU", "数量", "金额", "实付", "退款状态", "时间"]}
-              rows={sales.map(s => [s.jst_o_id ?? s.so_id, s.shop_id, s.product_name, s.sku_code, s.qty, s.amount, s.paid_amount, s.refund_status, fmt(s.synced_at)])}
-            />
-          </Card>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">近 7 天（sales_sku_daily_summary）</div>
+                {salesSummary.d7 ? (
+                  <div className="mt-1 text-sm">件数 <span className="font-semibold">{salesSummary.d7.qty}</span> · 金额 <span className="font-semibold">¥{Number(salesSummary.d7.amount).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span></div>
+                ) : <div className="mt-1 text-xs text-muted-foreground">暂无汇总数据</div>}
+              </Card>
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">近 30 天（sales_sku_daily_summary）</div>
+                {salesSummary.d30 ? (
+                  <div className="mt-1 text-sm">件数 <span className="font-semibold">{salesSummary.d30.qty}</span> · 金额 <span className="font-semibold">¥{Number(salesSummary.d30.amount).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span></div>
+                ) : <div className="mt-1 text-xs text-muted-foreground">暂无汇总数据</div>}
+              </Card>
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">数据来源</div>
+                <div className="mt-1 text-xs">
+                  {salesSource === "light" && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">轻量订单明细</Badge>}
+                  {salesSource === "legacy" && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">历史订单明细（fallback）</Badge>}
+                  {salesSource === "none" && <Badge variant="outline">暂无</Badge>}
+                  <div className="mt-1 text-[11px] text-muted-foreground">优先 sales_order_light_items；为空时回落 jst_sales_order_items</div>
+                </div>
+              </Card>
+            </div>
+            <Card className="p-4">
+              <DataTable
+                columns={["订单号", "店铺", "商品名", "SKU", "数量", "金额", "实付", "退款状态", "时间"]}
+                rows={sales.map(s => [s.jst_o_id ?? s.so_id, s.shop_id, s.product_name, s.sku_code, s.qty, s.amount, s.paid_amount, s.refund_status, fmt(s.synced_at)])}
+              />
+            </Card>
+          </div>
         </TabsContent>
+
 
         <TabsContent value="outbound">
           <Card className="p-4">
