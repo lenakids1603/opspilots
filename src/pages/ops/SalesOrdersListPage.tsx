@@ -212,6 +212,29 @@ function useTypeStats(filters: Filters) {
   });
 }
 
+function useTodaySummary() {
+  return useQuery({
+    queryKey: ["sales_orders_today_summary", todayCN()],
+    queryFn: async () => {
+      const today = todayCN();
+      const { data, error } = await (supabase as any).from("sales_daily_summary")
+        .select("pay_order_count, pay_qty, pay_amount, estimated_gross_profit")
+        .eq("summary_date", today).limit(500);
+      if (error) throw error;
+      const rows = (data ?? []) as any[];
+      const sum = (k: string) => rows.reduce((s, r) => s + Number(r[k] ?? 0), 0);
+      return {
+        present: rows.length > 0,
+        orders: sum("pay_order_count"),
+        qty: sum("pay_qty"),
+        amount: sum("pay_amount"),
+        profit: sum("estimated_gross_profit"),
+      };
+    },
+    retry: false,
+  });
+}
+
 function useOrderItems(order: any | null) {
   return useQuery({
     queryKey: ["sales_order_items", order?.id, order?.jst_o_id],
