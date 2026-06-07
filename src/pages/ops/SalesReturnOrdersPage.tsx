@@ -458,6 +458,10 @@ export default function SalesReturnOrdersPage() {
         description="展示从聚水潭同步过来的销售退仓数据，支持按退仓日期、店铺、商品、仓库、退仓状态等维度查看顾客退货入仓情况。"
       />
 
+      <div className="mb-3 rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+        新架构提示：完整销退/退款明细请以聚水潭为准。新同步默认不保存完整 raw JSON，以避免数据库被海量数据撑爆。
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-4">
         <Stat label="今日销退单数" value={fmtInt(s?.todayOrders)} error={err} />
         <Stat label="今日销退件数" value={fmtInt(s?.todayQty)} error={err} />
