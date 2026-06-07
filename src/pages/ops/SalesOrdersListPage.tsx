@@ -212,6 +212,29 @@ function useTypeStats(filters: Filters) {
   });
 }
 
+function useTodaySummary() {
+  return useQuery({
+    queryKey: ["sales_orders_today_summary", todayCN()],
+    queryFn: async () => {
+      const today = todayCN();
+      const { data, error } = await (supabase as any).from("sales_daily_summary")
+        .select("pay_order_count, pay_qty, pay_amount, estimated_gross_profit")
+        .eq("summary_date", today).limit(500);
+      if (error) throw error;
+      const rows = (data ?? []) as any[];
+      const sum = (k: string) => rows.reduce((s, r) => s + Number(r[k] ?? 0), 0);
+      return {
+        present: rows.length > 0,
+        orders: sum("pay_order_count"),
+        qty: sum("pay_qty"),
+        amount: sum("pay_amount"),
+        profit: sum("estimated_gross_profit"),
+      };
+    },
+    retry: false,
+  });
+}
+
 function useOrderItems(order: any | null) {
   return useQuery({
     queryKey: ["sales_order_items", order?.id, order?.jst_o_id],
@@ -354,6 +377,7 @@ export default function SalesOrdersListPage() {
 
   const statsQ = useStats(filters);
   const typeStatsQ = useTypeStats(filters);
+  const todaySummaryQ = useTodaySummary();
   const listQ = useOrderList(filters, page, sortKey, sortDir);
   const itemsQ = useOrderItems(detailRow ?? null);
   const aftersaleQ = useOrderAftersale(detailRow?.so_id, detailRow?.jst_o_id);
@@ -424,8 +448,22 @@ export default function SalesOrdersListPage() {
         <Stat label="已发货订单" value={fmtInt(s?.shipped)} error={err} accent="ok" />
         <Stat label="退款/退货订单" value={fmtInt(s?.refund)} error={err} accent="danger" />
       </div>
-      <div className="mb-4 text-[11px] text-muted-foreground">
-        当前统计来自历史明细表，后续将切换为销售汇总表（sales_*_summary）。
+      <div className="mb-2 text-[11px] text-muted-foreground">
+        当前以上统计来自历史明细表（jst_sales_orders）。下方为今日汇总（sales_daily_summary，新轻量来源）：
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {todaySummaryQ.data?.present ? (
+          <>
+            <Stat label="今日付款订单（汇总）" value={fmtInt(todaySummaryQ.data.orders)} />
+            <Stat label="今日付款件数（汇总）" value={fmtInt(todaySummaryQ.data.qty)} />
+            <Stat label="今日付款金额（汇总）" value={fmtMoney(todaySummaryQ.data.amount)} />
+            <Stat label="今日预估毛利" value={fmtMoney(todaySummaryQ.data.profit)} />
+          </>
+        ) : (
+          <Card className="col-span-2 md:col-span-4 p-4 text-xs text-muted-foreground">
+            {todaySummaryQ.isLoading ? "今日汇总数据加载中…" : todaySummaryQ.error ? "汇总表暂不可用，已自动忽略。" : "等待汇总数据（sales_daily_summary 今日无记录）。"}
+          </Card>
+        )}
       </div>
 
       {/* 筛选 */}

@@ -14,6 +14,8 @@ const GROUPS: Group[] = [
   {
     title: "运维系统", icon: TrendingUp,
     items: [
+      { title: "经营看板（轻量）", url: "/operations/sales-board" },
+      { title: "未发货风险", url: "/operations/shipping-risk" },
       { title: "运营分析", url: "/operations/analysis" },
       { title: "订单列表", url: "/operations/sales-orders" },
       { title: "订单超时预警", url: "/suppliers/po-alerts" },

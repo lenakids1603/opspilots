@@ -39,6 +39,8 @@ export default function ProductDetailPage() {
   const [sku, setSku] = useState<Sku | null>(null);
   const [aliases, setAliases] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
+  const [salesSource, setSalesSource] = useState<"light" | "legacy" | "none">("none");
+  const [salesSummary, setSalesSummary] = useState<{ d7: any; d30: any; rows: any[] }>({ d7: null, d30: null, rows: [] });
   const [outbound, setOutbound] = useState<any[]>([]);
   const [refunds, setRefunds] = useState<any[]>([]);
   const [aftersale, setAftersale] = useState<any[]>([]);
@@ -70,7 +72,7 @@ export default function ProductDetailPage() {
       const orSku = (col: string) => code ? `${col}.eq.${code}` : null;
       const orJst = (col: string) => jstId ? `${col}.eq.${jstId}` : null;
 
-      // 销售订单明细
+      // 销售订单明细 — 优先轻量表，旧表 fallback
       {
         const filters = [orSku("sku_code"), orJst("sku_id")].filter(Boolean).join(",");
         if (filters) {
@@ -79,11 +81,41 @@ export default function ProductDetailPage() {
             .or(filters).order("synced_at", { ascending: false }).limit(200);
           if (!lightErr && (light ?? []).length > 0) {
             setSales((light ?? []).map((r: any) => ({ ...r, jst_o_id: r.o_id, amount: r.pay_amount })));
+            setSalesSource("light");
           } else {
             const { data } = await supabase.from("jst_sales_order_items")
               .select("jst_o_id, so_id, shop_id, product_name, sku_code, sku_name, qty, amount, paid_amount, refund_status, synced_at")
               .or(filters).order("synced_at", { ascending: false }).limit(200);
             setSales(data ?? []);
+            setSalesSource((data ?? []).length > 0 ? "legacy" : "none");
+          }
+        }
+
+        // 销售汇总（按 sku_code，近 7 / 30 天）
+        if (code) {
+          const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+          const { data: sumRows, error: sumErr } = await (supabase as any).from("sales_sku_daily_summary")
+            .select("summary_date, pay_qty, pay_amount, estimated_cost_amount, estimated_gross_profit")
+            .eq("sku_code", code)
+            .gte("summary_date", d30.toISOString().slice(0, 10))
+            .order("summary_date", { ascending: false }).limit(120);
+          if (!sumErr) {
+            const rows = (sumRows ?? []) as any[];
+            const d7Cut = new Date(); d7Cut.setDate(d7Cut.getDate() - 7);
+            const d7Str = d7Cut.toISOString().slice(0, 10);
+            const agg = (filter: (r: any) => boolean) => rows.filter(filter).reduce(
+              (s, r) => ({
+                qty: s.qty + Number(r.pay_qty ?? 0),
+                amount: s.amount + Number(r.pay_amount ?? 0),
+                profit: s.profit + Number(r.estimated_gross_profit ?? 0),
+              }),
+              { qty: 0, amount: 0, profit: 0 }
+            );
+            setSalesSummary({
+              d7: agg(r => r.summary_date >= d7Str),
+              d30: agg(() => true),
+              rows,
+            });
           }
         }
       }
@@ -207,13 +239,39 @@ export default function ProductDetailPage() {
         </TabsContent>
 
         <TabsContent value="sales">
-          <Card className="p-4">
-            <DataTable
-              columns={["订单号", "店铺", "商品名", "SKU", "数量", "金额", "实付", "退款状态", "时间"]}
-              rows={sales.map(s => [s.jst_o_id ?? s.so_id, s.shop_id, s.product_name, s.sku_code, s.qty, s.amount, s.paid_amount, s.refund_status, fmt(s.synced_at)])}
-            />
-          </Card>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">近 7 天（sales_sku_daily_summary）</div>
+                {salesSummary.d7 ? (
+                  <div className="mt-1 text-sm">件数 <span className="font-semibold">{salesSummary.d7.qty}</span> · 金额 <span className="font-semibold">¥{Number(salesSummary.d7.amount).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span></div>
+                ) : <div className="mt-1 text-xs text-muted-foreground">暂无汇总数据</div>}
+              </Card>
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">近 30 天（sales_sku_daily_summary）</div>
+                {salesSummary.d30 ? (
+                  <div className="mt-1 text-sm">件数 <span className="font-semibold">{salesSummary.d30.qty}</span> · 金额 <span className="font-semibold">¥{Number(salesSummary.d30.amount).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span></div>
+                ) : <div className="mt-1 text-xs text-muted-foreground">暂无汇总数据</div>}
+              </Card>
+              <Card className="p-4">
+                <div className="text-[11px] text-muted-foreground">数据来源</div>
+                <div className="mt-1 text-xs">
+                  {salesSource === "light" && <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">轻量订单明细</Badge>}
+                  {salesSource === "legacy" && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">历史订单明细（fallback）</Badge>}
+                  {salesSource === "none" && <Badge variant="outline">暂无</Badge>}
+                  <div className="mt-1 text-[11px] text-muted-foreground">优先 sales_order_light_items；为空时回落 jst_sales_order_items</div>
+                </div>
+              </Card>
+            </div>
+            <Card className="p-4">
+              <DataTable
+                columns={["订单号", "店铺", "商品名", "SKU", "数量", "金额", "实付", "退款状态", "时间"]}
+                rows={sales.map(s => [s.jst_o_id ?? s.so_id, s.shop_id, s.product_name, s.sku_code, s.qty, s.amount, s.paid_amount, s.refund_status, fmt(s.synced_at)])}
+              />
+            </Card>
+          </div>
         </TabsContent>
+
 
         <TabsContent value="outbound">
           <Card className="p-4">
