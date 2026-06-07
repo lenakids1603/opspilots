@@ -676,6 +676,10 @@ export default function JstDataIntegrationPage() {
         description="按 API 模块管理聚水潭数据接入。基础档案是销售/采购同步的前置条件。"
       />
 
+      <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+        新架构提示：已停用「一键同步全部历史订单 / 全部商品 / 64 万 SKU / 旧版 sales_refund RAW 同步」等危险入口。新同步默认不保存完整 raw JSON，仅写入销售汇总、未发货风险、轻量订单索引和轻量商品档案。建议使用小范围的最近 10 分钟 / 1 小时 / 今日 / 未发货风险 / 按 SKU / 款号同步。
+      </div>
+
       {isLoading && <div className="text-sm text-muted-foreground">加载中…</div>}
 
       {/* 一、顶部异常提示条 */}
