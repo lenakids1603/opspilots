@@ -88,6 +88,10 @@ export default function JstProductSyncPage() {
         </Button>
       </div>
 
+      <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
+        新架构提示：不再支持一键同步聚水潭 60 万+ SKU 全量商品。建议按最近 N 天、按 SKU、或按款号小范围同步。新同步默认不保存完整 raw JSON。
+      </div>
+
       <Card className="p-4 space-y-4">
         <h2 className="font-medium">手动同步</h2>
 
