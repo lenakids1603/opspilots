@@ -1147,6 +1147,7 @@ export type Database = {
           logistics_company: string | null
           merge_so_id: string | null
           modified_time: string | null
+          order_created_at: string | null
           order_type: string | null
           paid_amount: number
           pay_amount: number
@@ -1188,6 +1189,7 @@ export type Database = {
           logistics_company?: string | null
           merge_so_id?: string | null
           modified_time?: string | null
+          order_created_at?: string | null
           order_type?: string | null
           paid_amount?: number
           pay_amount?: number
@@ -1229,6 +1231,7 @@ export type Database = {
           logistics_company?: string | null
           merge_so_id?: string | null
           modified_time?: string | null
+          order_created_at?: string | null
           order_type?: string | null
           paid_amount?: number
           pay_amount?: number
@@ -2757,6 +2760,7 @@ export type Database = {
           item_count: number
           jst_modified: string | null
           o_id: string
+          order_created_at: string | null
           order_status: string | null
           order_created_at: string | null
           pay_amount: number
@@ -2776,6 +2780,7 @@ export type Database = {
           item_count?: number
           jst_modified?: string | null
           o_id: string
+          order_created_at?: string | null
           order_status?: string | null
           order_created_at?: string | null
           pay_amount?: number
@@ -2795,6 +2800,7 @@ export type Database = {
           item_count?: number
           jst_modified?: string | null
           o_id?: string
+          order_created_at?: string | null
           order_status?: string | null
           order_created_at?: string | null
           pay_amount?: number
@@ -3411,6 +3417,7 @@ export type Database = {
           last_jst_modified: string | null
           modified_time: string | null
           o_id: string
+          order_created_at: string | null
           order_status: string | null
           paid_amount: number
           pay_amount: number
@@ -3452,6 +3459,7 @@ export type Database = {
           last_jst_modified?: string | null
           modified_time?: string | null
           o_id: string
+          order_created_at?: string | null
           order_status?: string | null
           paid_amount?: number
           pay_amount?: number
@@ -3493,6 +3501,7 @@ export type Database = {
           last_jst_modified?: string | null
           modified_time?: string | null
           o_id?: string
+          order_created_at?: string | null
           order_status?: string | null
           paid_amount?: number
           pay_amount?: number
@@ -3685,6 +3694,7 @@ export type Database = {
           last_checked_at: string
           latest_ship_time: string | null
           o_id: string
+          order_created_at: string | null
           order_status: string | null
           order_created_at: string | null
           pay_time: string | null
@@ -3713,6 +3723,7 @@ export type Database = {
           last_checked_at?: string
           latest_ship_time?: string | null
           o_id: string
+          order_created_at?: string | null
           order_status?: string | null
           order_created_at?: string | null
           pay_time?: string | null
@@ -3741,6 +3752,7 @@ export type Database = {
           last_checked_at?: string
           latest_ship_time?: string | null
           o_id?: string
+          order_created_at?: string | null
           order_status?: string | null
           order_created_at?: string | null
           pay_time?: string | null
