@@ -127,7 +127,8 @@ export default function SalesBoardPage() {
       <div className="mx-6 mb-3 rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800 flex items-start gap-2">
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
         <span>
-          本看板只读轻量汇总表，不触发任何同步或回填。当前为页面骨架；汇总按下单时间聚合，由最近 10 分钟订单同步任务持续刷新。
+          本看板只读轻量汇总表，不触发任何同步或回填。当前为页面骨架；汇总按下单时间（<code>order_created_at</code> → <code>pay_time</code>）聚合，由最近 10 分钟订单同步任务持续刷新。
+          06-03 / 06-04 高峰历史数据仍在分批回填中，7 天 / 历史趋势以当前已回填范围为准。
         </span>
       </div>
 
