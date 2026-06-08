@@ -255,6 +255,7 @@ export default function ShippingRiskPage() {
                     <TableCell className="text-xs">{r.size ?? "-"}</TableCell>
                     <TableCell className="text-right text-xs">{r.qty ?? 0}</TableCell>
                     <TableCell className="text-xs">{formatDateTimeCN(orderBusinessTime(r))}</TableCell>
+                    <TableCell className="text-xs">{formatDateTimeCN(r.pay_time)}</TableCell>
                     <TableCell className="text-xs">{formatDateTimeCN(r.latest_ship_time)}</TableCell>
                     <TableCell className={"text-right text-xs " + (r.is_timeout ? "text-rose-600 font-semibold" : "")}>{fmtHours(r.remaining_hours)}</TableCell>
                     <TableCell>{r.is_timeout ? <Badge variant="destructive">是</Badge> : <Badge variant="secondary">否</Badge>}</TableCell>
