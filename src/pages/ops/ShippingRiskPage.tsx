@@ -27,6 +27,7 @@ type RiskRow = {
   order_status: string | null;
   order_created_at: string | null;
   pay_time: string | null;
+  created_at: string | null;
   latest_ship_time: string | null;
   remaining_hours: number | null;
   is_timeout: boolean | null;
