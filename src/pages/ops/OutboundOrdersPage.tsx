@@ -140,7 +140,7 @@ async function aggregateItems(packageIds: string[]) {
   const agg: Record<string, { qty: number; count: number }> = {};
   for (let i = 0; i < packageIds.length; i += 800) {
     const slice = packageIds.slice(i, i + 800);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("warehouse_shipping_package_items")
       .select("package_id, qty")
       .in("package_id", slice);
@@ -165,13 +165,13 @@ function useStats() {
       const monthRange = beijingDayRangeToUTC(today.slice(0, 8) + "01")!;
 
       const [todayPackagesRes, monthPackagesRes] = await Promise.all([
-        supabase
+        (supabase as any)
           .from("warehouse_shipping_packages")
           .select("id,o_id,status", { count: "exact" })
           .gte("send_date", todayRange.gte)
           .lte("send_date", todayRange.lte)
           .limit(5000),
-        supabase
+        (supabase as any)
           .from("warehouse_shipping_packages")
           .select("id,o_id,status", { count: "exact" })
           .gte("send_date", monthRange.gte)
@@ -223,7 +223,7 @@ function useOutboundList(filters: Filters, page: number, sortKey: SortKey, sortD
       let packageIdsFromSku: string[] | null = null;
       if (filters.sku) {
         const safeSku = filters.sku.replace(/[,()]/g, "");
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from("warehouse_shipping_package_items")
           .select("package_id")
           .or(`sku_id.ilike.%${safeSku}%,sku_code.ilike.%${safeSku}%,style_no.ilike.%${safeSku}%,product_name.ilike.%${safeSku}%`)
@@ -252,7 +252,7 @@ function useOutboundList(filters: Filters, page: number, sortKey: SortKey, sortD
       };
 
       if (!isItemSort) {
-        let q = supabase.from("warehouse_shipping_packages").select("*", { count: "exact" });
+        let q = (supabase as any).from("warehouse_shipping_packages").select("*", { count: "exact" });
         q = applyFilters(q, filters);
         if (packageIdsFromSku) q = q.in("id", packageIdsFromSku);
         q = q.order(sortKey, { ascending: sortDir === "asc", nullsFirst: false });
@@ -264,7 +264,7 @@ function useOutboundList(filters: Filters, page: number, sortKey: SortKey, sortD
         return { rows, count: count ?? rows.length };
       }
 
-      let qAll = supabase.from("warehouse_shipping_packages").select("*").limit(5000);
+      let qAll = (supabase as any).from("warehouse_shipping_packages").select("*").limit(5000);
       qAll = applyFilters(qAll, filters);
       if (packageIdsFromSku) qAll = qAll.in("id", packageIdsFromSku);
       const { data, error } = await qAll;
@@ -313,7 +313,7 @@ function usePackageItems(packageId: string | null) {
     queryKey: ["warehouse_shipping_package_items", packageId],
     enabled: !!packageId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("warehouse_shipping_package_items")
         .select("*")
         .eq("package_id", packageId!)

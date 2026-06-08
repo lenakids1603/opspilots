@@ -32,7 +32,7 @@ export function OutboundSyncCompactCard() {
   const countQ = useQuery({
     queryKey: ["warehouse_shipping_package_count_compact"],
     queryFn: async () => {
-      const { count, error } = await supabase
+      const { count, error } = await (supabase as any)
         .from("warehouse_shipping_packages")
         .select("id", { count: "exact", head: true });
       if (error) throw error;
