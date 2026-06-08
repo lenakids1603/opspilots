@@ -138,6 +138,7 @@ export default function ShippingRiskPage() {
         <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
         <span>
           本页面只读 shipping_risk_orders，不触发同步、不调用回填。订单变为已发货 / 已取消后会被同步任务自动从该表移除。完整订单明细仍以聚水潭为准。
+          时间口径：下单时间 = <code>order_created_at</code>（回退 <code>pay_time</code>），付款时间 = <code>pay_time</code>，最晚发货 = <code>latest_ship_time</code>，最后检查 = <code>last_checked_at</code>。系统入库时间（<code>created_at</code>）不作为下单时间展示。
         </span>
       </div>
 
