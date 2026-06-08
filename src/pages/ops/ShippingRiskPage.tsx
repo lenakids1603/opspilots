@@ -74,7 +74,7 @@ function fmtHours(h: number | null) {
   return `${n.toFixed(1)}h`;
 }
 
-const orderBusinessTime = (row: RiskRow) => row.order_created_at ?? row.pay_time ?? null;
+const orderBusinessTime = (row: RiskRow) => row.order_created_at ?? row.pay_time ?? (row as any).created_at ?? null;
 
 export default function ShippingRiskPage() {
   const [filters, setFilters] = useState<Filters>(defaultFilters());
