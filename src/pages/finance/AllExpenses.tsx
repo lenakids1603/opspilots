@@ -28,7 +28,7 @@ export default function AllExpenses() {
 
   const fetchExpenses = async () => {
     let query = supabase.from('expenses').select('*').order('created_at', { ascending: false });
-    if (statusFilter !== 'all') query = query.eq("status" as any, statusFilter as any);
+    if (statusFilter !== 'all') query = (query as any).eq("status", statusFilter);
     const { data } = await query;
     setExpenses((data as unknown as Expense[]) || []);
     setLoading(false);
