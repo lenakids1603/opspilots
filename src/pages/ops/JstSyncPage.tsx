@@ -247,10 +247,9 @@ export default function JstSyncPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">聚水潭同步</h1>
+          <h1 className="text-2xl font-semibold">聚水潭数据同步</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            采购单 / 采购入库 / 商品资料 / SKU / 商品图片 全部在此页面手动触发,
-            按 sync_type 区分日志。
+            自动同步任务状态与全部同步记录见下方面板；手动同步入口保留在页面下半部分各 API 区块。
           </p>
         </div>
         <Button variant="outline" onClick={load} disabled={loading}>
@@ -258,6 +257,9 @@ export default function JstSyncPage() {
           刷新
         </Button>
       </div>
+
+      {/* === 新增：自动同步总览 + 同步记录（jst_sync_jobs） === */}
+      <AutoSyncOverview />
 
       <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
         新架构提示：本系统不再做「一键同步全部历史订单 / 全部商品 / 64 万 SKU」。新同步默认不保存完整 raw JSON，仅写入销售汇总、未发货风险、轻量订单索引和轻量商品档案。建议使用小范围按时间窗口或按 SKU / 款号同步。
