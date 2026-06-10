@@ -620,7 +620,7 @@ export default function JstDataIntegrationPage() {
     },
     {
       stage: 2, name: "店铺映射检查", mode: "校验",
-      progress: Math.round(mapping?.rate ?? 0),
+      progress: Math.round(mapping?.matchRate ?? 0),
       status: (mapping && mapping.unmapped > 0 ? "warn" : "ok") as ModuleStatus,
       last: mapping?.lastSync,
       onLog: () => setShopMappingsOpen(true), opLabel: "管理映射",
