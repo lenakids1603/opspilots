@@ -258,8 +258,7 @@ export default function JstSyncPage() {
         </Button>
       </div>
 
-      {/* === 新增：自动同步总览 + 同步记录（jst_sync_jobs） === */}
-      <AutoSyncOverview />
+
 
       <div className="rounded-md border border-sky-300 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-800">
         新架构提示：本系统不再做「一键同步全部历史订单 / 全部商品 / 64 万 SKU」。新同步默认不保存完整 raw JSON，仅写入销售汇总、未发货风险、轻量订单索引和轻量商品档案。建议使用小范围按时间窗口或按 SKU / 款号同步。
