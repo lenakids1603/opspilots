@@ -22,7 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  AlertTriangle, RefreshCw, ChevronDown, FileText, Package, Warehouse, Truck,
+  RefreshCw, ChevronDown, FileText, Package, Warehouse, Truck,
   Search, Stethoscope, Store, Users, Building2, ShoppingCart, PackageCheck,
   Link2, Boxes, LineChart, Plug, Download, Filter, Clock, MoreVertical, StopCircle,
 } from "lucide-react";
@@ -572,10 +572,6 @@ export default function JstDataIntegrationPage() {
   const moduleByKey = (k: string) => modules.find((m) => m.module_key === k);
   const baseMod = moduleByKey("base_archive");
 
-  const abnormalModules = useMemo(
-    () => modules.filter((m) => m.status === "error" || m.status === "warn"),
-    [modules],
-  );
 
   const filteredLogs = useMemo(() => {
     const allLogs: any[] = [...runs.map((r: any) => ({ ...r, _source: "run" })), ...purchaseLogRows];
@@ -688,26 +684,7 @@ export default function JstDataIntegrationPage() {
 
       {isLoading && <div className="text-sm text-muted-foreground">加载中…</div>}
 
-      {/* 一、顶部异常提示条 */}
-      {(abnormalModules.length > 0 || (mapping && mapping.unmapped > 0)) && (
-        <div className="rounded-md border border-amber-300 bg-amber-50/70 px-4 py-3 flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-          <div className="flex-1 text-sm text-amber-900">
-            <span className="font-medium">警告：</span>
-            发现高风险同步阻碍：
-            {productExtra.status === "warn" && "SKU 初始化未完成，"}
-            {mapping && mapping.unmapped > 0 && `${mapping.unmapped} 个店铺未映射，`}
-            请尽快处理前置条件。
-          </div>
-          <Button size="sm" variant="outline"
-            onClick={() => document.getElementById("jst-sync-logs")?.scrollIntoView({ behavior: "smooth" })}>
-            查看异常
-          </Button>
-          <Button size="sm" onClick={() => setShopMappingsOpen(true)}>处理前置条件</Button>
-        </div>
-      )}
-
-      {/* 二、自动同步总览 + 同步记录（取代旧的全局状态条与旧同步日志） */}
+      {/* 一、自动同步总览 + 同步记录（取代旧的全局状态条与旧同步日志） */}
       <AutoSyncOverview />
 
       {/* 三、核心数据概览 */}
