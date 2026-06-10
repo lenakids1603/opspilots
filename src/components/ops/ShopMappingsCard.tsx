@@ -346,6 +346,24 @@ export function ShopMappingsCard() {
             value={quality.noEntity}
             tone={quality.noEntity ? "warn" : undefined}
             onClick={() => navigate("/finance/master-data?tab=shops&filter=missing_entity")}
+            warningTooltip={
+              quality.noEntity > 0 ? (
+                <div className="space-y-1.5">
+                  <p>
+                    店铺已全部处理，但仍有 {quality.noEntity} 个已映射店铺缺经营主体
+                    {quality.noPlatform > 0 ? `、${quality.noPlatform} 个缺平台` : ""}，因此正式销售汇总暂不可用。
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="link"
+                    className="h-auto p-0 text-amber-900"
+                    onClick={() => navigate("/finance/master-data?tab=shops&filter=missing_entity")}
+                  >
+                    去财务基础资料处理 <ExternalLink className="w-3 h-3 ml-0.5 inline" />
+                  </Button>
+                </div>
+              ) : undefined
+            }
           />
           <Stat
             label="缺平台（已映射启用）"
@@ -355,27 +373,6 @@ export function ShopMappingsCard() {
           />
           <Stat label="疑似重复绑定" value={quality.dupCount} tone={quality.dupCount ? "danger" : undefined} />
         </div>
-
-        {quality.needsAttention ? (
-          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              {quality.pending === 0 && (quality.noEntity > 0 || quality.noPlatform > 0)
-                ? `店铺已全部处理，但仍有 ${quality.noEntity} 个已映射店铺缺经营主体、${quality.noPlatform} 个缺平台，因此正式销售汇总暂不可用。`
-                : `仍有店铺未处理时，正式销售汇总受限。已忽略的历史店铺不会阻塞同步。`}
-              <Button
-                size="sm" variant="link" className="h-auto p-0 ml-2 text-amber-900"
-                onClick={() => navigate("/finance/master-data?tab=shops&filter=missing_entity")}
-              >
-                去财务基础资料处理 <ExternalLink className="w-3 h-3 ml-0.5" />
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
-            店铺映射处理完成。已忽略店铺不参与正式经营统计。
-          </div>
-        )}
       </CardContent>
 
       {/* 批量忽略弹窗 */}
