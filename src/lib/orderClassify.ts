@@ -1,5 +1,7 @@
 // 订单生命周期分类（ERP 内部口径）
-// 与 supabase/functions/_shared/orderClassify.ts 保持同步
+// ⚠️ 本文件与 supabase/functions/_shared/orderClassify.ts 是同一逻辑的两份镜像
+//    （前端 Vite 与 Deno Edge 运行时无法共享同一模块）。两份的分类结果必须保持一致，
+//    由 src/lib/orderClassify.test.ts 的 parity 用例自动校验——改动任一份请同步另一份。
 
 export type InternalOrderType =
   | "unpaid_cancelled"
