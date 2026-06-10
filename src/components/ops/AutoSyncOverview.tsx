@@ -370,18 +370,22 @@ export default function AutoSyncOverview() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h2 className="text-base font-semibold">自动同步总览</h2>
-            <p className="text-xs text-muted-foreground">
-              自动同步运行中 · <span className="font-medium text-foreground">{summary.activeCount}</span> 个定时任务启用
-              {" · "}
-              <span className="font-medium text-foreground">{summary.unconfigured}</span> 个模块未配置
-              {" · 最近 24 小时 "}
-              成功{" "}
-              <span className="text-emerald-600 font-medium">{summary.succ}</span>
-              {" / 失败 "}
-              <span className={summary.fail > 0 ? "text-red-600 font-medium" : "font-medium"}>{summary.fail}</span>
-            </p>
-            {overviewError && (
-              <p className="text-xs text-red-600 mt-1">无法读取自动同步总览：{overviewError}</p>
+            {overviewError ? (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">自动同步状态未知</span>
+                {" · 无法读取定时任务信息"}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                自动同步运行中 · <span className="font-medium text-foreground">{summary.activeCount}</span> 个定时任务启用
+                {" · "}
+                <span className="font-medium text-foreground">{summary.unconfigured}</span> 个模块未配置
+                {" · 最近 24 小时 "}
+                成功{" "}
+                <span className="text-emerald-600 font-medium">{summary.succ}</span>
+                {" / 失败 "}
+                <span className={summary.fail > 0 ? "text-red-600 font-medium" : "font-medium"}>{summary.fail}</span>
+              </p>
             )}
           </div>
           <Button variant="outline" size="sm" onClick={loadOverview} disabled={loading}>
@@ -390,7 +394,29 @@ export default function AutoSyncOverview() {
           </Button>
         </div>
 
-        {summary.failedJobs.length > 0 && (
+        {overviewError && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-900">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-1">
+                <p className="font-medium">自动同步功能尚未在当前环境启用</p>
+                <p className="text-amber-800/80">
+                  下方手动同步功能不受影响，可继续使用。如需启用自动同步，请联系运维配置。
+                </p>
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-amber-700 hover:text-amber-900 select-none">
+                    技术详情
+                  </summary>
+                  <pre className="mt-1 whitespace-pre-wrap break-all text-[11px] text-amber-900/80 bg-amber-100/50 rounded px-2 py-1.5">
+                    {overviewError}
+                  </pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!overviewError && summary.failedJobs.length > 0 && (
           <div className="mt-3 space-y-2">
             {summary.failedJobs.map((r) => (
               <div
