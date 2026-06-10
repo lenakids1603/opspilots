@@ -817,7 +817,8 @@ export default function JstDataIntegrationPage() {
                     { label: "未绑定", value: fmtNum(mapping?.unmapped), valueTone: mapping && mapping.unmapped > 0 ? "destructive" : "default" },
                     { label: "无主体绑定", value: fmtNum(mapping?.noEntity) },
                     { label: "无平台绑定", value: fmtNum(mapping?.noPlatform) },
-                    { label: "绑定完整率", value: `${(mapping?.rate ?? 0).toFixed(1)}%`, valueTone: mapping && mapping.rate < 100 ? "destructive" : "default" },
+                    { label: "店铺匹配率", value: `${(mapping?.matchRate ?? 0).toFixed(1)}%`, valueTone: mapping && mapping.matchRate < 100 ? "destructive" : "default" },
+                    { label: "主体绑定率", value: `${(mapping?.entityBindingRate ?? 0).toFixed(1)}%`, valueTone: mapping && mapping.entityBindingRate < 100 ? "destructive" : "default" },
                   ]}
                   actions={
                     <>
