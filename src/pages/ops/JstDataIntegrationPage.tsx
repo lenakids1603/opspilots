@@ -60,9 +60,9 @@ function StatusBadge({ value }: { value: ModuleStatus }) {
   return <Badge variant="secondary" className={m.cls}>{m.label}</Badge>;
 }
 const fmtTime = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
+  iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
 const fmtDateTime = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+  iso ? new Date(iso).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 const fmtDuration = (ms?: number | null) =>
   ms == null ? "—" : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 const fmtNum = (n: number | null | undefined) => (n ?? 0).toLocaleString("zh-CN");
