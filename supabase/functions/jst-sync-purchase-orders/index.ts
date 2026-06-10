@@ -1712,6 +1712,13 @@ Deno.serve(async (req) => {
     } else if (forceBackfill) {
       // force_backfill 必须传 start_date,否则报错
       throw new Error("force_backfill 模式必须传 start_date");
+    } else if (body.minutes != null || body.hours != null || body.days != null) {
+      // 与其它同步函数的 minutes/hours/days 窗口约定一致（cron 增量调用用）。
+      // 不传窗口参数时仍走 jst_sync_state 游标增量。
+      const ms = body.minutes != null ? Number(body.minutes) * 60_000
+        : body.hours != null ? Number(body.hours) * 3600_000
+        : Number(body.days) * 86400_000;
+      fromIso = new Date(Date.now() - Math.max(60_000, ms)).toISOString();
     } else {
       const { data: st } = await admin
         .from("jst_sync_state")

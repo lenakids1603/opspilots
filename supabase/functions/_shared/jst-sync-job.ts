@@ -661,8 +661,13 @@ export async function handleJobActions(opts: {
 
   if (opts.action === opts.startActionName) {
     const { from, to } = opts.resolveWindowFromBody(opts.body);
-    const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86400_000));
-    const requestedRange = opts.body.requested_range ?? (days <= 1 ? "1d" : days <= 7 ? "7d" : days <= 30 ? "30d" : "custom");
+    // 亚天级窗口（cron 增量同步常用 minutes/hours）按分钟/小时显示，避免 45 分钟窗口被标成 "1d"
+    const windowMinutes = Math.max(1, Math.round((to.getTime() - from.getTime()) / 60_000));
+    const days = Math.max(1, Math.round(windowMinutes / 1440));
+    const requestedRange = opts.body.requested_range
+      ?? (windowMinutes < 60 ? `${windowMinutes}m`
+        : windowMinutes < 1440 ? `${Math.round(windowMinutes / 60)}h`
+        : days <= 1 ? "1d" : days <= 7 ? "7d" : days <= 30 ? "30d" : "custom");
     const job = await createJob({
       syncType: opts.syncType,
       fromIso: from.toISOString(),

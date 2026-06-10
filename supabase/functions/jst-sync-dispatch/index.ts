@@ -867,21 +867,33 @@ Deno.serve(async (req) => {
     new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   try {
-    const auth = req.headers.get("Authorization") ?? "";
-    if (!auth.startsWith("Bearer ")) return respJson({ error: "缺少 Authorization" }, 401);
-    const userClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } } });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) return respJson({ error: "未登录" }, 401);
+    // 定时入口（与 jst-sync-sales-orders 一致）：x-cron-secret / x-internal-tick 任一匹配即放行，
+    // 否则要求 admin JWT。cron 调用无登录用户，user 为 null。
+    const cronSecret = req.headers.get("x-cron-secret") ?? "";
+    const internalTick = req.headers.get("x-internal-tick") ?? "";
+    const okCron = !!Deno.env.get("JST_SYNC_CRON_SECRET") && cronSecret === Deno.env.get("JST_SYNC_CRON_SECRET");
+    const okInternal = !!SERVICE_ROLE && internalTick === SERVICE_ROLE;
 
-    // 权限校验
-    const { data: isInternal } = await admin.rpc("is_ops_internal", { _uid: user.id });
-    const { data: isAdmin } = await admin.rpc("has_ops_role", { _uid: user.id, _code: "admin" });
-    if (!isInternal || !isAdmin) return respJson({ error: "需 admin 权限" }, 403);
+    let user: { id: string } | null = null;
+    if (!okCron && !okInternal) {
+      const auth = req.headers.get("Authorization") ?? "";
+      if (!auth.startsWith("Bearer ")) return respJson({ error: "缺少 Authorization" }, 401);
+      const userClient = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } } });
+      const { data: { user: jwtUser } } = await userClient.auth.getUser();
+      if (!jwtUser) return respJson({ error: "未登录" }, 401);
+
+      // 权限校验
+      const { data: isInternal } = await admin.rpc("is_ops_internal", { _uid: jwtUser.id });
+      const { data: isAdmin } = await admin.rpc("has_ops_role", { _uid: jwtUser.id, _code: "admin" });
+      if (!isInternal || !isAdmin) return respJson({ error: "需 admin 权限" }, 403);
+      user = jwtUser;
+    }
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? "sync");
-    const moduleKey = String(body.module_key ?? "");
-    const triggerType = String(body.trigger_type ?? "manual");
+    // cron 调用默认跑 base_archive（店铺/供应商/仓库全量快照，upsert 幂等）
+    const moduleKey = String(body.module_key ?? ((okCron || okInternal) ? "base_archive" : ""));
+    const triggerType = String(body.trigger_type ?? ((okCron || okInternal) ? "cron" : "manual"));
     const scope = body.scope as string[] | undefined;
     const days = Math.max(1, Math.min(60, Number(body.days ?? 7)));
 
@@ -907,7 +919,7 @@ Deno.serve(async (req) => {
         await admin.from("jst_sync_runs").insert({
           module_key: "connection", trigger_type: "manual", status,
           started_at: checkedAt, finished_at: new Date().toISOString(), duration_ms: durationMs,
-          current_total_summary: summary, error_message: errorMessage, created_by: user.id,
+          current_total_summary: summary, error_message: errorMessage, created_by: user?.id ?? null,
         });
       };
       if (missing.length || !hasTokenSource) {
@@ -1017,7 +1029,7 @@ Deno.serve(async (req) => {
 
       const { data: runRow, error: runErr } = await admin.from("jst_sync_runs").insert({
         module_key: "sales_refund", trigger_type: triggerType, status: "running",
-        started_at: startedAt, created_by: user.id,
+        started_at: startedAt, created_by: user?.id ?? null,
         current_total_summary: precheck.blocking
           ? `开始同步原始数据(店铺映射未完成,跳过正式汇总):${precheck.summary}`
           : `开始同步并生成正式汇总`,
@@ -1092,13 +1104,16 @@ Deno.serve(async (req) => {
     // 写入 run 记录
     const { data: runRow, error: runErr } = await admin.from("jst_sync_runs").insert({
       module_key: moduleKey, trigger_type: triggerType, status: "running",
-      started_at: startedAt, created_by: user.id,
+      started_at: startedAt, created_by: user?.id ?? null,
       current_total_summary: `开始同步：${targets.join(", ")}`,
     }).select("id").single();
     if (runErr) return respJson({ error: runErr.message }, 500);
     const runId = runRow.id;
 
-    // 子任务隔离执行：单个失败不影响其它子任务，最终聚合状态
+    // 子任务隔离执行：单个失败不影响其它子任务，最终聚合状态。
+    // cron 调用时整体放入后台（EdgeRuntime.waitUntil）并立即返回 200，
+    // 避免 pg_net 30s 客户端超时；交互调用仍同步等待结果。
+    const executeBaseArchive = async (): Promise<{ body: unknown; status: number }> => {
     const subResults: Record<string, { status: "ok" | "error" | "skipped"; summary: string; inserted: number; updated: number; error?: string; extra?: any }> = {
       shops: { status: "skipped", summary: "未执行", inserted: 0, updated: 0 },
       suppliers: { status: "skipped", summary: "未执行", inserted: 0, updated: 0 },
@@ -1212,7 +1227,7 @@ Deno.serve(async (req) => {
         }, { onConflict: "metric_key" });
       }
 
-      return respJson({ ok: failSubs.length === 0, run_id: runId, status: overallStatus, summary, inserted, updated, duration_ms: durationMs, sub_results: subResults, shopStats });
+      return { body: { ok: failSubs.length === 0, run_id: runId, status: overallStatus, summary, inserted, updated, duration_ms: durationMs, sub_results: subResults, shopStats }, status: 200 };
 
     } catch (e: any) {
       // 兜底：理论上不会到这里（子任务已 try/catch），但只要发生就保证 run 收尾
@@ -1231,7 +1246,7 @@ Deno.serve(async (req) => {
         status: "error", last_result_summary: errMsg.slice(0, 200),
         last_sync_at: finishedAt,
       }).eq("module_key", "base_archive");
-      return respJson({ ok: false, run_id: runId, error: errMsg }, 200);
+      return { body: { ok: false, run_id: runId, error: errMsg }, status: 200 };
     } finally {
       // ★ 终极兜底：无论如何，确保 run 不会停留在 running
       if (!runFinalized) {
@@ -1243,6 +1258,15 @@ Deno.serve(async (req) => {
         }).eq("id", runId).eq("status", "running");
       }
     }
+    };
+
+    if (okCron || okInternal) {
+      // @ts-ignore EdgeRuntime is available in Supabase Edge Runtime
+      EdgeRuntime.waitUntil(executeBaseArchive());
+      return respJson({ ok: true, background: true, run_id: runId, message: "base_archive 同步已在后台启动" });
+    }
+    const result = await executeBaseArchive();
+    return respJson(result.body, result.status);
   } catch (e: any) {
     return respJson({ error: String(e?.message ?? e) }, 500);
   }
