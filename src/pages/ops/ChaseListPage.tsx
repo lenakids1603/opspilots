@@ -323,10 +323,18 @@ export default function ChaseListPage() {
                       {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                       <div className="font-medium flex-1 truncate">{g.supplier_name || "未知供应商"}</div>
                       <div className="text-sm text-muted-foreground hidden sm:block">
-                        超期 <span className="text-foreground font-semibold">{fmtNum(g.totalQty)}</span> 件
+                        催货 <span className="text-foreground font-semibold">{fmtNum(g.totalQty)}</span> 件
                         · 涉及 {fmtNum(g.styleCount)} 款
                       </div>
-                      <Badge variant="destructive">最长超期 {g.maxDays} 天</Badge>
+                      {g.overdueQty > 0 && (
+                        <Badge variant="destructive">已超时 {fmtNum(g.overdueQty)} 件</Badge>
+                      )}
+                      {g.due24Qty > 0 && (
+                        <Badge className="bg-orange-500 hover:bg-orange-500/90 text-white border-transparent">
+                          24h内 {fmtNum(g.due24Qty)} 件
+                        </Badge>
+                      )}
+                      <Badge variant="secondary">最长超期 {g.maxDays} 天</Badge>
                       <Button
                         variant="outline" size="sm"
                         onClick={(e) => { e.stopPropagation(); exportSupplier(g); }}
@@ -336,13 +344,16 @@ export default function ChaseListPage() {
                     </button>
                     {open && (
                       <div className="border-t overflow-x-auto">
-                        <table className="w-full text-sm min-w-[720px]">
+                        <table className="w-full text-sm min-w-[860px]">
                           <thead className="bg-muted/40 text-muted-foreground">
                             <tr>
                               <th className="text-left px-4 py-2 font-medium w-8"></th>
                               <th className="text-left px-4 py-2 font-medium">SKU</th>
                               <th className="text-left px-4 py-2 font-medium">款号</th>
-                              <th className="text-right px-4 py-2 font-medium">急需件数</th>
+                              <th className="text-right px-4 py-2 font-medium">总件数</th>
+                              <th className="text-right px-4 py-2 font-medium">已超时</th>
+                              <th className="text-right px-4 py-2 font-medium">24h内</th>
+                              <th className="text-right px-4 py-2 font-medium">48h内</th>
                               <th className="text-right px-4 py-2 font-medium">涉及采购单</th>
                               <th className="text-right px-4 py-2 font-medium">最长超期</th>
                             </tr>
