@@ -190,15 +190,17 @@ function SkuThumb({ sku, imageUrl, onPreview, size = 40 }: {
   );
 }
 
-function ProductThumb({ src, alt, size = 44, ringClass, onClick }: {
-  src: string | null; alt: string; size?: number; ringClass?: string; onClick?: () => void;
+function ProductThumb({ src, alt, size = 48, ringClass, onClick, radiusClass = "rounded-lg" }: {
+  src: string | null; alt: string; size?: number; ringClass?: string;
+  onClick?: () => void; radiusClass?: string;
 }) {
   const [errored, setErrored] = useState(false);
   const showImg = !!src && !errored;
   return (
     <div
       className={cn(
-        "rounded-md bg-muted overflow-hidden flex items-center justify-center shrink-0 ring-2 ring-offset-1 ring-offset-background",
+        radiusClass,
+        "bg-muted overflow-hidden flex items-center justify-center shrink-0 ring-2 ring-offset-1 ring-offset-background",
         ringClass ?? "ring-muted-foreground/30",
         onClick && "cursor-pointer hover:opacity-90",
       )}
