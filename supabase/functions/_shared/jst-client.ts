@@ -192,7 +192,9 @@ export async function callOpenweb(
       err.transient = true; err.errorType = "timeout";
       throw err;
     }
-    if (/network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket/i.test(msg)) {
+    // Deno fetch 的代理/连接类错误形如 "error sending request for url (...):
+    // client error (Connect): Connection reset by peer (os error 104)"
+    if (/network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket|connection reset|connection refused|connection closed|broken pipe|error sending request|client error \(Connect\)|os error \d+/i.test(msg)) {
       (e as any).transient = true;
       (e as any).errorType = "network";
     }

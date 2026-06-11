@@ -1,1 +1,51 @@
 project_id = "cnwuimllzotitgsurofn"
+
+# 所有 Edge Function 自行鉴权（x-cron-secret / x-internal-tick / admin JWT，见 resolveCaller），
+# 平台层 verify_jwt 必须关闭，否则 pg_cron 经 invoke_jst_sync 的调用会被 401 拒绝。
+# 2026-06-11 事故：jst-sync-sales-orders v45 被以默认 verify_jwt=true 重新部署，
+# 销售订单自动同步全部 401 中断。此处显式声明，部署时禁止用默认值覆盖。
+
+[functions.jst-sync-sales-orders]
+verify_jwt = false
+
+[functions.jst-sync-outbound-orders]
+verify_jwt = false
+
+[functions.jst-sync-purchase-orders]
+verify_jwt = false
+
+[functions.jst-sync-refund-orders]
+verify_jwt = false
+
+[functions.jst-sync-aftersale-received]
+verify_jwt = false
+
+[functions.jst-sync-dispatch]
+verify_jwt = false
+
+[functions.jst-sync-products]
+verify_jwt = false
+
+[functions.jst-debug-outbound-fields]
+verify_jwt = false
+
+[functions.ops-product-master-derive]
+verify_jwt = false
+
+[functions.ask-ai]
+verify_jwt = false
+
+[functions.parse-bank-receipt]
+verify_jwt = false
+
+[functions.admin-supplier-accounts]
+verify_jwt = false
+
+[functions.bootstrap-accounts]
+verify_jwt = false
+
+[functions.supplier-purchase-orders]
+verify_jwt = false
+
+[functions.supplier-purchase-order-detail]
+verify_jwt = false

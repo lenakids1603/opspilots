@@ -324,7 +324,8 @@ async function upsertLightItemRows(rows: any[]) {
   let upserted = 0;
   let failed = 0;
   let lastErr = "";
-  for (const itemChunk of chunk(rows, 500)) {
+  // 单批 200 行：批次过大时持锁/语句时长随之放大，曾触发 statement timeout
+  for (const itemChunk of chunk(rows, 200)) {
     const { error } = await admin
       .from("sales_order_light_items")
       .upsert(itemChunk, { onConflict: "item_unique_key" });
@@ -352,7 +353,7 @@ async function maybeUpsertLegacyItemRows(rows: any[]) {
   let upserted = 0;
   let failed = 0;
   let lastErr = "";
-  for (const itemChunk of chunk(rows, 500)) {
+  for (const itemChunk of chunk(rows, 200)) {
     const { error } = await admin
       .from("jst_sales_order_items")
       .upsert(itemChunk, { onConflict: "item_unique_key" });

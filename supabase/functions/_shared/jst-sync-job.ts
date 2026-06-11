@@ -225,7 +225,7 @@ function isTransientError(err: any): boolean {
   const code = String(err.code ?? "");
   if (code === "ABORTED" || code === "429" || /^5\d\d$/.test(code)) return true;
   const msg = String(err.message ?? err.apiMsg ?? "");
-  if (/请求超时|timeout|timed out|AbortError|aborted|network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|HTTP 5\d\d|HTTP 429|限流|频率/i.test(msg)) {
+  if (/请求超时|timeout|timed out|AbortError|aborted|network|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|HTTP 5\d\d|HTTP 429|限流|频率|connection reset|connection refused|connection closed|broken pipe|error sending request|client error \(Connect\)|os error \d+|canceling statement|deadlock detected/i.test(msg)) {
     return true;
   }
   return false;
@@ -234,6 +234,10 @@ function isTransientError(err: any): boolean {
 function classifyErrorType(err: any): string {
   if (err?.errorType) return String(err.errorType);
   const msg = String(err?.message ?? "");
+  // 数据库侧错误（statement/lock timeout、死锁）：重试有效，但拆分时间窗口无效
+  if (/canceling statement due to lock timeout|deadlock detected/i.test(msg)) return "db_lock";
+  if (/canceling statement due to statement timeout/i.test(msg)) return "db_timeout";
+  if (/network|fetch failed|ECONN|ETIMEDOUT|socket|connection reset|connection refused|broken pipe|error sending request|client error \(Connect\)/i.test(msg)) return "network";
   if (/超时|timeout|AbortError|aborted/i.test(msg)) return "timeout";
   if (/HTTP 5\d\d/.test(msg)) return "http_5xx";
   if (/HTTP 429|限流|rate/i.test(msg)) return "rate_limited";
@@ -262,6 +266,8 @@ function splitWindow(win: { from: string; to: string }, parts = 2): Array<{ from
 
 const MAX_RETRY_BEFORE_SPLIT = 2;
 const MAX_SPLIT_TIMES = 4;
+/** 窗口总数硬上限：拆分只在低于该值时进行，防止失败重试导致窗口数滚雪球。 */
+const MAX_TOTAL_WINDOWS = 24;
 
 /** Returns true if the job should still continue (not cancelled). */
 async function checkNotCancelled(jobId: string): Promise<boolean> {
@@ -326,6 +332,9 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
     let totalFailed = job.total_failed ?? 0;
     let pagesThisRun = 0;
     let lastError = "";
+    // 仅 processPage 抛出的非临时错误（页未推进）才允许终结任务；
+    // 页内写入失败（result.failed>0）只记录 lastError，任务继续推进。
+    let hardFailed = false;
     let transientPause = false;
     let transientMessage = "";
     let consecutiveTransient: number = Number(metadata.consecutive_transient ?? 0);
@@ -365,7 +374,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
         let proactiveSplitInfo = "";
         if (!movedNext && proactiveSplitAfterPage > 0 && pageIndex >= proactiveSplitAfterPage) {
           const splitCount = metadata.split_count ?? 0;
-          if (splitCount < MAX_SPLIT_TIMES) {
+          if (splitCount < MAX_SPLIT_TIMES && windows.length < MAX_TOTAL_WINDOWS) {
             // Split the CURRENT window in 2: keep "processed" half as done conceptually,
             // restart from page 1 on the remaining half.
             const sub = splitWindow(windows[windowIndex], 2);
@@ -460,9 +469,11 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
           metadata.last_failed_page_index = pageIndex;
 
           let splitInfo = "";
-          if (retry.count >= MAX_RETRY_BEFORE_SPLIT) {
+          // DB 侧错误（statement/lock timeout、死锁）与时间窗口大小无关，拆分窗口只会
+          // 重复回补已处理的页，因此仅对 JST 接口侧错误做自适应拆分。
+          if (retry.count >= MAX_RETRY_BEFORE_SPLIT && !errType.startsWith("db_")) {
             const splitCount = (metadata.split_count ?? 0);
-            if (splitCount < MAX_SPLIT_TIMES) {
+            if (splitCount < MAX_SPLIT_TIMES && windows.length < MAX_TOTAL_WINDOWS) {
               const sub = splitWindow(windows[windowIndex], 2);
               if (sub.length > 1) {
                 windows = [...windows.slice(0, windowIndex), ...sub, ...windows.slice(windowIndex + 1)];
@@ -503,6 +514,7 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
         }
 
         lastError = errMsg;
+        hardFailed = true;
         totalFailed++;
         metadata.last_error_type = errType;
         await updateJob(jobId, {
@@ -533,14 +545,14 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
 
     const finalJobStatus = allDone
       ? (lastError && totalMain === 0 && totalItem === 0 ? "failed" : "success")
-      : (lastError ? "failed" : "partial");
+      : (hardFailed ? "failed" : "partial");
     const parentLogStatus = allDone
       ? (totalFailed > 0 ? "partial_failed" : "success")
-      : (lastError ? "failed" : "running");
+      : (hardFailed ? "failed" : "running");
 
     const tail: Record<string, unknown> = {
       status: finalJobStatus,
-      ended_at: allDone || lastError ? new Date().toISOString() : null,
+      ended_at: allDone || hardFailed ? new Date().toISOString() : null,
       total_api_count: totalApi,
       total_order_upserted: totalMain,
       total_item_upserted: totalItem,
@@ -555,9 +567,9 @@ export async function tickJob(jobId: string, processPage: ProcessPageFn, config:
       metadata,
       message: allDone
         ? `全部完成 · 窗口 ${windows.length} 个 · 主表 ${totalMain} · 明细 ${totalItem} · 失败 ${totalFailed}${lastError ? ` · 末次错误: ${lastError}` : ""}`
-        : (lastError
+        : (hardFailed
           ? `任务失败 · 窗口 ${windowIndex + 1}/${windows.length} 第 ${pageIndex} 页 · ${lastError}`
-          : `本次 tick 已处理 ${pagesThisRun} 页，等待继续 · 当前窗口 ${windowIndex + 1}/${windows.length} 下一页=${pageIndex}`),
+          : `本次 tick 已处理 ${pagesThisRun} 页，等待继续 · 当前窗口 ${windowIndex + 1}/${windows.length} 下一页=${pageIndex}${lastError ? ` · 末次页级错误: ${lastError.slice(0, 200)}` : ""}`),
     };
     await updateJob(jobId, tail);
 

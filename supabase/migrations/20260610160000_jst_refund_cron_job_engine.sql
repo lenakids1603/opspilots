@@ -5,9 +5,10 @@
 --   后台自续跑（auto_continue 自调用 tick_refund_job），写 jst_sync_jobs（trigger_type='cron'）。
 -- get_auto_sync_overview 的 mapping 已有 refund_orders 行，无需改动（见 20260610150100）。
 -- 注意：
---   1. 仅改 command，不改 schedule / active —— 生产的该任务当前为停用状态（active=false），
---      需在部署验证后用 public.set_auto_sync_active('jst_refund_orders_hourly', true) 重新启用。
---   2. cron.alter_job 内部校验调用者 = 任务属主（本库任务均属 postgres），须以 postgres 执行。
+--   1. cron.alter_job 内部校验调用者 = 任务属主（本库任务均属 postgres），须以 postgres 执行。
+--   2. 生产库（cnwuimllzotitgsurofn）已于 2026-06-11 手工执行本变更并验证后启用
+--      （active=true）；本文件同步设置 active=true 以与生产实际状态一致，
+--      并已在 supabase_migrations.schema_migrations 补登记，不会被 db push 重放。
 
 do $$
 declare
@@ -19,7 +20,8 @@ begin
   end if;
   perform cron.alter_job(
     job_id  := v_jobid,
-    command := $job$ select public.invoke_jst_sync('jst-sync-refund-orders', '{"action": "start_refund_job", "minutes": 180, "trigger_type": "cron"}'::jsonb) $job$
+    command := $job$ select public.invoke_jst_sync('jst-sync-refund-orders', '{"action": "start_refund_job", "minutes": 180, "trigger_type": "cron"}'::jsonb) $job$,
+    active  := true
   );
 end
 $$;
