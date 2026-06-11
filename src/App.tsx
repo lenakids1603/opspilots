@@ -34,6 +34,7 @@ import DeliveryDashboardPage from "./pages/ops/DeliveryDashboardPage";
 import SalesOrdersListPage from "./pages/ops/SalesOrdersListPage";
 import ShippingRiskPage from "./pages/ops/ShippingRiskPage";
 import SalesBoardPage from "./pages/ops/SalesBoardPage";
+import ChaseListPage from "./pages/ops/ChaseListPage";
 import SupplierDashboard from "./pages/supplier/SupplierDashboard";
 import SupplierPurchaseOrdersPage from "./pages/supplier/PurchaseOrdersPage";
 import SupplierPlaceholder from "./pages/supplier/SupplierPlaceholder";
@@ -62,6 +63,7 @@ const App = () => (
           <Route path="/operations/sales-orders" element={wrap(<SalesOrdersListPage />)} />
           <Route path="/operations/shipping-risk" element={wrap(<ShippingRiskPage />)} />
           <Route path="/operations/sales-board" element={wrap(<SalesBoardPage />)} />
+          <Route path="/chase-list" element={wrap(<ChaseListPage />)} />
           <Route path="/ops/shipping-risk" element={wrap(<ShippingRiskPage />)} />
           <Route path="/suppliers" element={wrap(<SuppliersPage />)} />
           <Route path="/products" element={wrap(<ProductsPage />)} />

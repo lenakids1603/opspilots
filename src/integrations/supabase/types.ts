@@ -1724,7 +1724,7 @@ export type Database = {
           api_count: number
           created_at: string
           duration_ms: number
-          error_detail: string
+          error_detail: string | null
           error_type: string | null
           failed_count: number
           first_io_date: string | null
@@ -1751,7 +1751,7 @@ export type Database = {
           api_count?: number
           created_at?: string
           duration_ms?: number
-          error_detail?: string
+          error_detail?: string | null
           error_type?: string | null
           failed_count?: number
           first_io_date?: string | null
@@ -1778,7 +1778,7 @@ export type Database = {
           api_count?: number
           created_at?: string
           duration_ms?: number
-          error_detail?: string
+          error_detail?: string | null
           error_type?: string | null
           failed_count?: number
           first_io_date?: string | null
@@ -2182,6 +2182,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ops_params: {
+        Row: {
+          description: string | null
+          param_key: string
+          param_value: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          description?: string | null
+          param_key: string
+          param_value: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          description?: string | null
+          param_key?: string
+          param_value?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
       }
       ops_product_mapping_exceptions: {
         Row: {
@@ -3939,6 +3963,122 @@ export type Database = {
         }
         Relationships: []
       }
+      warehouse_shipping_package_items: {
+        Row: {
+          id: string
+          io_id: string
+          item_unique_key: string
+          o_id: string | null
+          package_id: string
+          package_unique_key: string
+          product_name: string | null
+          qty: number
+          sku_code: string | null
+          sku_id: string | null
+          so_id: string | null
+          style_no: string | null
+          synced_at: string
+        }
+        Insert: {
+          id?: string
+          io_id: string
+          item_unique_key: string
+          o_id?: string | null
+          package_id: string
+          package_unique_key: string
+          product_name?: string | null
+          qty?: number
+          sku_code?: string | null
+          sku_id?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          synced_at?: string
+        }
+        Update: {
+          id?: string
+          io_id?: string
+          item_unique_key?: string
+          o_id?: string | null
+          package_id?: string
+          package_unique_key?: string
+          product_name?: string | null
+          qty?: number
+          sku_code?: string | null
+          sku_id?: string | null
+          so_id?: string | null
+          style_no?: string | null
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warehouse_shipping_package_items_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "warehouse_shipping_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      warehouse_shipping_packages: {
+        Row: {
+          id: string
+          io_id: string
+          logistics_company: string | null
+          modified_at_jst: string | null
+          o_id: string | null
+          package_unique_key: string
+          send_date: string | null
+          shipping_method: string | null
+          shop_id: string | null
+          shop_name: string | null
+          so_id: string | null
+          status: string | null
+          synced_at: string
+          tracking_number: string | null
+          warehouse_name: string | null
+          weight: number | null
+          wh_id: string | null
+        }
+        Insert: {
+          id?: string
+          io_id: string
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          package_unique_key: string
+          send_date?: string | null
+          shipping_method?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          tracking_number?: string | null
+          warehouse_name?: string | null
+          weight?: number | null
+          wh_id?: string | null
+        }
+        Update: {
+          id?: string
+          io_id?: string
+          logistics_company?: string | null
+          modified_at_jst?: string | null
+          o_id?: string | null
+          package_unique_key?: string
+          send_date?: string | null
+          shipping_method?: string | null
+          shop_id?: string | null
+          shop_name?: string | null
+          so_id?: string | null
+          status?: string | null
+          synced_at?: string
+          tracking_number?: string | null
+          warehouse_name?: string | null
+          weight?: number | null
+          wh_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       v_purchase_order_items_with_image: {
@@ -4014,6 +4154,7 @@ export type Database = {
           last_run_message: string
           last_run_started_at: string
           last_run_status: string
+          payload: Json
           schedule: string
           success_count_24h: number
           sync_type: string
@@ -4069,6 +4210,69 @@ export type Database = {
       jst_try_lock_job: {
         Args: { _job_id: string; _owner: string; _ttl_seconds?: number }
         Returns: boolean
+      }
+      ops_chase_match_core: {
+        Args: never
+        Returns: {
+          category: string
+          delivery_date: string
+          external_po_id: string
+          item_unique_key: string
+          latest_ship_time: string
+          match_qty: number
+          missing_delivery_date: boolean
+          o_id: string
+          overdue_days: number
+          pay_time: string
+          sku: string
+          style_no: string
+          supplier_id: string
+          supplier_name: string
+        }[]
+      }
+      ops_chase_purchase_list: {
+        Args: never
+        Returns: {
+          earliest_pay_time: string
+          final_gap: number
+          intransit_qty: number
+          late_order_qty: number
+          missing_date_qty: number
+          pending_qty: number
+          raw_gap: number
+          resale_rate: number
+          return_in_transit: number
+          return_offset: number
+          sku: string
+          style_no: string
+          supplier_name: string
+          urge_supplier_qty: number
+        }[]
+      }
+      ops_chase_question_count: {
+        Args: never
+        Returns: {
+          question_items: number
+          question_orders: number
+          question_qty: number
+        }[]
+      }
+      ops_chase_refresh_risk_meta: {
+        Args: { _item_keys?: string[] }
+        Returns: Json
+      }
+      ops_chase_supplier_list: {
+        Args: never
+        Returns: {
+          max_overdue_days: number
+          overdue_qty: number
+          po_count: number
+          po_details: Json
+          sku: string
+          style_no: string
+          supplier_id: string
+          supplier_name: string
+        }[]
       }
       recalc_purchase_order_aggregates: {
         Args: { _po_id: string }
