@@ -95,7 +95,8 @@ export default function ChaseListPage() {
         queryFn: async () => {
           const { data, error } = await supabase.rpc("ops_chase_question_count" as never);
           if (error) throw error;
-          const row = Array.isArray(data) ? data[0] : (data as QuestionCount | null);
+          const arr = (data ?? []) as unknown as QuestionCount[];
+          const row = Array.isArray(arr) ? arr[0] : (arr as unknown as QuestionCount);
           return (row ?? { question_orders: 0, question_items: 0, question_qty: 0 }) as QuestionCount;
         },
         staleTime: 60_000,
