@@ -128,9 +128,18 @@ export default function ChaseListPage() {
         },
         staleTime: 60_000,
       },
+      {
+        queryKey: ["chase", "urgency_summary"],
+        queryFn: async () => {
+          const { data, error } = await supabase.rpc("ops_chase_urgency_summary" as never);
+          if (error) throw error;
+          return (data ?? []) as UrgencyRow[];
+        },
+        staleTime: 60_000,
+      },
     ],
   });
-  const [supplierQ, questionQ, purchaseQ] = queries;
+  const [supplierQ, questionQ, purchaseQ, urgencyQ] = queries;
   const loading = queries.some(q => q.isLoading);
   const anyError = queries.find(q => q.error)?.error as { code?: string; message?: string } | undefined;
   const isForbidden = anyError?.code === "42501" || /42501|权限|permission/i.test(anyError?.message ?? "");
