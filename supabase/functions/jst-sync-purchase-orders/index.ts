@@ -1595,6 +1595,157 @@ async function tickInboundJob(jobId: string) {
   return { status: finalStatus, job: { ...job, ...tail } };
 }
 
+// ===== 采购单状态补偿:按单号拉取本地 Confirmed 单的最新状态 =====
+// 业务背景:按订单采购下,采购单在聚水潭变为 Finished 即代表供应商交付结束,
+// 未收货数量是"永久性少交"而非在途(催货匹配的 closed_short 口径依赖此状态)。
+// 增量同步按 modified 窗口拉取,状态翻转发生在窗口覆盖之外时本地会一直停在
+// Confirmed,这里按单号(po_ids,每批≤10,接口上限30)直接查询补偿。
+// JST 偶发响应慢(>30s 触发 callOpenweb 的 abort),按批重试最多 3 次。
+const PO_IDS_BATCH = 10;
+const PO_IDS_RETRY = 3;
+
+// 单条采购单(含明细) upsert,字段映射与窗口同步(processPurchasePage)保持一致
+async function upsertPoFromJst(po: any): Promise<{ poId: string; items: number }> {
+  const externalPoId = String(po.po_id ?? po.poId ?? "");
+  if (!externalPoId) throw new Error("missing po_id");
+  const supplierId = await ensureSupplier(po.supplier_id ?? po.supplierId, po.seller ?? po.supplier_name ?? "");
+  const itemListEarly: any[] = po.items ?? [];
+  let maxDeliveryIso: string | null = null;
+  for (const it of itemListEarly) {
+    const d = parseJstBeijingDateTime(it.delivery_date);
+    if (d && (!maxDeliveryIso || d > maxDeliveryIso)) maxDeliveryIso = d;
+  }
+  const row = {
+    external_po_id: externalPoId,
+    supplier_id: supplierId,
+    jst_supplier_id: po.supplier_id ? String(po.supplier_id) : null,
+    supplier_name: po.seller ?? po.supplier_name ?? "",
+    po_date: parseJstBeijingDateTime(po.po_date),
+    status: po.status ?? "", status_label: po.status ?? "",
+    raw_receive_status: po.receive_status ?? "",
+    expected_delivery_date: maxDeliveryIso,
+    remark: po.remark ?? "",
+    jst_modified_at: parseJstBeijingDateTime(po.modified),
+    raw: po,
+  };
+  const { data: upPo, error: upErr } = await admin.from("purchase_orders")
+    .upsert(row, { onConflict: "external_po_id" }).select("id").single();
+  if (upErr) throw upErr;
+  const poId = upPo.id as string;
+  let items = 0;
+  const itemList: any[] = po.items ?? [];
+  for (const it of itemList) {
+    const poiId = it.poi_id ? String(it.poi_id) : null;
+    const props = it.properties_value ?? "";
+    const propMap: Record<string, string> = {};
+    String(props).split(/[;,]/).forEach((p: string) => {
+      const [k, v] = p.split(":");
+      if (k && v) propMap[k.trim()] = v.trim();
+    });
+    const qty = Number(it.qty ?? 0);
+    const price = Number(it.price ?? 0);
+    const itemRow = {
+      purchase_order_id: poId, external_po_id: externalPoId, external_poi_id: poiId,
+      style_no: it.i_id ? String(it.i_id) : "",
+      sku_no: it.sku_id ? String(it.sku_id) : "",
+      product_name: it.name ?? "", properties_value: props,
+      color: propMap["颜色"] ?? propMap["color"] ?? "",
+      size: propMap["尺码"] ?? propMap["size"] ?? "",
+      spec: props, purchase_qty: qty, unit_price: price, amount: qty * price,
+      delivery_date: parseJstBeijingDateTime(it.delivery_date),
+      item_remark: it.remark ?? "", raw: it,
+    };
+    const conflict = poiId ? "external_poi_id" : "external_po_id,sku_no,style_no";
+    const { error: itErr } = await admin.from("purchase_order_items")
+      .upsert(itemRow, { onConflict: conflict });
+    if (itErr) throw itErr;
+    items++;
+  }
+  return { poId, items };
+}
+
+async function refreshConfirmedPoStatus(daysMin: number, daysMax: number, logId: string) {
+  const startedAt = Date.now();
+  const fromIso = new Date(Date.now() - daysMax * 86400_000).toISOString();
+  const toIso = new Date(Date.now() - daysMin * 86400_000).toISOString();
+  const { data: locals, error } = await admin
+    .from("purchase_orders")
+    .select("id, external_po_id, status")
+    .eq("status", "Confirmed")
+    .gte("po_date", fromIso)
+    .lt("po_date", toIso)
+    .order("po_date", { ascending: true });
+  if (error) throw error;
+  const targets = (locals ?? []).filter((p) => p.external_po_id);
+  const oldStatus = new Map(targets.map((p) => [String(p.external_po_id), String(p.status ?? "")]));
+
+  let fetched = 0, statusChanged = 0;
+  const statusChanges: Record<string, number> = {};
+  const changedPoIds: string[] = [];
+  const seen = new Set<string>();
+  const errors: string[] = [];
+
+  for (let i = 0; i < targets.length; i += PO_IDS_BATCH) {
+    const batch = targets.slice(i, i + PO_IDS_BATCH);
+    let data: any = null;
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= PO_IDS_RETRY; attempt++) {
+      await sleep(attempt === 1 ? RATE_DELAY_MS : attempt * 2000);
+      try {
+        ({ data } = await callJushuitan("purchase.query", {
+          page_index: 1, page_size: 50,
+          po_ids: batch.map((p) => String(p.external_po_id)),
+        }));
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e as Error;
+      }
+    }
+    if (lastErr) {
+      errors.push(`批次 ${i / PO_IDS_BATCH + 1}: ${sanitizeMsg(lastErr.message ?? "").slice(0, 150)}`);
+      continue;
+    }
+    const list: any[] = data.datas ?? data.list ?? data.orders ?? [];
+    for (const po of list) {
+      const externalPoId = String(po.po_id ?? po.poId ?? "");
+      if (!externalPoId) continue;
+      seen.add(externalPoId);
+      fetched++;
+      try {
+        const r = await upsertPoFromJst(po);
+        const prev = oldStatus.get(externalPoId);
+        const next = String(po.status ?? "");
+        if (prev !== undefined && next && next !== prev) {
+          statusChanged++;
+          const key = `${prev}->${next}`;
+          statusChanges[key] = (statusChanges[key] ?? 0) + 1;
+          changedPoIds.push(r.poId);
+        }
+      } catch (e) {
+        errors.push(`${externalPoId}: ${sanitizeMsg((e as Error).message ?? "").slice(0, 120)}`);
+      }
+    }
+    await updateSegmentProgress(logId, {
+      message: `[状态补偿] 进度 ${Math.min(i + PO_IDS_BATCH, targets.length)}/${targets.length}; 状态变化 ${statusChanged}`,
+    });
+  }
+
+  for (const poId of changedPoIds) {
+    try { await admin.rpc("recalc_purchase_order_aggregates", { _po_id: poId }); }
+    catch (_) { /* ignore */ }
+  }
+  const notFound = targets.map((p) => String(p.external_po_id)).filter((id) => !seen.has(id));
+
+  const summary = `[状态补偿] 本地 Confirmed(po_date ${daysMin}-${daysMax} 天前) ${targets.length} 张; API返回 ${fetched}; 状态变化 ${statusChanged} 张 ${JSON.stringify(statusChanges)}; API未返回 ${notFound.length} 张${notFound.length ? `(${notFound.slice(0, 10).join(",")})` : ""}; 失败 ${errors.length}; 耗时 ${Math.round((Date.now() - startedAt) / 1000)}s`;
+  await finishSegmentLog(logId, errors.length ? "failed" : "success", {
+    fetched_orders_count: fetched,
+    message: summary,
+    error_detail: errors.length ? sanitizeMsg(errors.join(" | ")).slice(0, 1000) : null,
+  });
+  return { scanned: targets.length, fetched, status_changed: statusChanged, status_changes: statusChanges, not_found: notFound, errors: errors.length };
+}
+
 // ---------- auth ----------
 async function resolveCaller(req: Request): Promise<{ isAdmin: boolean; uid: string | null }> {
   const auth = req.headers.get("Authorization");
@@ -1737,6 +1888,38 @@ Deno.serve(async (req) => {
         message: "用户已取消",
       }).eq("id", jobId);
       return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ===== 采购单状态补偿(手动触发):按单号刷新本地 Confirmed 单的最新状态 =====
+    if (action === "refresh_confirmed_status") {
+      const daysMin = Math.max(0, Number(body.days_min ?? 7));
+      const daysMax = Math.max(daysMin + 1, Number(body.days_max ?? 45));
+      const { data: log, error: logErr } = await admin.from("jst_sync_logs").insert({
+        sync_type: "purchase_orders",
+        status: "running",
+        cursor_from: new Date(Date.now() - daysMax * 86400_000).toISOString(),
+        cursor_to: new Date(Date.now() - daysMin * 86400_000).toISOString(),
+        message: `[状态补偿] 已启动:本地 Confirmed 且 po_date 在 ${daysMin}-${daysMax} 天前的采购单按单号刷新状态`,
+      }).select("id").single();
+      if (logErr) throw logErr;
+      const runCompensation = async () => {
+        try {
+          await refreshConfirmedPoStatus(daysMin, daysMax, log.id);
+        } catch (err) {
+          await finishSegmentLog(log.id, "failed", {
+            message: "[状态补偿] 执行失败",
+            error_detail: sanitizeMsg((err as Error).message ?? "").slice(0, 1000),
+          });
+        }
+      };
+      // @ts-ignore EdgeRuntime is provided by Supabase edge runtime
+      EdgeRuntime.waitUntil(runCompensation());
+      return new Response(JSON.stringify({
+        ok: true, background: true, log_id: log.id,
+        message: "状态补偿已在后台启动,结果见同步记录([状态补偿]前缀)",
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

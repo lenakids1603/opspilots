@@ -47,6 +47,8 @@ type PurchaseRow = {
   missing_date_qty: number;
   late_order_qty: number;
   urge_supplier_qty: number;
+  /** 厂家已结单（Finished）少交件数，属永久缺口，已计入 final_gap */
+  closed_short_qty: number;
   raw_gap: number;
   return_in_transit: number;
   resale_rate: number;
@@ -386,7 +388,7 @@ export default function ChaseListPage() {
         <TabsContent value="purchase" className="mt-4">
           <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
             <div className="text-xs text-muted-foreground">
-              缺口 = 待发数量 - 在途采购 - 销退可复售冲抵；当天新上款采购单可能尚未同步，缺口仅供参考
+              缺口 = 未匹配待发 + 已结单少交 - 销退可复售冲抵；已结单少交=厂家已完成采购单的未交数量（不会再补交）；当天新上款采购单可能尚未同步，缺口仅供参考
             </div>
             <div className="flex items-center gap-2">
               <Switch id="show-sc" checked={showSC} onCheckedChange={setShowSC} />
@@ -406,6 +408,7 @@ export default function ChaseListPage() {
                       <th className="text-left px-4 py-2 font-medium">供应商</th>
                       <th className="text-right px-4 py-2 font-medium">待发</th>
                       <th className="text-right px-4 py-2 font-medium">在途</th>
+                      <th className="text-right px-4 py-2 font-medium">已结单少交</th>
                       <th className="text-right px-4 py-2 font-medium">销退冲抵</th>
                       <th className="text-right px-4 py-2 font-medium">最终缺口</th>
                       <th className="text-left px-4 py-2 font-medium">最早付款</th>
@@ -413,7 +416,7 @@ export default function ChaseListPage() {
                   </thead>
                   <tbody>
                     {visiblePurchase.length === 0 ? (
-                      <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
+                      <tr><td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
                     ) : visiblePurchase.map((r, i) => (
                       <tr key={i} className={cn("border-t", Number(r.final_gap) > 0 && "bg-red-50/60")}>
                         <td className="px-4 py-2 font-mono">{r.sku}</td>
@@ -421,6 +424,7 @@ export default function ChaseListPage() {
                         <td className="px-4 py-2">{r.supplier_name || "-"}</td>
                         <td className="px-4 py-2 text-right">{fmtNum(r.pending_qty)}</td>
                         <td className="px-4 py-2 text-right">{fmtNum(r.intransit_qty)}</td>
+                        <td className={cn("px-4 py-2 text-right", Number(r.closed_short_qty) > 0 && "text-amber-700")}>{fmtNum(r.closed_short_qty)}</td>
                         <td className="px-4 py-2 text-right">{fmtNum(r.return_offset)}</td>
                         <td className={cn("px-4 py-2 text-right font-semibold", Number(r.final_gap) > 0 && "text-destructive")}>
                           {fmtNum(r.final_gap)}

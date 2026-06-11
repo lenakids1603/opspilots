@@ -80,6 +80,7 @@ export default function JstSyncPage() {
   const [syncing, setSyncing] = useState(false);
   const [productBusy, setProductBusy] = useState(false);
   const [actingLogId, setActingLogId] = useState<string | null>(null);
+  const [compBusy, setCompBusy] = useState(false);
   const [logFilter, setLogFilter] = useState<"all" | "po" | "products">("all");
 
   const now = new Date();
@@ -225,6 +226,23 @@ export default function JstSyncPage() {
   const cleanupStale = () =>
     invokeSyncAction({ action: "cleanup_stale" }, "已清理超过 10 分钟仍在运行的任务");
 
+  // 状态补偿:按单号刷新本地 Confirmed 采购单的最新状态(已完成的单未收量=永久少交,影响催货口径)
+  const runPoStatusCompensation = async () => {
+    setCompBusy(true);
+    try {
+      const { error } = await supabase.functions.invoke("jst-sync-purchase-orders", {
+        body: { action: "refresh_confirmed_status" },
+      });
+      if (error) throw error;
+      toast.success("状态补偿已在后台启动,结果见同步记录([状态补偿]前缀)");
+      setTimeout(load, 2000);
+    } catch (e: any) {
+      toast.error(e?.message || "状态补偿失败");
+    } finally {
+      setCompBusy(false);
+    }
+  };
+
   const markFailed = (l: SyncLog) =>
     invokeSyncAction({ action: "mark_failed", log_id: l.id }, "已将卡住任务标记为 failed");
 
@@ -358,9 +376,14 @@ export default function JstSyncPage() {
             <ShieldAlert className="w-4 h-4 mr-2" />
             清理卡住任务
           </Button>
+          <Button variant="outline" onClick={runPoStatusCompensation} disabled={compBusy}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${compBusy ? "animate-spin" : ""}`} />
+            {compBusy ? "提交中…" : "采购单状态补偿"}
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           按天分段拉取,running 超过 10 分钟视为卡住任务,可手动清理或按原时间窗口重试。
+          状态补偿:按单号刷新 7-45 天前仍为「已确认」的采购单,把聚水潭已变「已完成」的状态同步回来(影响催货清单的已结单少交口径)。
         </p>
       </Card>
 
