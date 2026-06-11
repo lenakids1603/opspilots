@@ -4211,6 +4211,19 @@ export type Database = {
         Args: { _job_id: string; _owner: string; _ttl_seconds?: number }
         Returns: boolean
       }
+      ops_chase_closed_short_list: {
+        Args: never
+        Returns: {
+          oldest_pay_time: string
+          order_count: number
+          po_count: number
+          po_details: Json
+          short_qty: number
+          sku: string
+          style_no: string
+          supplier_name: string
+        }[]
+      }
       ops_chase_match_core: {
         Args: never
         Returns: {
@@ -4234,6 +4247,7 @@ export type Database = {
       ops_chase_purchase_list: {
         Args: never
         Returns: {
+          closed_short_qty: number
           earliest_pay_time: string
           final_gap: number
           intransit_qty: number
@@ -4287,6 +4301,14 @@ export type Database = {
           qty: number
           supplier_count: number
           urgency: string
+        }[]
+      }
+      ops_sku_image_dict_upsert: { Args: { _rows: Json }; Returns: number }
+      ops_sku_images: {
+        Args: { _skus: string[] }
+        Returns: {
+          image_url: string
+          sku: string
         }[]
       }
       recalc_purchase_order_aggregates: {

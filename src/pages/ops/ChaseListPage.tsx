@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight, PartyPopper } from "lucide-react";
+import { AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight, PartyPopper, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ops/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatDateTimeCN, todayCN } from "@/lib/datetime";
 
@@ -20,9 +21,7 @@ type SupplierRow = {
   supplier_name: string;
   sku: string;
   style_no: string;
-  /** 该 SKU 行催货总件数（urge_supplier 全部紧急度档之和） */
   total_qty: number;
-  /** 顾客承诺最晚发货时间已超时的件数 */
   overdue_qty: number;
   due24_qty: number;
   due48_qty: number;
@@ -32,7 +31,6 @@ type SupplierRow = {
   max_overdue_days: number;
   po_details: PoDetail[];
 };
-/** Question = 拍单初始状态（待仓库审核），非客服异常单 */
 type PendingReviewCount = {
   pending_review_orders: number;
   pending_review_items: number;
@@ -47,7 +45,6 @@ type PurchaseRow = {
   missing_date_qty: number;
   late_order_qty: number;
   urge_supplier_qty: number;
-  /** 厂家已结单（Finished）少交件数，属永久缺口，已计入 final_gap */
   closed_short_qty: number;
   raw_gap: number;
   return_in_transit: number;
@@ -62,6 +59,18 @@ type UrgencyRow = {
   order_count: number;
   supplier_count: number;
 };
+type ClosedShortPoDetail = { po_id: string; delivery_date: string | null; short_qty: number };
+type ClosedShortRow = {
+  sku: string;
+  style_no: string;
+  supplier_name: string;
+  short_qty: number;
+  order_count: number;
+  po_count: number;
+  oldest_pay_time: string | null;
+  po_details: ClosedShortPoDetail[];
+};
+type SkuImageRow = { sku: string; image_url: string | null };
 
 const fmtNum = (n: number | null | undefined) =>
   n == null ? "-" : Number(n).toLocaleString("zh-CN");
@@ -74,7 +83,6 @@ const fmtMMDDHM = (input: string | null) => {
     timeZone: "Asia/Shanghai", hour12: false,
     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   });
-  // zh-CN gives "06/11 16:30" or similar
   return s.replace(/\//g, "-");
 };
 
@@ -92,12 +100,72 @@ function downloadCSV(filename: string, headers: string[], rows: (string | number
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
+/** 批量获取 SKU 缩略图。skus 数组会被排序去重作为 query key。 */
+function useSkuImages(skus: string[], enabled = true) {
+  const uniq = useMemo(() => {
+    const s = Array.from(new Set(skus.filter(Boolean))).sort();
+    return s;
+  }, [skus]);
+  const key = uniq.join(",");
+  return useQuery({
+    queryKey: ["sku-images", key],
+    enabled: enabled && uniq.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("ops_sku_images" as never, { _skus: uniq } as never);
+      if (error) throw error;
+      const map: Record<string, string | null> = {};
+      for (const row of (data ?? []) as SkuImageRow[]) {
+        map[row.sku] = row.image_url ?? null;
+      }
+      return map;
+    },
+  });
+}
+
+function SkuThumb({ sku, imageUrl, onPreview, size = 40 }: {
+  sku: string;
+  imageUrl: string | null | undefined;
+  onPreview: (url: string, sku: string) => void;
+  size?: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  const showImg = !!imageUrl && !errored;
+  return (
+    <div
+      className={cn(
+        "rounded-md bg-muted overflow-hidden flex items-center justify-center shrink-0",
+        showImg && "cursor-zoom-in",
+      )}
+      style={{ width: size, height: size }}
+      onClick={() => { if (showImg) onPreview(imageUrl!, sku); }}
+      title={sku}
+    >
+      {showImg ? (
+        <img
+          src={imageUrl!}
+          alt={sku}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          className="w-full h-full object-cover"
+          onError={() => setErrored(true)}
+        />
+      ) : (
+        <ImageIcon className="size-4 text-muted-foreground/60" />
+      )}
+    </div>
+  );
+}
+
 export default function ChaseListPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("supplier");
   const [showSC, setShowSC] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [openPo, setOpenPo] = useState<Record<string, boolean>>({});
+  const [openClosed, setOpenClosed] = useState<Record<string, boolean>>({});
+  const [preview, setPreview] = useState<{ url: string; sku: string } | null>(null);
+  const onPreview = (url: string, sku: string) => setPreview({ url, sku });
 
   const queries = useQueries({
     queries: [
@@ -139,9 +207,18 @@ export default function ChaseListPage() {
         },
         staleTime: 60_000,
       },
+      {
+        queryKey: ["chase", "closed_short_list"],
+        queryFn: async () => {
+          const { data, error } = await supabase.rpc("ops_chase_closed_short_list" as never);
+          if (error) throw error;
+          return (data ?? []) as ClosedShortRow[];
+        },
+        staleTime: 60_000,
+      },
     ],
   });
-  const [supplierQ, questionQ, purchaseQ, urgencyQ] = queries;
+  const [supplierQ, questionQ, purchaseQ, urgencyQ, closedQ] = queries;
   const loading = queries.some(q => q.isLoading);
   const anyError = queries.find(q => q.error)?.error as { code?: string; message?: string } | undefined;
   const isForbidden = anyError?.code === "42501" || /42501|权限|permission/i.test(anyError?.message ?? "");
@@ -150,6 +227,7 @@ export default function ChaseListPage() {
   const questionCount = (questionQ.data ?? { pending_review_orders: 0, pending_review_items: 0, pending_review_qty: 0 }) as PendingReviewCount;
   const purchaseRows = (purchaseQ.data ?? []) as PurchaseRow[];
   const urgencyRows = (urgencyQ.data ?? []) as UrgencyRow[];
+  const closedRows = (closedQ.data ?? []) as ClosedShortRow[];
   const urgencyByKey = useMemo(() => {
     const m: Record<string, UrgencyRow> = {};
     for (const r of urgencyRows) m[r.urgency] = r;
@@ -158,17 +236,13 @@ export default function ChaseListPage() {
   const overdueU = urgencyByKey.overdue;
   const due24U = urgencyByKey.due24;
 
-  // 汇总
   const summary = useMemo(() => {
     const totalQty = supplierRows.reduce((s, r) => s + Number(r.total_qty || 0), 0);
     const supplierIds = new Set(supplierRows.map(r => r.supplier_id));
     const skus = new Set(supplierRows.map(r => r.sku));
-    return {
-      totalQty, supplierCount: supplierIds.size, skuCount: skus.size,
-    };
+    return { totalQty, supplierCount: supplierIds.size, skuCount: skus.size };
   }, [supplierRows]);
 
-  // 按供应商分组
   const grouped = useMemo(() => {
     const map = new Map<string, {
       supplier_id: string; supplier_name: string; rows: SupplierRow[];
@@ -194,7 +268,6 @@ export default function ChaseListPage() {
     return arr;
   }, [supplierRows]);
 
-  // 第一个默认展开
   const firstSupplierId = grouped[0]?.supplier_id;
   const isExpanded = (id: string) => expanded[id] ?? id === firstSupplierId;
   const toggle = (id: string) => setExpanded(s => ({ ...s, [id]: !isExpanded(id) }));
@@ -203,6 +276,28 @@ export default function ChaseListPage() {
     () => showSC ? purchaseRows : purchaseRows.filter(r => (r.sku || "").toUpperCase() !== "SC"),
     [purchaseRows, showSC],
   );
+
+  // === 缩略图：按页签批量取 ===
+  // 供应商页签：取所有"已展开供应商"的 SKU
+  const supplierTabSkus = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of grouped) {
+      if (isExpanded(g.supplier_id)) {
+        for (const r of g.rows) set.add(r.sku);
+      }
+    }
+    return Array.from(set);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grouped, expanded, firstSupplierId]);
+  const purchaseTabSkus = useMemo(
+    () => visiblePurchase.map(r => r.sku),
+    [visiblePurchase],
+  );
+  const closedTabSkus = useMemo(() => closedRows.map(r => r.sku), [closedRows]);
+
+  const supplierImgQ = useSkuImages(supplierTabSkus, tab === "supplier");
+  const purchaseImgQ = useSkuImages(purchaseTabSkus, tab === "purchase");
+  const closedImgQ = useSkuImages(closedTabSkus, tab === "closed");
 
   const exportSupplier = (g: typeof grouped[number]) => {
     const headers = ["款号", "SKU", "总件数", "其中已超时", "24小时内到期", "最长超期天数", "涉及采购单号"];
@@ -231,6 +326,15 @@ export default function ChaseListPage() {
     downloadCSV(`催货单_全部_${todayCN()}.csv`, headers, rows);
   };
 
+  const exportClosed = () => {
+    const headers = ["SKU", "款号", "供应商", "少交件数", "影响订单数", "影响采购单数", "最早付款"];
+    const rows = closedRows.map(r => [
+      r.sku, r.style_no || "", r.supplier_name || "",
+      Number(r.short_qty || 0), Number(r.order_count || 0), Number(r.po_count || 0),
+      fmtMMDDHM(r.oldest_pay_time),
+    ]);
+    downloadCSV(`厂家已结单缺口_${todayCN()}.csv`, headers, rows);
+  };
 
   const refresh = () => queries.forEach(q => q.refetch());
 
@@ -297,6 +401,7 @@ export default function ChaseListPage() {
         <TabsList>
           <TabsTrigger value="supplier">按供应商催货</TabsTrigger>
           <TabsTrigger value="purchase">采购缺口</TabsTrigger>
+          <TabsTrigger value="closed">厂家已结单</TabsTrigger>
         </TabsList>
 
         <TabsContent value="supplier" className="mt-4">
@@ -346,10 +451,11 @@ export default function ChaseListPage() {
                     </button>
                     {open && (
                       <div className="border-t overflow-x-auto">
-                        <table className="w-full text-sm min-w-[860px]">
+                        <table className="w-full text-sm min-w-[920px]">
                           <thead className="bg-muted/40 text-muted-foreground">
                             <tr>
                               <th className="text-left px-4 py-2 font-medium w-8"></th>
+                              <th className="text-left px-4 py-2 font-medium w-14">图</th>
                               <th className="text-left px-4 py-2 font-medium">SKU</th>
                               <th className="text-left px-4 py-2 font-medium">款号</th>
                               <th className="text-right px-4 py-2 font-medium">总件数</th>
@@ -377,6 +483,9 @@ export default function ChaseListPage() {
                                         {poOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                                       </button>
                                     </td>
+                                    <td className="px-4 py-2">
+                                      <SkuThumb sku={r.sku} imageUrl={supplierImgQ.data?.[r.sku]} onPreview={onPreview} />
+                                    </td>
                                     <td className="px-4 py-2 font-mono">{r.sku}</td>
                                     <td className="px-4 py-2">{r.style_no || "-"}</td>
                                     <td className="px-4 py-2 text-right font-semibold">{fmtNum(r.total_qty)}</td>
@@ -397,7 +506,7 @@ export default function ChaseListPage() {
                                   {poOpen && (r.po_details?.length ?? 0) > 0 && (
                                     <tr key={key + "-d"} className="bg-muted/10 border-t">
                                       <td></td>
-                                      <td colSpan={8} className="px-4 py-2">
+                                      <td colSpan={9} className="px-4 py-2">
                                         <table className="text-xs w-full">
                                           <thead className="text-muted-foreground">
                                             <tr>
@@ -450,9 +559,10 @@ export default function ChaseListPage() {
           ) : (
             <Card>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[900px]">
+                <table className="w-full text-sm min-w-[960px]">
                   <thead className="bg-muted/40 text-muted-foreground">
                     <tr>
+                      <th className="text-left px-4 py-2 font-medium w-14">图</th>
                       <th className="text-left px-4 py-2 font-medium">SKU</th>
                       <th className="text-left px-4 py-2 font-medium">款号</th>
                       <th className="text-left px-4 py-2 font-medium">供应商</th>
@@ -466,9 +576,12 @@ export default function ChaseListPage() {
                   </thead>
                   <tbody>
                     {visiblePurchase.length === 0 ? (
-                      <tr><td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
                     ) : visiblePurchase.map((r, i) => (
                       <tr key={i} className={cn("border-t", Number(r.final_gap) > 0 && "bg-red-50/60")}>
+                        <td className="px-4 py-2">
+                          <SkuThumb sku={r.sku} imageUrl={purchaseImgQ.data?.[r.sku]} onPreview={onPreview} />
+                        </td>
                         <td className="px-4 py-2 font-mono">{r.sku}</td>
                         <td className="px-4 py-2">{r.style_no || "-"}</td>
                         <td className="px-4 py-2">{r.supplier_name || "-"}</td>
@@ -488,7 +601,126 @@ export default function ChaseListPage() {
             </Card>
           )}
         </TabsContent>
+
+        <TabsContent value="closed" className="mt-4">
+          <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+            <div className="text-xs text-muted-foreground">
+              供应商已结单交付完毕，此处缺口不会再到货，需决策补单或退款
+            </div>
+            <Button
+              variant="outline" size="sm"
+              onClick={exportClosed}
+              disabled={loading || closedRows.length === 0}
+            >
+              <Download className="mr-1" /> 导出 CSV
+            </Button>
+          </div>
+          {loading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : closedRows.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 flex flex-col items-center text-center gap-2 text-emerald-700">
+                <PartyPopper className="size-8" />
+                <div className="font-medium">暂无厂家已结单的缺口 🎉</div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[900px]">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium w-8"></th>
+                      <th className="text-left px-4 py-2 font-medium w-14">图</th>
+                      <th className="text-left px-4 py-2 font-medium">SKU</th>
+                      <th className="text-left px-4 py-2 font-medium">款号</th>
+                      <th className="text-left px-4 py-2 font-medium">供应商</th>
+                      <th className="text-right px-4 py-2 font-medium">少交件数</th>
+                      <th className="text-right px-4 py-2 font-medium">影响订单数</th>
+                      <th className="text-left px-4 py-2 font-medium">最早付款</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closedRows.map((r, i) => {
+                      const key = `closed|${r.sku}|${i}`;
+                      const open = !!openClosed[key];
+                      const hasDetails = (r.po_details?.length ?? 0) > 0;
+                      return (
+                        <React.Fragment key={key}>
+                          <tr className="border-t hover:bg-muted/20">
+                            <td className="px-4 py-2">
+                              {hasDetails && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenClosed(s => ({ ...s, [key]: !s[key] }))}
+                                  className="text-muted-foreground hover:text-foreground"
+                                  aria-label="展开采购单"
+                                >
+                                  {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                                </button>
+                              )}
+                            </td>
+                            <td className="px-4 py-2">
+                              <SkuThumb sku={r.sku} imageUrl={closedImgQ.data?.[r.sku]} onPreview={onPreview} />
+                            </td>
+                            <td className="px-4 py-2 font-mono">{r.sku}</td>
+                            <td className="px-4 py-2">{r.style_no || "-"}</td>
+                            <td className="px-4 py-2">{r.supplier_name || "-"}</td>
+                            <td className="px-4 py-2 text-right font-semibold text-destructive">{fmtNum(r.short_qty)}</td>
+                            <td className="px-4 py-2 text-right">{fmtNum(r.order_count)}</td>
+                            <td className="px-4 py-2">{fmtMMDDHM(r.oldest_pay_time)}</td>
+                          </tr>
+                          {open && hasDetails && (
+                            <tr className="bg-muted/10 border-t">
+                              <td></td>
+                              <td colSpan={7} className="px-4 py-2">
+                                <table className="text-xs w-full">
+                                  <thead className="text-muted-foreground">
+                                    <tr>
+                                      <th className="text-left py-1 pr-4 font-normal">采购单号</th>
+                                      <th className="text-left py-1 pr-4 font-normal">协议到货</th>
+                                      <th className="text-right py-1 font-normal">少交数</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {r.po_details.map((p, idx) => (
+                                      <tr key={idx}>
+                                        <td className="py-1 pr-4 font-mono">{p.po_id}</td>
+                                        <td className="py-1 pr-4">{p.delivery_date ? formatDateTimeCN(p.delivery_date, { withSeconds: false }) : "-"}</td>
+                                        <td className="py-1 text-right text-destructive">{fmtNum(p.short_qty)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      <Dialog open={!!preview} onOpenChange={(o) => { if (!o) setPreview(null); }}>
+        <DialogContent className="max-w-2xl p-2">
+          {preview && (
+            <div className="flex flex-col items-center gap-2">
+              <img
+                src={preview.url}
+                alt={preview.sku}
+                referrerPolicy="no-referrer"
+                className="max-h-[80vh] w-auto object-contain rounded"
+              />
+              <div className="text-xs text-muted-foreground font-mono pb-2">{preview.sku}</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
