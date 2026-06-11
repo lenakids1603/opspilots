@@ -23,8 +23,13 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  buildDeliveryDays, DeliveryTimelineGrid, TimelineSelectionBanner,
+  type DeliveryTimelineEntry,
+} from "@/components/ops/DeliveryTimelineVisual";
+import { ImagePreviewDialog, type PreviewImage } from "@/components/ops/ImagePreviewDialog";
+import { useStyleImages, useSkuImages } from "@/hooks/useProductImages";
 import {
   formatDateCN, formatDateTimeCN, beijingYMD, beijingDayRangeToUTC,
 } from "@/lib/datetime";
@@ -163,126 +168,6 @@ function riskOf(s: ItemStatus, daysToDelivery: number | null): RiskKey {
   return "none";
 }
 
-// ============ 时间轴（连续色块 + 箭头衔接） ============
-type Zone = "overdue" | "today" | "near" | "normal";
-const ZONE_STYLE: Record<Zone, { fill: string; soft: string }> = {
-  overdue: { fill: "bg-rose-500",    soft: "text-rose-600" },
-  today:   { fill: "bg-blue-600",    soft: "text-blue-600" },
-  near:    { fill: "bg-amber-500",   soft: "text-amber-600" },
-  normal:  { fill: "bg-cyan-500",    soft: "text-cyan-600" },
-};
-const CHEVRON_CLIP = "polygon(10px 0, 100% 0, calc(100% - 10px) 50%, 100% 100%, 10px 100%, 0 50%)";
-
-function Timeline({
-  items, selectedYmd, onSelect,
-}: {
-  items: RawItem[];
-  selectedYmd: string | null;
-  onSelect: (ymd: string | null) => void;
-}) {
-  const todayYmd = beijingYMD(new Date());
-  const today = new Date(todayYmd + "T00:00:00+08:00");
-  const dayBefore = 5, dayAfter = 14;
-
-  const days = useMemo(() => {
-    const out: { ymd: string; label: string; zone: Zone; isToday: boolean }[] = [];
-    for (let i = -dayBefore; i <= dayAfter; i++) {
-      const d = new Date(today); d.setDate(d.getDate() + i);
-      const ymd = beijingYMD(d);
-      const zone: Zone = i === 0 ? "today" : i < 0 ? "overdue" : i <= 3 ? "near" : "normal";
-      out.push({ ymd, label: `${d.getMonth() + 1}/${d.getDate()}`, zone, isToday: i === 0 });
-    }
-    return out;
-  }, [todayYmd]);
-
-  const byDay = useMemo(() => {
-    const m = new Map<string, { qty: number; received: number; styles: Map<string, number>; pos: Set<string>; suppliers: Set<string> }>();
-    for (const it of items) {
-      if (!it.delivery_date) continue;
-      const ymd = beijingYMD(it.delivery_date);
-      let cur = m.get(ymd);
-      if (!cur) { cur = { qty: 0, received: 0, styles: new Map(), pos: new Set(), suppliers: new Set() }; m.set(ymd, cur); }
-      cur.qty += it.unreceived_qty;
-      cur.received += it.received_qty;
-      const styleKey = it.style_no || it.sku_no || "(无款号)";
-      cur.styles.set(styleKey, (cur.styles.get(styleKey) ?? 0) + it.unreceived_qty);
-      if (it.external_po_id) cur.pos.add(it.external_po_id);
-      if (it.supplier_name) cur.suppliers.add(it.supplier_name);
-    }
-    return m;
-  }, [items]);
-
-  return (
-    <TooltipProvider delayDuration={150}>
-      <div className="flex items-stretch w-full">
-        {days.map((d) => {
-          const z = ZONE_STYLE[d.zone];
-          const cell = byDay.get(d.ymd);
-          const styles = cell
-            ? Array.from(cell.styles.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3)
-            : [];
-          const totalQty = cell?.qty ?? 0;
-          const isSelected = selectedYmd === d.ymd;
-          const stateText =
-            !cell ? "" :
-            cell.received === 0 ? "未入库" :
-            cell.received > 0 && totalQty > 0 ? "部分入库" : "已完成";
-
-          return (
-            <div key={d.ymd} className="flex flex-col items-stretch flex-1 min-w-0">
-              <div className="min-h-[64px] px-1 pb-1.5 flex flex-col justify-end items-center gap-0.5">
-                {styles.map(([s]) => (
-                  <div key={s} className={cn("text-[11px] font-mono font-semibold leading-tight truncate w-full text-center", z.soft)}>
-                    {s}
-                  </div>
-                ))}
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(isSelected ? null : d.ymd)}
-                    className={cn(
-                      "h-9 text-white flex items-center justify-center text-[12px] font-semibold tabular-nums relative",
-                      z.fill,
-                      (d.isToday || isSelected) && "ring-2 ring-blue-900 ring-offset-2 ring-offset-white z-10",
-                    )}
-                    style={{ clipPath: CHEVRON_CLIP, marginRight: -10 }}
-                  >
-                    {d.isToday ? "今天" : d.label}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  <div className="font-semibold mb-1">{d.ymd}{d.isToday && "（今天）"}</div>
-                  {cell ? (
-                    <div className="space-y-0.5">
-                      <div>供应商：{cell.suppliers.size}</div>
-                      <div>采购单：{cell.pos.size}</div>
-                      <div>款号：{cell.styles.size}</div>
-                      <div>应交付：{fmtInt(cell.qty + cell.received)} 件</div>
-                      <div>已入库：{fmtInt(cell.received)} 件</div>
-                      <div>待入库：{fmtInt(cell.qty)} 件</div>
-                      <div>状态：{d.zone === "overdue" ? "已逾期" : d.zone === "today" ? "今日交付" : d.zone === "near" ? "临近交付" : "正常"}</div>
-                    </div>
-                  ) : <div className="text-muted-foreground">当日无待交付</div>}
-                </TooltipContent>
-              </Tooltip>
-              <div className="h-10 flex flex-col items-center justify-start pt-1.5">
-                {totalQty > 0 ? (
-                  <>
-                    <div className={cn("text-[12px] font-bold tabular-nums leading-none", z.soft)}>{fmtInt(totalQty)}</div>
-                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{stateText}</div>
-                  </>
-                ) : <div className="text-[10px] text-muted-foreground/40">—</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </TooltipProvider>
-  );
-}
-
 // ============ 主页面 ============
 export default function DeliveryDashboardPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("week");
@@ -291,7 +176,8 @@ export default function DeliveryDashboardPage() {
   const [statusFilter, setStatusFilter] = useState<StatusKey>("all");
   const [keyword, setKeyword] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | "all">("all");
-  const [selectedYmd, setSelectedYmd] = useState<string | null>(null);
+  const [selectedYmds, setSelectedYmds] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<PreviewImage | null>(null);
   const [detail, setDetail] = useState<RawItem[] | null>(null);
   const [detailTitle, setDetailTitle] = useState<string>("");
   const [page, setPage] = useState(1);
@@ -314,8 +200,8 @@ export default function DeliveryDashboardPage() {
     const kw = keyword.trim().toLowerCase();
     return rawItems.filter((it) => {
       if (selectedSupplierId !== "all" && it.supplier_id !== selectedSupplierId) return false;
-      if (selectedYmd) {
-        if (!it.delivery_date || beijingYMD(it.delivery_date) !== selectedYmd) return false;
+      if (selectedYmds.size > 0) {
+        if (!it.delivery_date || !selectedYmds.has(beijingYMD(it.delivery_date))) return false;
       } else {
         const dYmd = it.delivery_date ? beijingYMD(it.delivery_date) : "";
         // 时间范围：已逾期始终保留（属于"已逾期"分桶）
@@ -338,7 +224,7 @@ export default function DeliveryDashboardPage() {
       }
       return true;
     });
-  }, [rawItems, selectedSupplierId, selectedYmd, statusFilter, keyword, rangeBounds, todayYmd]);
+  }, [rawItems, selectedSupplierId, selectedYmds, statusFilter, keyword, rangeBounds, todayYmd]);
 
   // 供应商卡片 —— 用原始数据（不受 supplier 选择影响），但应用时间范围/状态/关键字
   const supplierCardItems = useMemo(() => {
@@ -391,6 +277,30 @@ export default function DeliveryDashboardPage() {
     if (c.weekQty > 0) return "mid";
     if (c.pendingQty > 0) return "low";
     return "none";
+  };
+
+  // 时间轴数据（按选中供应商过滤，与原逻辑一致）
+  const timelineEntries = useMemo<DeliveryTimelineEntry[]>(() => {
+    const src = selectedSupplierId === "all" ? rawItems : rawItems.filter(it => it.supplier_id === selectedSupplierId);
+    return src
+      .filter(it => it.delivery_date)
+      .map(it => ({
+        ymd: beijingYMD(it.delivery_date!),
+        style_no: it.style_no || it.sku_no || "(无款号)",
+        product_name: it.product_name || null,
+        qty: it.unreceived_qty,
+      }));
+  }, [rawItems, selectedSupplierId]);
+  const timelineDays = useMemo(() => buildDeliveryDays(timelineEntries, todayYmd), [timelineEntries, todayYmd]);
+  const thumbStyleNos = useMemo(() => timelineDays.flatMap(d => d.styles.map(s => s.style_no)), [timelineDays]);
+  const styleImagesQ = useStyleImages(thumbStyleNos);
+  const toggleYmd = (ymd: string) => {
+    setSelectedYmds(prev => {
+      const next = new Set(prev);
+      if (next.has(ymd)) next.delete(ymd); else next.add(ymd);
+      return next;
+    });
+    setPage(1);
   };
 
   // 表格：按"采购单+款号"维度聚合
@@ -479,6 +389,22 @@ export default function DeliveryDashboardPage() {
   const safePage = Math.min(page, totalPages);
   const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+  // 明细表配图：按当前页 SKU 批量取图（禁止逐行调用）
+  const pageSkus = useMemo(
+    () => pageRows.flatMap(r => r.items.map(i => i.sku_no)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, safePage],
+  );
+  const skuImagesQ = useSkuImages(pageSkus);
+  const rowImage = (r: Row): string | null => {
+    if (r.product_image_url) return r.product_image_url;
+    for (const it of r.items) {
+      const u = it.sku_no ? skuImagesQ.data?.[it.sku_no] : null;
+      if (u) return u;
+    }
+    return null;
+  };
+
   function exportCsv() {
     const headers = ["供应商", "款号", "商品", "SKU数", "采购单号", "采购数", "已入库", "待入库", "采购金额", "计划交付", "状态", "风险"];
     const lines = [headers.join(",")];
@@ -531,7 +457,7 @@ export default function DeliveryDashboardPage() {
                   ? "bg-[#2563EB] hover:bg-[#1D4ED8] text-white"
                   : "bg-white text-[#0F172A] border border-slate-200 hover:bg-slate-50"
               )}
-              onClick={() => { setRangeKey(o.v); setPage(1); setSelectedYmd(null); }}
+              onClick={() => { setRangeKey(o.v); setPage(1); setSelectedYmds(new Set()); }}
             >{o.l}</Button>
           ))}
           {rangeKey === "custom" && (
@@ -665,7 +591,7 @@ export default function DeliveryDashboardPage() {
 
       {/* 货期时间轴 */}
       <Card className="p-5 border-slate-200">
-        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-baseline gap-2 mb-5 flex-wrap">
           <h3 className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
             <span className="w-1 h-4 bg-[#2563EB] rounded-sm" /> 货期时间轴
             <span className="text-[11px] font-normal text-muted-foreground">前 5 天 ~ 后 14 天</span>
@@ -675,23 +601,20 @@ export default function DeliveryDashboardPage() {
               </Badge>
             )}
           </h3>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> 已逾期</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> 今日</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 临近</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan-500" /> 正常</span>
-            {selectedYmd && (
-              <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={() => setSelectedYmd(null)}>清除日期</Button>
-            )}
-          </div>
+          <TimelineSelectionBanner
+            days={timelineDays}
+            selected={selectedYmds}
+            onClear={() => { setSelectedYmds(new Set()); setPage(1); }}
+          />
         </div>
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : (
-          <Timeline
-            items={selectedSupplierId === "all" ? rawItems : rawItems.filter(it => it.supplier_id === selectedSupplierId)}
-            selectedYmd={selectedYmd}
-            onSelect={(ymd) => { setSelectedYmd(ymd); setPage(1); }}
+          <DeliveryTimelineGrid
+            days={timelineDays}
+            styleImages={styleImagesQ.data}
+            selected={selectedYmds}
+            onToggle={toggleYmd}
           />
         )}
       </Card>
@@ -701,7 +624,11 @@ export default function DeliveryDashboardPage() {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h3 className="text-sm font-semibold text-[#0F172A] flex items-center gap-2">
             <span className="w-1 h-4 bg-[#2563EB] rounded" /> 待交付明细
-            {selectedYmd && <Badge variant="outline" className="text-[11px] border-blue-200 text-blue-700">交付日 = {selectedYmd}</Badge>}
+            {selectedYmds.size > 0 && (
+              <Badge variant="outline" className="text-[11px] border-blue-200 text-blue-700">
+                交付日 = {timelineDays.filter(d => selectedYmds.has(d.ymd)).map(d => d.label).join(" + ")}
+              </Badge>
+            )}
           </h3>
           <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={exportCsv}>导出</Button>
         </div>
@@ -746,9 +673,15 @@ export default function DeliveryDashboardPage() {
                     <td className="py-3 px-2 text-[12px] text-[#0F172A]">{r.supplier_name}</td>
                     <td className="py-3 px-2">
                       <div className="flex items-center gap-2">
-                        {r.product_image_url
-                          ? <img src={r.product_image_url} alt="" className="w-8 h-8 object-cover rounded-md" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
-                          : <div className="w-8 h-8 rounded-md bg-slate-100" />}
+                        {(() => {
+                          const img = rowImage(r);
+                          return img
+                            ? <img src={img} alt="" referrerPolicy="no-referrer" loading="lazy"
+                                className="w-8 h-8 object-cover rounded-md cursor-zoom-in shrink-0"
+                                onClick={() => setPreview({ url: img, caption: `${r.style_no} ${r.product_name || ""}`.trim() })}
+                                onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
+                            : <div className="w-8 h-8 rounded-md bg-slate-100 shrink-0" />;
+                        })()}
                         <div className="min-w-0">
                           <div className="font-mono text-foreground">{r.style_no}</div>
                           <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">{r.product_name || "-"}</div>
@@ -876,6 +809,9 @@ export default function DeliveryDashboardPage() {
           })()}
         </SheetContent>
       </Sheet>
+
+      {/* 商品大图预览 */}
+      <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

@@ -12,6 +12,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDateCN, formatDateTimeCN, beijingYMD, beijingDayRangeToUTC } from "@/lib/datetime";
+import {
+  buildDeliveryDays, DeliveryTimelineGrid, TimelineSelectionBanner,
+  type DeliveryTimelineEntry,
+} from "@/components/ops/DeliveryTimelineVisual";
+import { ImagePreviewDialog, type PreviewImage } from "@/components/ops/ImagePreviewDialog";
+import { useStyleImages, useSkuImages } from "@/hooks/useProductImages";
 
 // ============ Helpers ============
 const fmtInt = (n?: number | null) => Number(n ?? 0).toLocaleString("zh-CN");
@@ -315,117 +321,6 @@ function MiniCard({ icon: Icon, iconTint, title, qty, amount, amountLabel, loadi
   );
 }
 
-// ============ Timeline ============
-type Zone = "past" | "today" | "soon" | "future";
-const ZONE_STYLE: Record<Zone, { fill: string; text: string; soft: string }> = {
-  past:   { fill: "bg-rose-500",    text: "text-white", soft: "text-rose-600" },
-  today:  { fill: "bg-violet-600",  text: "text-white", soft: "text-violet-600" },
-  soon:   { fill: "bg-amber-500",   text: "text-white", soft: "text-amber-600" },
-  future: { fill: "bg-emerald-500", text: "text-white", soft: "text-emerald-600" },
-};
-const CHEVRON_CLIP = "polygon(10px 0, 100% 0, calc(100% - 10px) 50%, 100% 100%, 10px 100%, 0 50%)";
-const MAX_STYLES = 5;
-
-function Timeline({
-  items, selectedYmd, onSelect, onShowAll,
-}: {
-  items: TimelineItem[];
-  selectedYmd: string | null;
-  onSelect: (ymd: string | null) => void;
-  onShowAll: (ymd: string, styles: { style_no: string; qty: number }[]) => void;
-}) {
-  const todayYmd = beijingYMD(new Date());
-  const today = new Date(todayYmd + "T00:00:00+08:00");
-  const dayBefore = 5, dayAfter = 14;
-
-  const days = useMemo(() => {
-    const out: { ymd: string; label: string; zone: Zone }[] = [];
-    for (let i = -dayBefore; i <= dayAfter; i++) {
-      const d = new Date(today); d.setDate(d.getDate() + i);
-      const ymd = beijingYMD(d);
-      const zone: Zone = i === 0 ? "today" : i < 0 ? "past" : i <= 3 ? "soon" : "future";
-      out.push({ ymd, label: `${d.getMonth() + 1}/${d.getDate()}`, zone });
-    }
-    return out;
-  }, [todayYmd]);
-
-  const byDay = useMemo(() => {
-    const m = new Map<string, Map<string, { qty: number; product_name: string }>>();
-    for (const it of items) {
-      if (!m.has(it.delivery_ymd)) m.set(it.delivery_ymd, new Map());
-      const styleMap = m.get(it.delivery_ymd)!;
-      const cur = styleMap.get(it.style_no) ?? { qty: 0, product_name: it.product_name };
-      cur.qty += it.unreceived_qty;
-      styleMap.set(it.style_no, cur);
-    }
-    return m;
-  }, [items]);
-
-  return (
-    <div className="flex items-stretch w-full">
-      {days.map((d) => {
-        const z = ZONE_STYLE[d.zone];
-        const styleMap = byDay.get(d.ymd);
-        const styles = styleMap
-          ? Array.from(styleMap.entries()).map(([style_no, v]) => ({ style_no, qty: v.qty })).sort((a, b) => b.qty - a.qty)
-          : [];
-        const totalQty = styles.reduce((s, x) => s + x.qty, 0);
-        const visible = styles.slice(0, MAX_STYLES);
-        const extra = styles.length - visible.length;
-        const isSelected = selectedYmd === d.ymd;
-        const isToday = d.zone === "today";
-
-        return (
-          <div key={d.ymd} className="flex flex-col items-stretch flex-1 min-w-0">
-            <div className="min-h-[120px] px-1 pb-1.5 flex flex-col justify-end items-center gap-1">
-              {visible.map((s) => (
-                <div
-                  key={s.style_no}
-                  className={`text-[13px] font-mono font-semibold tabular-nums leading-tight truncate w-full text-center ${z.soft}`}
-                  title={`${s.style_no} · ${fmtInt(s.qty)}件`}
-                >
-                  {s.style_no}
-                </div>
-              ))}
-              {extra > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onShowAll(d.ymd, styles)}
-                  title={styles.slice(MAX_STYLES).map(s => `${s.style_no} · ${fmtInt(s.qty)}件`).join("\n")}
-                  className="text-[11px] font-medium text-muted-foreground leading-tight hover:underline hover:text-foreground"
-                >
-                  +{extra} 个款号
-                </button>
-              )}
-            </div>
-            <div className="h-1.5 flex justify-center">
-              {styles.length > 0 && <div className={`w-px h-full ${z.fill}`} />}
-            </div>
-            <button
-              type="button"
-              onClick={() => onSelect(isSelected ? null : d.ymd)}
-              className={`h-8 ${z.fill} ${z.text} flex items-center justify-center text-[11px] font-semibold tabular-nums relative ${isToday || isSelected ? "ring-2 ring-foreground ring-offset-2 ring-offset-background z-10" : ""}`}
-              style={{ clipPath: CHEVRON_CLIP, marginRight: -10 }}
-            >
-              {isToday ? "今天" : d.label}
-            </button>
-            <div className="h-8 flex flex-col items-center justify-start pt-1">
-              {totalQty > 0 ? (
-                <>
-                  <div className={`text-[11px] font-bold tabular-nums leading-none ${z.soft}`}>{fmtInt(totalQty)}</div>
-                  <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">未入库</div>
-                </>
-              ) : (
-                <div className="text-[10px] text-muted-foreground/50">—</div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ============ Status helpers ============
 type PendingStatus = "overdue" | "soon" | "producing" | "partial" | "done";
 function statusForStyle(unreceived: number, received: number, earliestDelivery: string | null, todayYmd: string): PendingStatus {
@@ -459,9 +354,9 @@ export default function SupplierDashboard() {
   const [keyword, setKeyword] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 20;
-  const [selectedYmd, setSelectedYmd] = useState<string | null>(null);
+  const [selectedYmds, setSelectedYmds] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<PreviewImage | null>(null);
   const [detailStyle, setDetailStyle] = useState<StyleRow | null>(null);
-  const [stylesPopup, setStylesPopup] = useState<{ ymd: string; list: { style_no: string; qty: number }[] } | null>(null);
 
   const { startYmd, endYmd } = useMemo(
     () => computeRange(rangeKey, customStart, customEnd),
@@ -481,11 +376,31 @@ export default function SupplierDashboard() {
 
   const todayYmd = beijingYMD(new Date());
 
+  // 时间轴数据（数据源与过滤条件不变，仅换可视化）
+  const timelineEntries = useMemo<DeliveryTimelineEntry[]>(() =>
+    (timelineQ.data ?? []).map(t => ({
+      ymd: t.delivery_ymd,
+      style_no: t.style_no,
+      product_name: t.product_name || null,
+      qty: t.unreceived_qty,
+    })), [timelineQ.data]);
+  const timelineDays = useMemo(() => buildDeliveryDays(timelineEntries, todayYmd), [timelineEntries, todayYmd]);
+  const thumbStyleNos = useMemo(() => timelineDays.flatMap(d => d.styles.map(s => s.style_no)), [timelineDays]);
+  const styleImagesQ = useStyleImages(thumbStyleNos);
+  const toggleYmd = (ymd: string) => {
+    setSelectedYmds(prev => {
+      const next = new Set(prev);
+      if (next.has(ymd)) next.delete(ymd); else next.add(ymd);
+      return next;
+    });
+    setPage(1);
+  };
+
   // 按款号聚合 → 排序 → 过滤
   const styleRows = useMemo<StyleRow[]>(() => {
     const items = pendingQ.data ?? [];
-    const filtered = selectedYmd
-      ? items.filter(it => it.delivery_date && beijingYMD(it.delivery_date) === selectedYmd)
+    const filtered = selectedYmds.size > 0
+      ? items.filter(it => it.delivery_date && selectedYmds.has(beijingYMD(it.delivery_date)))
       : items;
     const groups = new Map<string, PendingItem[]>();
     for (const it of filtered) {
@@ -534,7 +449,7 @@ export default function SupplierDashboard() {
       return b.amount - a.amount;
     });
     return visible;
-  }, [pendingQ.data, selectedYmd, todayYmd]);
+  }, [pendingQ.data, selectedYmds, todayYmd]);
 
   const filteredStyles = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -549,6 +464,22 @@ export default function SupplierDashboard() {
   const totalPages = Math.max(1, Math.ceil(filteredStyles.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pageRows = filteredStyles.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // 明细表配图：按当前页 SKU 批量取图（禁止逐行调用）
+  const pageSkus = useMemo(
+    () => pageRows.flatMap(r => r.items.map(i => i.sku_no)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredStyles, safePage],
+  );
+  const skuImagesQ = useSkuImages(pageSkus);
+  const rowImage = (r: StyleRow): string | null => {
+    if (r.product_image_url) return r.product_image_url;
+    for (const it of r.items) {
+      const u = it.sku_no ? skuImagesQ.data?.[it.sku_no] : null;
+      if (u) return u;
+    }
+    return null;
+  };
 
   const lastUpdatedAt = new Date();
 
@@ -628,31 +559,27 @@ export default function SupplierDashboard() {
 
       {/* Timeline */}
       <Card className="p-5">
-        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-baseline gap-2 mb-5 flex-wrap">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <span className="w-1 h-4 bg-emerald-500 rounded-sm" /> 货期时间轴
             <span className="text-[11px] font-normal text-muted-foreground ml-1">前 5 天 ~ 后 14 天 · 按款号</span>
           </h3>
-          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> 已超期</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-violet-600" /> 今日</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 临近交期（3天内）</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> 充裕</span>
-            {selectedYmd && (
-              <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={() => setSelectedYmd(null)}>清除选择</Button>
-            )}
-          </div>
+          <TimelineSelectionBanner
+            days={timelineDays}
+            selected={selectedYmds}
+            onClear={() => { setSelectedYmds(new Set()); setPage(1); }}
+          />
         </div>
         {timelineQ.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : timelineQ.error ? (
           <div className="text-rose-600 text-sm">读取失败：{(timelineQ.error as any).message}</div>
         ) : (
-          <Timeline
-            items={timelineQ.data ?? []}
-            selectedYmd={selectedYmd}
-            onSelect={(ymd) => { setSelectedYmd(ymd); setPage(1); }}
-            onShowAll={(ymd, list) => setStylesPopup({ ymd, list })}
+          <DeliveryTimelineGrid
+            days={timelineDays}
+            styleImages={styleImagesQ.data}
+            selected={selectedYmds}
+            onToggle={toggleYmd}
           />
         )}
       </Card>
@@ -662,8 +589,10 @@ export default function SupplierDashboard() {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <span className="w-1 h-4 bg-emerald-500 rounded" /> 7天内急需交货
-            {selectedYmd && (
-              <Badge variant="outline" className="text-[11px]">交付日 = {selectedYmd}</Badge>
+            {selectedYmds.size > 0 && (
+              <Badge variant="outline" className="text-[11px]">
+                交付日 = {timelineDays.filter(d => selectedYmds.has(d.ymd)).map(d => d.label).join(" + ")}
+              </Badge>
             )}
           </h3>
           <div className="relative">
@@ -708,9 +637,15 @@ export default function SupplierDashboard() {
                 return (
                   <tr key={r.key} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                     <td className="py-3">
-                      {r.product_image_url
-                        ? <img src={r.product_image_url} alt="" className="w-9 h-9 object-cover rounded-md" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
-                        : <div className="w-9 h-9 rounded-md bg-muted" />}
+                      {(() => {
+                        const img = rowImage(r);
+                        return img
+                          ? <img src={img} alt="" referrerPolicy="no-referrer" loading="lazy"
+                              className="w-9 h-9 object-cover rounded-md cursor-zoom-in"
+                              onClick={() => setPreview({ url: img, caption: `${r.style_no} ${r.product_name || ""}`.trim() })}
+                              onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
+                          : <div className="w-9 h-9 rounded-md bg-muted" />;
+                      })()}
                     </td>
                     <td className="py-3">
                       <div className="font-mono text-foreground">{r.style_no}</div>
@@ -854,23 +789,8 @@ export default function SupplierDashboard() {
         </SheetContent>
       </Sheet>
 
-      {/* 时间轴款号全量抽屉 */}
-      <Sheet open={!!stylesPopup} onOpenChange={(o) => !o && setStylesPopup(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{stylesPopup?.ymd} 待入库款号</SheetTitle>
-            <SheetDescription>共 {stylesPopup?.list.length ?? 0} 个款号</SheetDescription>
-          </SheetHeader>
-          <div className="mt-4 space-y-1 text-sm">
-            {stylesPopup?.list.map((s) => (
-              <div key={s.style_no} className="flex justify-between border-b py-1.5">
-                <span className="font-mono">{s.style_no}</span>
-                <span className="tabular-nums text-muted-foreground">{fmtInt(s.qty)} 件</span>
-              </div>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* 商品大图预览 */}
+      <ImagePreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
