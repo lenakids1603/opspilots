@@ -994,20 +994,22 @@ function StyleCardRow({ style: s, innerRef, onPreview }: {
         <div className="flex items-center gap-2 mb-1.5 min-w-0">
           <span className="font-mono text-xs text-muted-foreground shrink-0">{s.style_no}</span>
           {shortName && (
-            <span className="text-sm font-medium truncate flex-1 min-w-0" title={shortName}>
+            <span className="text-sm font-medium truncate min-w-0" title={shortName}>
               {shortName}
             </span>
           )}
-          {s.overdueQty > 0 && (
-            <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FCEBEB] text-[#791F1F] font-medium shrink-0" style={{ padding: "2px 8px" }}>
-              已超时 {s.overdueQty} 件 · 最长 {s.maxDays} 天
-            </span>
-          )}
-          {s.overdueQty === 0 && s.due24Qty > 0 && (
-            <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FAEEDA] text-[#633806] font-medium shrink-0" style={{ padding: "2px 8px" }}>
-              24h内 {s.due24Qty} 件
-            </span>
-          )}
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            {s.overdueQty > 0 && (
+              <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FCEBEB] text-[#791F1F] font-medium" style={{ padding: "2px 8px" }}>
+                已超时 {s.overdueQty} 件 · 最长 {s.maxDays} 天
+              </span>
+            )}
+            {s.overdueQty === 0 && s.due24Qty > 0 && (
+              <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FAEEDA] text-[#633806] font-medium" style={{ padding: "2px 8px" }}>
+                24h内 {s.due24Qty} 件
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-1">
           {visibleSkus.map(sk => (
