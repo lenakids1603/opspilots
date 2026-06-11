@@ -492,6 +492,30 @@ async function syncShippingRisks(orderRows: any[], lightRows: any[]) {
   return { riskUpserted: riskRows.length, riskDeleted: deleted };
 }
 
+// 顺手维护 SKU 图片字典(ops_skus/ops_products):新交易 SKU 带 pic 时补一行,已有图不覆盖。
+// 字典供 v_purchase_order_items_with_image / ops_sku_images() 等配图链路使用。
+async function upsertSkuImageDict(sources: Iterable<any>) {
+  const bySku = new Map<string, { sku: string; pic: string; style_no: string | null; product_name: string | null }>();
+  for (const o of sources) {
+    for (const it of pickItems(o)) {
+      const sku = str(it.sku_id);
+      const pic = str(it.pic);
+      if (!sku || !pic) continue;
+      if (!bySku.has(sku)) {
+        bySku.set(sku, { sku, pic, style_no: str(it.i_id), product_name: str(it.name ?? it.product_name) });
+      }
+    }
+  }
+  if (bySku.size === 0) return 0;
+  const { error } = await admin.rpc("ops_sku_image_dict_upsert", { _rows: Array.from(bySku.values()) });
+  if (error) {
+    // 字典维护失败不阻断同步
+    console.error("ops_sku_image_dict_upsert failed:", error.message);
+    return 0;
+  }
+  return bySku.size;
+}
+
 async function persistDerivedSalesState(orderRows: any[], sourceByOId: Map<string, any>, idByOId: Map<string, string>) {
   const lightRows: any[] = [];
   const legacyRows: any[] = [];
@@ -508,6 +532,7 @@ async function persistDerivedSalesState(orderRows: any[], sourceByOId: Map<strin
 
   const light = await upsertLightItemRows(lightRows);
   const legacy = await maybeUpsertLegacyItemRows(legacyRows);
+  await upsertSkuImageDict(sourceByOId.values());
   const summary = await refreshSalesSummaries(lightRows.map((row) => row.item_unique_key));
   const lookupUpserted = await upsertOrderLookup(lightRows);
   const risks = await syncShippingRisks(orderRows, lightRows);
