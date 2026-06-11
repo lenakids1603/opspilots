@@ -378,6 +378,13 @@ export default function ChaseListPage() {
                                     <td className="px-4 py-2 font-mono">{r.sku}</td>
                                     <td className="px-4 py-2">{r.style_no || "-"}</td>
                                     <td className="px-4 py-2 text-right font-semibold">{fmtNum(r.total_qty)}</td>
+                                    <td className={cn("px-4 py-2 text-right", Number(r.overdue_qty) > 0 && "text-destructive font-medium")}>
+                                      {fmtNum(r.overdue_qty)}
+                                    </td>
+                                    <td className={cn("px-4 py-2 text-right", Number(r.due24_qty) > 0 && "text-orange-500 font-medium")}>
+                                      {fmtNum(r.due24_qty)}
+                                    </td>
+                                    <td className="px-4 py-2 text-right">{fmtNum(r.due48_qty)}</td>
                                     <td className="px-4 py-2 text-right">{r.po_count}</td>
                                     <td className="px-4 py-2 text-right">
                                       <Badge variant={r.max_overdue_days >= 15 ? "destructive" : "secondary"}>
@@ -388,7 +395,7 @@ export default function ChaseListPage() {
                                   {poOpen && (r.po_details?.length ?? 0) > 0 && (
                                     <tr key={key + "-d"} className="bg-muted/10 border-t">
                                       <td></td>
-                                      <td colSpan={5} className="px-4 py-2">
+                                      <td colSpan={8} className="px-4 py-2">
                                         <table className="text-xs w-full">
                                           <thead className="text-muted-foreground">
                                             <tr>
