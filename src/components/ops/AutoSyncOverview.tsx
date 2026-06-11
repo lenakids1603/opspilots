@@ -18,6 +18,7 @@ type OverviewRow = {
   sync_type: string;
   schedule: string;
   active: boolean;
+  payload: Record<string, unknown> | null;
   last_run_status: string | null;
   last_run_started_at: string | null;
   last_run_ended_at: string | null;
@@ -159,19 +160,18 @@ function nextCronFireUtc(expr: string, from: Date): Date | null {
   }
   return null;
 }
-function describeSchedule(expr: string, sync_type: string): string {
+// 同步窗口：取 cron command 真实 payload 里的 minutes / days，不做硬编码推测
+function describeWindow(payload: Record<string, unknown> | null | undefined): string {
+  if (!payload) return "";
+  const minutes = Number(payload.minutes);
+  if (Number.isFinite(minutes) && minutes > 0) return ` · 同步最近 ${minutes} 分钟`;
+  const days = Number(payload.days);
+  if (Number.isFinite(days) && days > 0) return ` · 同步最近 ${days} 天`;
+  return "";
+}
+function describeSchedule(expr: string, payload: Record<string, unknown> | null | undefined): string {
   const e = expr.trim();
-  // window 默认提示（与 cron migration 中 payload 对齐）
-  const WIN: Record<string, string> = {
-    sales_orders: "最近 45 分钟",
-    outbound_orders: "最近 45 分钟",
-    refund_orders: "最近 180 分钟",
-    aftersale_received: "最近 180 分钟",
-    purchase_orders: "最近 60 分钟",
-    purchase_inbound_orders: "最近 60 分钟",
-    dispatch_base_archive: "最近 2 天",
-  };
-  const win = WIN[sync_type] ? ` · 同步${WIN[sync_type]}` : "";
+  const win = describeWindow(payload);
   let m = e.match(/^\*\/(\d+) \* \* \* \*$/);
   if (m) return `每 ${m[1]} 分钟${win}`;
   m = e.match(/^\d+(?:-\d+)?\/(\d+) \* \* \* \*$/);
@@ -490,7 +490,7 @@ export default function AutoSyncOverview() {
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {describeSchedule(row.schedule, row.sync_type)}
+                          {describeSchedule(row.schedule, row.payload)}
                         </p>
                       </div>
                       {isAdmin ? (
