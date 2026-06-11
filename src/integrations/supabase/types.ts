@@ -4228,6 +4228,7 @@ export type Database = {
           style_no: string
           supplier_id: string
           supplier_name: string
+          urgency: string
         }[]
       }
       ops_chase_purchase_list: {
@@ -4252,9 +4253,9 @@ export type Database = {
       ops_chase_question_count: {
         Args: never
         Returns: {
-          question_items: number
-          question_orders: number
-          question_qty: number
+          pending_review_items: number
+          pending_review_orders: number
+          pending_review_qty: number
         }[]
       }
       ops_chase_refresh_risk_meta: {
@@ -4264,6 +4265,10 @@ export type Database = {
       ops_chase_supplier_list: {
         Args: never
         Returns: {
+          due24_qty: number
+          due48_qty: number
+          due72_qty: number
+          later_qty: number
           max_overdue_days: number
           overdue_qty: number
           po_count: number
@@ -4272,6 +4277,16 @@ export type Database = {
           style_no: string
           supplier_id: string
           supplier_name: string
+          total_qty: number
+        }[]
+      }
+      ops_chase_urgency_summary: {
+        Args: never
+        Returns: {
+          order_count: number
+          qty: number
+          supplier_count: number
+          urgency: string
         }[]
       }
       recalc_purchase_order_aggregates: {
