@@ -689,7 +689,7 @@ export default function ChaseListPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-6">
               {grouped.map(g => {
                 const open = isExpanded(g.supplier_id);
                 // 当选中某天时只显示对应 product_name 的款
@@ -714,23 +714,27 @@ export default function ChaseListPage() {
                       <div className="text-sm text-muted-foreground hidden sm:block">
                         催货 <span className="text-foreground font-semibold">{fmtNum(g.totalQty)}</span> 件 · {fmtNum(g.styleCount)} 款
                       </div>
-                      {g.overdueQty > 0 && <Badge variant="destructive">已超时 {fmtNum(g.overdueQty)} 件</Badge>}
+                      {g.overdueQty > 0 && (
+                        <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FCEBEB] text-[#791F1F] font-medium" style={{ padding: "2px 8px" }}>
+                          已超时 {fmtNum(g.overdueQty)} 件
+                        </span>
+                      )}
                       {g.due24Qty > 0 && (
-                        <Badge className="bg-orange-500 hover:bg-orange-500/90 text-white border-transparent">
+                        <span className="inline-flex items-center text-[11px] leading-none rounded-md bg-[#FAEEDA] text-[#633806] font-medium" style={{ padding: "2px 8px" }}>
                           24h内 {fmtNum(g.due24Qty)} 件
-                        </Badge>
+                        </span>
                       )}
                       <div className="ml-auto flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                        <Button variant="outline" size="sm" onClick={() => copyChaseMsg(g, visibleForCopy)}>
-                          <Copy className="mr-1" /> 复制催货消息
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => copyChaseMsg(g, visibleForCopy)}>
+                          <Copy className="size-3 mr-1" /> 复制催货消息
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportSupplier(g)}>
-                          <Download className="mr-1" /> 导出催货单
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => exportSupplier(g)}>
+                          <Download className="size-3 mr-1" /> 导出催货单
                         </Button>
                       </div>
                     </div>
                     {open && (
-                      <div className="border-t p-3 space-y-2">
+                      <div className="border-t p-3 space-y-3">
                         {main.length === 0 && tail.length === 0 && (
                           <div className="text-sm text-muted-foreground py-2 text-center">无匹配款式</div>
                         )}
@@ -752,7 +756,7 @@ export default function ChaseListPage() {
                               {tailOpen ? "▾ 收起零头" : `▸ 另有零头 ${tail.length} 款 · 共 ${tail.reduce((x, s) => x + s.totalQty, 0)} 件`}
                             </button>
                             {tailOpen && (
-                              <div className="mt-2 space-y-2">
+                              <div className="mt-2 space-y-3">
                                 {tail.map(s => (
                                   <StyleCardRow
                                     key={s.style_no}
