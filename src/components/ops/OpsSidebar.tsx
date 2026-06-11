@@ -18,6 +18,7 @@ const GROUPS: Group[] = [
       { title: "订单超时预警", url: "/operations/shipping-risk" },
       { title: "运营分析", url: "/operations/analysis" },
       { title: "订单列表", url: "/operations/sales-orders" },
+      { title: "催货清单", url: "/chase-list" },
       { title: "货期交付看板", url: "/purchase/delivery-dashboard" },
     ],
   },
