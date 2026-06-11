@@ -270,17 +270,18 @@ export default function ChaseListPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <SummaryCard
           label="需催货件数" loading={loading}
-          value={fmtNum(summary.totalQty)} accent="danger" suffix="件"
+          value={fmtNum(summary.totalQty)} suffix="件"
+          extra={`涉及 ${fmtNum(summary.supplierCount)} 家供应商 · ${fmtNum(summary.skuCount)} 个 SKU`}
         />
         <SummaryCard
-          label="涉及供应商" loading={loading}
-          value={fmtNum(summary.supplierCount)} suffix="家"
-          extra={`涉及 ${fmtNum(summary.skuCount)} 个 SKU`}
+          label="已对客超时" loading={loading}
+          value={fmtNum(overdueU?.qty ?? 0)} suffix="件" accent="danger"
+          extra={`${fmtNum(overdueU?.order_count ?? 0)} 单`}
         />
         <SummaryCard
-          label="最长超期" loading={loading}
-          value={fmtNum(summary.maxOverdue)} suffix="天"
-          accent={summary.maxOverdue >= 15 ? "danger" : undefined}
+          label="24小时内到期" loading={loading}
+          value={fmtNum(due24U?.qty ?? 0)} suffix="件" accent="warning"
+          extra={`${fmtNum(due24U?.order_count ?? 0)} 单 · 今晚必催`}
         />
         <SummaryCard
           label="待审核单" loading={loading}
