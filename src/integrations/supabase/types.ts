@@ -4224,6 +4224,17 @@ export type Database = {
           supplier_name: string
         }[]
       }
+      ops_chase_deadline_timeline: {
+        Args: never
+        Returns: {
+          deadline_date: string
+          image_url: string
+          product_name: string
+          qty: number
+          style_no: string
+          urgency: string
+        }[]
+      }
       ops_chase_match_core: {
         Args: never
         Returns: {
@@ -4282,11 +4293,13 @@ export type Database = {
           due24_qty: number
           due48_qty: number
           due72_qty: number
+          image_url: string
           later_qty: number
           max_overdue_days: number
           overdue_qty: number
           po_count: number
           po_details: Json
+          product_name: string
           sku: string
           style_no: string
           supplier_id: string
