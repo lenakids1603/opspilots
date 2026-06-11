@@ -594,8 +594,17 @@ export default function ChaseListPage() {
           ) : timelineBuckets.length > 0 && (
             <Card>
               <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-sm font-medium">发货截止时间轴</div>
+                <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="text-sm font-medium">发货截止时间轴</div>
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+                      <span>描边</span>
+                      <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm ring-2 ring-red-500" />已超时</span>
+                      <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm ring-2 ring-purple-500" />今天</span>
+                      <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm ring-2 ring-orange-500" />24h内</span>
+                      <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm ring-2 ring-emerald-500" />更晚</span>
+                    </div>
+                  </div>
                   {selectedDay && (
                     <Button variant="ghost" size="sm" onClick={() => setSelectedDay(null)}>
                       <X className="size-3 mr-1" /> 清除筛选
@@ -604,24 +613,34 @@ export default function ChaseListPage() {
                 </div>
                 <TooltipProvider delayDuration={150}>
                   <div className="overflow-x-auto">
-                    <div className="flex items-stretch gap-1 min-w-max w-full">
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                        gap: 4,
+                        minWidth: 920,
+                      }}
+                    >
                       {timelineBuckets.map((b) => {
                         const isSel = selectedDay === b.id;
-                        const visibleItems = expandedDay[b.id] ? b.items : b.items.slice(0, 3);
+                        const visibleItems = b.items.slice(0, 3);
                         const hiddenCount = b.items.length - visibleItems.length;
                         return (
-                          <div key={b.id} className="flex-1 min-w-[140px] flex flex-col items-center">
-                            {/* 缩略图行 */}
-                            <div className="flex items-end justify-center gap-2 min-h-[56px] mb-[10px] px-1 flex-wrap">
+                          <div key={b.id} className="flex flex-col">
+                            {/* 上半：衣架区 固定 56px */}
+                            <div
+                              style={{ height: 56 }}
+                              className="flex justify-center items-end gap-1.5 px-1"
+                            >
                               {visibleItems.map((it) => (
                                 <Tooltip key={it.key}>
                                   <TooltipTrigger asChild>
-                                    <div className="relative">
+                                    <div className="relative" style={{ width: 40, height: 40 }}>
                                       <ProductThumb
                                         src={it.image_url}
                                         alt={it.product_name}
-                                        size={48}
-                                        radiusClass="rounded-lg"
+                                        size={40}
+                                        radiusClass="rounded-md"
                                         ringClass={URGENCY_RING[it.urgency]}
                                         onClick={() => scrollToStyle(it.style_no)}
                                       />
@@ -639,22 +658,22 @@ export default function ChaseListPage() {
                                 </Tooltip>
                               ))}
                               {hiddenCount > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedDay(s => ({ ...s, [b.id]: true }))}
-                                  className="w-12 h-12 rounded-lg bg-muted text-muted-foreground text-xs font-medium flex items-center justify-center hover:bg-muted/80"
-                                  aria-label="展开更多"
+                                <div
+                                  style={{ width: 40, height: 40 }}
+                                  className="rounded-md bg-muted text-muted-foreground text-xs font-medium flex items-center justify-center"
+                                  title={`另有 ${hiddenCount} 款`}
                                 >
                                   +{hiddenCount}
-                                </button>
+                                </div>
                               )}
+                              {b.items.length === 0 && <div style={{ width: 1, height: 56 }} />}
                             </div>
-                            {/* 彩带段 */}
+                            {/* 下半：彩带段 */}
                             <button
                               type="button"
                               onClick={() => setSelectedDay(s => s === b.id ? null : b.id)}
                               className={cn(
-                                "relative w-full flex flex-col items-center justify-center transition-opacity",
+                                "w-full flex flex-col items-center justify-center transition-opacity",
                                 bucketBg(b),
                                 !isSel && selectedDay && "opacity-40",
                               )}
@@ -664,7 +683,7 @@ export default function ChaseListPage() {
                               }}
                             >
                               <div className="text-[13px] font-medium leading-tight">{b.label}</div>
-                              <div className="text-[11px] opacity-90">{fmtNum(b.totalQty)} 件</div>
+                              <div className="text-[11px] font-normal opacity-90">{fmtNum(b.totalQty)} 件</div>
                             </button>
                           </div>
                         );
