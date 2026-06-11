@@ -420,9 +420,15 @@ async function upsertOrderLookup(lightRows: any[]) {
   return rows.length;
 }
 
+// Split/Merged/Delivering 属已核销状态：父单拆/合并后需求转入子单，发货中即将出库，
+// 这些行不应留在催发货风险表里（历史僵尸行由 ops_chase_refresh_risk_meta 全表清理）。
+const RISK_SETTLED_STATUSES = new Set(["Split", "Merged", "Delivering"]);
+
 async function syncShippingRisks(orderRows: any[], lightRows: any[]) {
   const removeOIds = orderRows
-    .filter((row) => row.jst_o_id && row.internal_order_type !== "paid_pending_ship")
+    .filter((row) =>
+      row.jst_o_id &&
+      (row.internal_order_type !== "paid_pending_ship" || RISK_SETTLED_STATUSES.has(String(row.status ?? ""))))
     .map((row) => String(row.jst_o_id));
   let deleted = 0;
   for (const ids of chunk(Array.from(new Set(removeOIds)), 200)) {
@@ -432,7 +438,9 @@ async function syncShippingRisks(orderRows: any[], lightRows: any[]) {
   }
 
   const riskRows = lightRows
-    .filter((row) => row.internal_order_type === "paid_pending_ship")
+    .filter((row) =>
+      row.internal_order_type === "paid_pending_ship" &&
+      !RISK_SETTLED_STATUSES.has(String(row.order_status ?? "")))
     .map((row) => {
       const latestShipTime = resolveShippingDeadline(row.plan_delivery_date, row.pay_time, row.order_created_at);
       const risk = riskFromDeadline(latestShipTime);
@@ -451,7 +459,8 @@ async function syncShippingRisks(orderRows: any[], lightRows: any[]) {
         remaining_hours: risk.remainingHours,
         is_timeout: risk.isTimeout,
         risk_level: risk.riskLevel,
-        sku_code: row.sku_code,
+        // JST 订单明细的商家 SKU 编码在 sku_id 字段（sku_code 在历史数据中恒为空）
+        sku_code: row.sku_id ?? row.sku_code,
         sku_name: row.sku_name,
         style_no: row.style_no,
         color: row.color,
@@ -464,6 +473,11 @@ async function syncShippingRisks(orderRows: any[], lightRows: any[]) {
   if (riskRows.length > 0) {
     const { error } = await admin.from("shipping_risk_orders").upsert(riskRows, { onConflict: "item_unique_key" });
     if (error) throw error;
+    // 回填 supplier_name（style_no → 商品档案，兜底最近采购单）+ 清理僵尸行；失败不阻断同步
+    const { error: metaError } = await admin.rpc("ops_chase_refresh_risk_meta", {
+      _item_keys: riskRows.map((row) => row.item_unique_key),
+    });
+    if (metaError) console.error("ops_chase_refresh_risk_meta failed:", metaError.message);
   }
   return { riskUpserted: riskRows.length, riskDeleted: deleted };
 }
