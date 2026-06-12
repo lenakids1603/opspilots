@@ -295,6 +295,7 @@ export default function ChaseListVisual({ timeline, suppliers, onExport }: Props
       {/* ======== 发货截止时间轴 ======== */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>发货截止时间轴</span>
+        <span style={{ fontSize: 11, color: FAINT }}>仅含可催供应商部分，非全部待发货</span>
         {selected.size > 0 ? (
           <button style={{ ...textBtn, color: RED, fontWeight: 500 }} onClick={() => setSelected(new Set())}>
             已选 {selectedDays.map((d) => d.label).join(" + ")} · 合计 {selectedQty} 件 · 点击清除

@@ -341,6 +341,10 @@ export default function ChaseListPage() {
         </TabsList>
 
         <TabsContent value="supplier" className="mt-4">
+          <div className="text-xs text-muted-foreground mb-2">
+            口径：仅统计已匹配到「协议到货日已过的在产采购单」的待发货需求（可向供应商催讨的部分）；
+            无采购单覆盖的缺口、下单过迟见「采购缺口」，厂家已结单少交见「厂家已结单」，正常在途不在此列
+          </div>
           {loading ? (
             <div className="space-y-4">
               <Skeleton className="h-40 w-full" />
