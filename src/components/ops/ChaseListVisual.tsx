@@ -39,9 +39,24 @@ export interface SupplierRow {
   image_url: string | null;
 }
 
+export interface UnmatchedRow {
+  style_no: string;
+  product_name: string | null;
+  image_url: string | null;
+  total_qty: number;
+  overdue_qty: number;
+  due24_qty: number;
+  order_count: number;
+  shop_names: string[] | null;
+  earliest_ship_time: string | null;
+  sku_details: { sku: string; sku_name: string | null; qty: number; overdue_qty: number }[] | null;
+}
+
 interface Props {
   timeline: TimelineRow[];
   suppliers: SupplierRow[];
+  /** 供应商未匹配兜底桶（ops_chase_unmatched_list）；空数组时整桶隐藏 */
+  unmatched?: UnmatchedRow[];
   /** 接入服务端导出（xlsx带图）；未提供时回退为本地CSV。返回 Promise 时按钮显示「生成中…」 */
   onExport?: (supplier: SupplierGroup) => void | Promise<void>;
 }
@@ -188,6 +203,44 @@ function buildSuppliers(rows: SupplierRow[]): SupplierGroup[] {
   return groups.sort((a, b) => b.overdue - a.overdue || b.total - a.total);
 }
 
+/* ---------- 供应商未匹配兜底桶 ---------- */
+
+interface UnmatchedGroup {
+  key: string; code: string; name: string; img: string | null;
+  total: number; overdue: number; due24: number;
+  shops: string[]; styleNos: string[];
+  skus: { tail: string; qty: number; overdue: number }[];
+}
+
+// 复用款号纠正逻辑:按 shortName 归并同款,数字款号(平台副本)借同名正本款号显示
+function buildUnmatched(rows: UnmatchedRow[]): UnmatchedGroup[] {
+  const byName = new Map<string, UnmatchedGroup>();
+  for (const r of rows) {
+    const name = shortName(r.product_name, r.style_no);
+    let g = byName.get(name);
+    if (!g) {
+      g = { key: name, code: r.style_no, name, img: r.image_url, total: 0, overdue: 0, due24: 0, shops: [], styleNos: [], skus: [] };
+      byName.set(name, g);
+    }
+    if (NUMERIC_ID.test(g.code) && !NUMERIC_ID.test(r.style_no)) g.code = r.style_no;
+    if (!g.img && r.image_url) g.img = r.image_url;
+    g.total += Number(r.total_qty);
+    g.overdue += Number(r.overdue_qty);
+    g.due24 += Number(r.due24_qty);
+    g.styleNos.push(r.style_no);
+    for (const s of r.shop_names ?? []) if (s && !g.shops.includes(s)) g.shops.push(s);
+    for (const d of r.sku_details ?? []) {
+      const tail = skuTail(d.sku, r.style_no);
+      const exist = g.skus.find((k) => k.tail === tail);
+      if (exist) { exist.qty += Number(d.qty); exist.overdue += Number(d.overdue_qty); }
+      else g.skus.push({ tail, qty: Number(d.qty), overdue: Number(d.overdue_qty) });
+    }
+  }
+  return [...byName.values()]
+    .map((g) => ({ ...g, skus: g.skus.sort((a, b) => b.overdue - a.overdue || b.qty - a.qty) }))
+    .sort((a, b) => b.overdue - a.overdue || b.total - a.total);
+}
+
 /* ---------- 复制 / 导出 ---------- */
 
 function chaseMessage(g: SupplierGroup, today: string): string {
@@ -234,10 +287,13 @@ function Thumb({ img, qty, dim }: { img: string | null; qty: number; dim: boolea
 
 /* ---------- 主组件 ---------- */
 
-export default function ChaseListVisual({ timeline, suppliers, onExport }: Props) {
+export default function ChaseListVisual({ timeline, suppliers, unmatched, onExport }: Props) {
   const today = useMemo(todayCN, []);
   const days = useMemo(() => buildDays(timeline, today), [timeline, today]);
   const groups = useMemo(() => buildSuppliers(suppliers), [suppliers]);
+  const unmatchedGroups = useMemo(() => buildUnmatched(unmatched ?? []), [unmatched]);
+  const [unmatchedOpen, setUnmatchedOpen] = useState(true);
+  const [unmatchedShowAll, setUnmatchedShowAll] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -295,7 +351,7 @@ export default function ChaseListVisual({ timeline, suppliers, onExport }: Props
       {/* ======== 发货截止时间轴 ======== */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>发货截止时间轴</span>
-        <span style={{ fontSize: 11, color: FAINT }}>仅含可催供应商部分，非全部待发货</span>
+        <span style={{ fontSize: 11, color: FAINT }}>含可催供应商＋供应商未匹配兜底，非全部待发货</span>
         {selected.size > 0 ? (
           <button style={{ ...textBtn, color: RED, fontWeight: 500 }} onClick={() => setSelected(new Set())}>
             已选 {selectedDays.map((d) => d.label).join(" + ")} · 合计 {selectedQty} 件 · 点击清除
@@ -335,6 +391,90 @@ export default function ChaseListVisual({ timeline, suppliers, onExport }: Props
           })}
         </div>
       </div>
+
+      {/* ======== 供应商未匹配兜底桶(有数据才显示) ======== */}
+      {(() => {
+        const visibleUm = unmatchedGroups.filter((g) => !filterSet || g.styleNos.some((n) => filterSet.has(n)));
+        if (visibleUm.length === 0) return null;
+        const umTotal = visibleUm.reduce((s, g) => s + g.total, 0);
+        const umOverdue = visibleUm.reduce((s, g) => s + g.overdue, 0);
+        const umDue24 = visibleUm.reduce((s, g) => s + g.due24, 0);
+        const TOP_N = 10;
+        const list = unmatchedShowAll ? visibleUm : visibleUm.slice(0, TOP_N);
+        const restCount = visibleUm.length - list.length;
+        const restQty = visibleUm.slice(TOP_N).reduce((s, g) => s + g.total, 0);
+        return (
+          <section style={{ marginTop: 28 }}>
+            <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0" }}>
+              <button style={{ ...textBtn, padding: 2, color: FAINT }} aria-label="展开/收起"
+                onClick={() => setUnmatchedOpen(!unmatchedOpen)}>
+                {unmatchedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+              <span style={{ fontSize: 14.5, fontWeight: 600, color: RED }}>供应商未匹配</span>
+              <span style={{ fontSize: 13, color: SUB }}>{visibleUm.length} 款 · {umTotal} 件无人可催</span>
+              {umOverdue > 0 && <span style={{ fontSize: 12.5, color: RED, fontWeight: 500 }}>已超时 {umOverdue} 件</span>}
+              {umDue24 > 0 && <span style={{ fontSize: 12.5, color: AMBER, fontWeight: 500 }}>24h内 {umDue24} 件</span>}
+              <span style={{ fontSize: 11, color: FAINT }}>新链接副本/缺商品档案映射，请尽快补建商品对应关系</span>
+            </header>
+            {unmatchedOpen && (
+              <div>
+                {list.map((g, gi) => (
+                  <div key={g.key} style={{ display: "flex", gap: 14, alignItems: "center", padding: "13px 0 13px 26px", borderTop: gi > 0 ? `1px solid ${HAIRLINE}` : "none" }}>
+                    <div onClick={() => g.img && setPreview(g.img)}
+                      style={{ width: 56, height: 56, borderRadius: 8, background: "#F3F4F6", border: `1px solid ${HAIRLINE}`, overflow: "hidden", flexShrink: 0, cursor: g.img ? "zoom-in" : "default" }}>
+                      {g.img && (
+                        <img src={g.img} referrerPolicy="no-referrer" loading="lazy" alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontFamily: MONO, fontSize: 12, color: FAINT, letterSpacing: "0.02em" }}>{g.code}</span>
+                        <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                        <span style={{ flex: 1 }} />
+                        {g.overdue > 0 && <span style={{ fontSize: 12, color: RED, whiteSpace: "nowrap" }}>已超时 {g.overdue} 件</span>}
+                        {g.overdue === 0 && g.due24 > 0 && <span style={{ fontSize: 12, color: AMBER, whiteSpace: "nowrap" }}>24h内 {g.due24} 件</span>}
+                      </div>
+                      <div style={{ marginTop: 5, fontFamily: MONO, fontSize: 12.5, color: SUB, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {g.skus.map((k, ki) => (
+                          <span key={k.tail}>
+                            {ki > 0 && <span style={{ color: "#C9CDD2" }}>{"  ·  "}</span>}
+                            <span style={k.overdue > 0 ? { color: RED, fontWeight: 500 } : undefined}>
+                              {k.tail}×{k.qty}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                      {g.shops.length > 0 && (
+                        <div style={{ marginTop: 4, fontSize: 11.5, color: FAINT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          店铺：{g.shops.join("、")}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ width: 72, textAlign: "right", flexShrink: 0 }}>
+                      <div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{g.total}</div>
+                      <div style={{ fontSize: 11, color: FAINT }}>件待催</div>
+                    </div>
+                  </div>
+                ))}
+                {restCount > 0 && (
+                  <button style={{ ...textBtn, padding: "10px 0 14px 26px" }}
+                    onClick={() => setUnmatchedShowAll(true)}>
+                    展开其余 {restCount} 款 · 共 {restQty} 件
+                  </button>
+                )}
+                {unmatchedShowAll && visibleUm.length > TOP_N && (
+                  <button style={{ ...textBtn, padding: "10px 0 14px 26px" }}
+                    onClick={() => setUnmatchedShowAll(false)}>
+                    收起
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {/* ======== 供应商款式清单 ======== */}
       {groups.length === 0 && (

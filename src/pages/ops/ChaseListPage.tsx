@@ -8,7 +8,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/ops/PageHeader";
-import ChaseListVisual, { exportCsv as exportSupplierCsv, type SupplierGroup } from "@/components/ops/ChaseListVisual";
+import ChaseListVisual, { exportCsv as exportSupplierCsv, type SupplierGroup, type UnmatchedRow } from "@/components/ops/ChaseListVisual";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -209,9 +209,15 @@ export default function ChaseListPage() {
           if (error) throw error;
           return (data ?? []) as TimelineRow[];
         } },
+      { queryKey: ["chase", "unmatched_list"], staleTime: 60_000,
+        queryFn: async () => {
+          const { data, error } = await supabase.rpc("ops_chase_unmatched_list" as never);
+          if (error) throw error;
+          return (data ?? []) as UnmatchedRow[];
+        } },
     ],
   });
-  const [supplierQ, questionQ, purchaseQ, urgencyQ, closedQ, timelineQ] = queries;
+  const [supplierQ, questionQ, purchaseQ, urgencyQ, closedQ, timelineQ, unmatchedQ] = queries;
   const loading = queries.some(q => q.isLoading);
   const anyError = queries.find(q => q.error)?.error as { code?: string; message?: string } | undefined;
   const isForbidden = anyError?.code === "42501" || /42501|权限|permission/i.test(anyError?.message ?? "");
@@ -222,6 +228,7 @@ export default function ChaseListPage() {
   const urgencyRows = (urgencyQ.data ?? []) as UrgencyRow[];
   const closedRows = (closedQ.data ?? []) as ClosedShortRow[];
   const timelineRowsRaw = (timelineQ.data ?? []) as TimelineRow[];
+  const unmatchedRows = (unmatchedQ.data ?? []) as UnmatchedRow[];
 
   const urgencyByKey = useMemo(() => {
     const m: Record<string, UrgencyRow> = {};
@@ -342,8 +349,9 @@ export default function ChaseListPage() {
 
         <TabsContent value="supplier" className="mt-4">
           <div className="text-xs text-muted-foreground mb-2">
-            口径：仅统计已匹配到「协议到货日已过的在产采购单」的待发货需求（可向供应商催讨的部分）；
-            无采购单覆盖的缺口、下单过迟见「采购缺口」，厂家已结单少交见「厂家已结单」，正常在途不在此列
+            口径：已匹配到「协议到货日已过的在产采购单」的待发货需求（可向供应商催讨的部分）＋
+            「供应商未匹配」兜底桶（新链接副本/缺商品档案映射）；
+            有供应商映射的缺口、下单过迟见「采购缺口」，厂家已结单少交见「厂家已结单」，正常在途不在此列
           </div>
           {loading ? (
             <div className="space-y-4">
@@ -351,7 +359,7 @@ export default function ChaseListPage() {
               {[0, 1, 2].map(i => <Skeleton key={i} className="h-32 w-full" />)}
             </div>
           ) : (
-            <ChaseListVisual timeline={timelineRowsRaw} suppliers={supplierRows} onExport={exportSupplier} />
+            <ChaseListVisual timeline={timelineRowsRaw} suppliers={supplierRows} unmatched={unmatchedRows} onExport={exportSupplier} />
           )}
         </TabsContent>
 
