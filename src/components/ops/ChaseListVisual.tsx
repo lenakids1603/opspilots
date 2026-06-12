@@ -67,6 +67,8 @@ interface Props {
   suppliers: SupplierRow[];
   /** 供应商未匹配兜底桶（ops_chase_unmatched_list）；空数组时整桶隐藏 */
   unmatched?: UnmatchedRow[];
+  /** 匹配快照时间（时间轴 RPC 的 snapshot_at）；用于「数据截至 X 分钟前」角标 */
+  snapshotAt?: string | null;
   /** 接入服务端导出（xlsx带图）；未提供时回退为本地CSV。返回 Promise 时按钮显示「生成中…」 */
   onExport?: (supplier: SupplierGroup) => void | Promise<void>;
 }
@@ -319,9 +321,18 @@ function Thumb({ img, qty, dim }: { img: string | null; qty: number; dim: boolea
 
 /* ---------- 主组件 ---------- */
 
-export default function ChaseListVisual({ timeline, suppliers, unmatched, onExport }: Props) {
+function snapshotAgeLabel(snapshotAt: string | null | undefined): string | null {
+  if (!snapshotAt) return null;
+  const t = new Date(snapshotAt).getTime();
+  if (isNaN(t)) return null;
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60_000));
+  return mins <= 1 ? "数据截至 1 分钟内" : `数据截至 ${mins} 分钟前`;
+}
+
+export default function ChaseListVisual({ timeline, suppliers, unmatched, snapshotAt, onExport }: Props) {
   const today = useMemo(todayCN, []);
   const tiers = useMemo(() => buildTiers(timeline), [timeline]);
+  const snapshotLabel = snapshotAgeLabel(snapshotAt);
   // 默认选中「已逾期+24h」：打开页面第一眼就是最危险的部分；全部取消 = 看 7 天内全部
   const [selected, setSelected] = useState<Set<Urgency>>(new Set(["overdue", "due24"]));
   const active = useMemo<Set<Urgency>>(
@@ -366,6 +377,7 @@ export default function ChaseListVisual({ timeline, suppliers, unmatched, onExpo
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 14 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>紧急度五档</span>
         <span style={{ fontSize: 11, color: FAINT }}>仅含发货截止在【已逾期～未来7天】内的需求（可催供应商＋未匹配兜底）</span>
+        {snapshotLabel && <span style={{ fontSize: 11, color: FAINT }}>· {snapshotLabel}</span>}
         {selected.size > 0 ? (
           <button style={{ ...textBtn, color: RED, fontWeight: 500 }} onClick={() => setSelected(new Set())}>
             已选 {selectedTiers.map((d) => d.label).join(" + ")} · 合计 {selectedQty} 件 · 点击清除看 7 天内全部

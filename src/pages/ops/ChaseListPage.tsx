@@ -64,6 +64,7 @@ type TimelineRow = {
   image_url: string | null;
   qty: number;
   urgency: Urgency;
+  snapshot_at: string | null;
 };
 
 const fmtNum = (n: number | null | undefined) =>
@@ -196,7 +197,10 @@ export default function ChaseListPage() {
           if (error) throw error;
           return (data ?? []) as ClosedShortRow[];
         } },
+      // 时间轴曾因现场计算超时整条开天窗:失败自动重试一次;
+      // react-query 在刷新失败时本就保留上次成功数据,页面据此继续展示
       { queryKey: ["chase", "deadline_timeline"], staleTime: 60_000,
+        retry: 1, retryDelay: 1500,
         queryFn: async () => {
           const { data, error } = await supabase.rpc("ops_chase_deadline_timeline" as never);
           if (error) throw error;
@@ -212,8 +216,11 @@ export default function ChaseListPage() {
   });
   const [supplierQ, questionQ, purchaseQ, closedQ, timelineQ, unmatchedQ] = queries;
   const loading = queries.some(q => q.isLoading);
-  const anyError = queries.find(q => q.error)?.error as { code?: string; message?: string } | undefined;
-  const isForbidden = anyError?.code === "42501" || /42501|权限|permission/i.test(anyError?.message ?? "");
+  // 硬失败 = 出错且没有任何可展示数据;刷新失败但留有上次成功数据的算软失败,
+  // 继续展示旧数据并提示,不让整页/整条时间轴开天窗
+  const hardError = queries.find(q => q.error && q.data == null)?.error as { code?: string; message?: string } | undefined;
+  const softFailed = queries.some(q => q.error && q.data != null);
+  const isForbidden = hardError?.code === "42501" || /42501|权限|permission/i.test(hardError?.message ?? "");
 
   const supplierRows = (supplierQ.data ?? []) as SupplierRow[];
   const questionCount = (questionQ.data ?? { pending_review_orders: 0, pending_review_items: 0, pending_review_qty: 0 }) as PendingReviewCount;
@@ -298,10 +305,18 @@ export default function ChaseListPage() {
           </CardContent>
         </Card>
       )}
-      {!isForbidden && anyError && (
+      {!isForbidden && hardError && (
         <Card className="border-destructive/40 bg-destructive/5 mb-4">
           <CardContent className="py-4 text-sm text-destructive">
-            数据加载失败：{anyError.message ?? "未知错误"}
+            数据加载失败：{hardError.message ?? "未知错误"}
+          </CardContent>
+        </Card>
+      )}
+      {!isForbidden && !hardError && softFailed && (
+        <Card className="border-amber-300 bg-amber-50/60 mb-4">
+          <CardContent className="py-3 text-xs text-amber-800 flex items-center gap-2">
+            <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+            部分数据刷新失败，正在展示上次成功的结果；点击右上角「刷新」重试。
           </CardContent>
         </Card>
       )}
@@ -334,7 +349,8 @@ export default function ChaseListPage() {
               {[0, 1, 2].map(i => <Skeleton key={i} className="h-32 w-full" />)}
             </div>
           ) : (
-            <ChaseListVisual timeline={timelineRowsRaw} suppliers={supplierRows} unmatched={unmatchedRows} onExport={exportSupplier} />
+            <ChaseListVisual timeline={timelineRowsRaw} suppliers={supplierRows} unmatched={unmatchedRows}
+              snapshotAt={timelineRowsRaw[0]?.snapshot_at ?? null} onExport={exportSupplier} />
           )}
         </TabsContent>
 
