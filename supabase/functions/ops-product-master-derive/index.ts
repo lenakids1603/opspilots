@@ -517,12 +517,24 @@ Deno.serve(async (req) => {
     const aliases = await upsertAliases(masters, masterIdMap);
     const exceptions = await recordExceptions(orphanAliases);
 
+    // 常态沉淀:商品档案(ops_products)supplier 为空时,取该款最近一张
+    // 有效采购单的供应商回填(全表 set-based,与 days/limit 窗口无关)
+    let supplierBackfilled: number | null = null;
+    let supplierBackfillError: string | null = null;
+    {
+      const { data, error } = await admin.rpc("ops_products_backfill_supplier_from_po");
+      if (error) supplierBackfillError = error.message;
+      else supplierBackfilled = Number((data as any)?.products_supplier_backfilled ?? 0);
+    }
+
     const summary = {
       scanned_rows: rows.length,
       masters_inserted: inserted,
       masters_updated: updated,
       aliases_upserted: aliases,
       exceptions_recorded: exceptions,
+      products_supplier_backfilled: supplierBackfilled,
+      ...(supplierBackfillError ? { supplier_backfill_error: supplierBackfillError } : {}),
     };
 
     if (logId) {
