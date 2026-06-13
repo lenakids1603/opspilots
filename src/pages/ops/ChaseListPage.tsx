@@ -72,8 +72,11 @@ type TimelineRow = {
   urgency: Urgency;
   snapshot_at: string | null;
 };
-// 7 天待发货全景（ops_chase_demand_overview）：每个供应状态一行
-type OverviewCategory = "in_transit" | "gap" | "late_order" | "closed_short" | "urge_supplier";
+// 7 天待发货全景（ops_chase_demand_overview）：每个供应状态一行。
+// in_transit 已按安全缓冲（p_buffer_days，默认 3 天）拆为 in_transit_tight/in_transit_safe
+type OverviewCategory =
+  | "in_transit_safe" | "in_transit_tight"
+  | "gap" | "late_order" | "closed_short" | "urge_supplier";
 type OverviewRow = {
   category: string;
   qty_7d: number;
@@ -81,9 +84,12 @@ type OverviewRow = {
   qty_overdue: number;
   orders_overdue: number;
 };
-// 五状态分解：category → 中文标签 + 点击跳转的页签（「无采购单」按需求跳「采购缺口」）
-const OVERVIEW_CATEGORIES: { key: OverviewCategory; label: string; tab: string }[] = [
-  { key: "in_transit", label: "货在路上", tab: "purchase" },
+// 六状态分解：category → 中文标签 + 点击跳转页签（「无采购单」按需求跳「采购缺口」）；
+// warn=橙色告警强调（「在路上·吃紧」是会伪装成安全的隐藏风险），tip=悬停说明
+const OVERVIEW_CATEGORIES: { key: OverviewCategory; label: string; tab: string; warn?: boolean; tip?: string }[] = [
+  { key: "in_transit_safe", label: "在路上·宽裕", tab: "purchase" },
+  { key: "in_transit_tight", label: "在路上·吃紧", tab: "purchase", warn: true,
+    tip: "交期距发货截止≤3天，供应商稍有延误就会错过平台发货，需提前盯" },
   { key: "gap", label: "无采购单", tab: "purchase" },
   { key: "late_order", label: "会迟到", tab: "purchase" },
   { key: "closed_short", label: "厂家少交", tab: "closed" },
@@ -449,9 +455,10 @@ export default function ChaseListPage() {
                     return (
                       <span key={c.key} className="inline-flex items-baseline">
                         {i > 0 && <span className="mx-1.5 text-muted-foreground/40">·</span>}
-                        <button type="button" className="hover:text-foreground"
-                          onClick={() => setTab(c.tab)} title={`查看${c.label}`}>
-                          {c.label} <span className="tabular-nums text-foreground">{fmtNum(qty)}</span>
+                        <button type="button"
+                          className={cn("hover:text-foreground", c.warn && "text-orange-600 hover:text-orange-700 font-medium")}
+                          onClick={() => setTab(c.tab)} title={c.tip ?? `查看${c.label}`}>
+                          {c.label} <span className={cn("tabular-nums", !c.warn && "text-foreground")}>{fmtNum(qty)}</span>
                         </button>
                         {overdue > 0 && (
                           <span className="ml-1 text-xs text-destructive">逾期{fmtNum(overdue)}</span>

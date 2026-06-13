@@ -4284,7 +4284,7 @@ export type Database = {
         }[]
       }
       ops_chase_demand_overview: {
-        Args: never
+        Args: { p_buffer_days?: number }
         Returns: {
           category: string
           orders_7d: number
