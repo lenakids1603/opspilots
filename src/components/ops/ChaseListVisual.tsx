@@ -15,7 +15,7 @@
 //   4) 横幅缩略图与彩带在同一个 grid 内，天然对齐。
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, Check, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Check, Download, Ban } from "lucide-react";
 
 export type Urgency = "overdue" | "due24" | "due48" | "due72" | "later";
 
@@ -71,6 +71,8 @@ interface Props {
   snapshotAt?: string | null;
   /** 接入服务端导出（xlsx带图）；未提供时回退为本地CSV。返回 Promise 时按钮显示「生成中…」 */
   onExport?: (supplier: SupplierGroup) => void | Promise<void>;
+  /** 「供应商未匹配」每款的「标记劝退」回调（按 style_no 标记整款）；未提供则不显示按钮 */
+  onMarkUnmatched?: (input: { styleNo: string; name: string }) => void;
 }
 
 const INK = "#1F2329";
@@ -329,7 +331,7 @@ function snapshotAgeLabel(snapshotAt: string | null | undefined): string | null 
   return mins <= 1 ? "数据截至 1 分钟内" : `数据截至 ${mins} 分钟前`;
 }
 
-export default function ChaseListVisual({ timeline, suppliers, unmatched, snapshotAt, onExport }: Props) {
+export default function ChaseListVisual({ timeline, suppliers, unmatched, snapshotAt, onExport, onMarkUnmatched }: Props) {
   const today = useMemo(todayCN, []);
   const tiers = useMemo(() => buildTiers(timeline), [timeline]);
   const snapshotLabel = snapshotAgeLabel(snapshotAt);
@@ -484,6 +486,14 @@ export default function ChaseListVisual({ timeline, suppliers, unmatched, snapsh
                       <div style={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>{g.sel}</div>
                       <div style={{ fontSize: 11, color: FAINT }}>件待催</div>
                     </div>
+                    {onMarkUnmatched && (
+                      <button
+                        style={{ ...textBtn, color: SUB, flexShrink: 0, whiteSpace: "nowrap" }}
+                        onClick={() => onMarkUnmatched({ styleNo: g.code, name: g.name })}
+                        title="标记为劝退款：不再催此款货，移入「采购缺口」的劝退分组">
+                        <Ban size={13} /> 劝退
+                      </button>
+                    )}
                   </div>
                 ))}
                 {restCount > 0 && (

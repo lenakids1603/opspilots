@@ -176,23 +176,22 @@ export default function ChaseListPage() {
   const onPreview = (url: string, sku: string) => setPreview({ url, sku });
 
   const qc = useQueryClient();
-  const [markTarget, setMarkTarget] = useState<PurchaseRow | null>(null);
+  const [markTarget, setMarkTarget] = useState<{ styleNo: string; name: string } | null>(null);
   const [markRemark, setMarkRemark] = useState("");
   const [unmarkTarget, setUnmarkTarget] = useState<PurchaseRow | null>(null);
 
-  // 标记/取消劝退：写 ops_chase_style_flags（admin/ops 经 RLS 放行；能看到采购缺口即为
-  // admin/ops，故按钮无需另判角色）。优先按款号(style_no)标记——同款全部 SKU 一并劝退；
-  // 无款号才按 SKU。original_supplier_name 留空交 BEFORE INSERT 触发器从主档回填。
-  // 写后只失效 chase 系列查询重拉，无需调 refresh_risk_meta（催货/未匹配清单已自动排除劝退款）。
+  // 劝退「标记」入口在【按供应商催货 → 供应商未匹配】(运营在那里对"有急单却无供应商"的款
+  // 拿主意)：按 style_no 标记整款。写 ops_chase_style_flags（admin/ops 经 RLS 放行；该页
+  // RPC 已限内部，按钮无需另判角色）。original_supplier_name 留空交 BEFORE INSERT 触发器从
+  // 主档回填（未匹配款多半本就无供应商，回填为空属正常）。写后只失效 chase 系列查询重拉，
+  // 无需调 refresh_risk_meta（催货/未匹配清单后端已自动排除劝退款）。
   const markMutation = useMutation({
-    mutationFn: async ({ row, remark }: { row: PurchaseRow; remark: string }) => {
-      const payload: { flag: string; style_no?: string; sku?: string; remark: string | null } = {
+    mutationFn: async ({ styleNo, remark }: { styleNo: string; remark: string }) => {
+      const { error } = await supabase.from("ops_chase_style_flags").insert({
         flag: "quantui",
+        style_no: styleNo,
         remark: remark.trim() || null,
-      };
-      if (row.style_no?.trim()) payload.style_no = row.style_no.trim();
-      else payload.sku = row.sku;
-      const { error } = await supabase.from("ops_chase_style_flags").insert(payload);
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -406,7 +405,8 @@ export default function ChaseListPage() {
             </div>
           ) : (
             <ChaseListVisual timeline={timelineRowsRaw} suppliers={supplierRows} unmatched={unmatchedRows}
-              snapshotAt={timelineRowsRaw[0]?.snapshot_at ?? null} onExport={exportSupplier} />
+              snapshotAt={timelineRowsRaw[0]?.snapshot_at ?? null} onExport={exportSupplier}
+              onMarkUnmatched={(input) => { setMarkRemark(""); setMarkTarget(input); }} />
           )}
         </TabsContent>
 
@@ -424,7 +424,7 @@ export default function ChaseListPage() {
             <>
               <Card>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1040px]">
+                  <table className="w-full text-sm min-w-[960px]">
                     <thead className="bg-muted/40 text-muted-foreground">
                       <tr>
                         <th className="text-left px-4 py-2 font-medium w-14">图</th>
@@ -437,12 +437,11 @@ export default function ChaseListPage() {
                         <th className="text-right px-4 py-2 font-medium">销退冲抵</th>
                         <th className="text-right px-4 py-2 font-medium">最终缺口</th>
                         <th className="text-left px-4 py-2 font-medium">最早付款</th>
-                        <th className="text-right px-4 py-2 font-medium w-20">操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       {realPurchase.length === 0 ? (
-                        <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
+                        <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">暂无数据</td></tr>
                       ) : realPurchase.map((r, i) => (
                         <tr key={i} className={cn("border-t", Number(r.final_gap) > 0 && "bg-red-50/60")}>
                           <td className="px-4 py-2">
@@ -459,12 +458,6 @@ export default function ChaseListPage() {
                             {fmtNum(r.final_gap)}
                           </td>
                           <td className="px-4 py-2">{fmtMMDDHM(r.earliest_pay_time)}</td>
-                          <td className="px-4 py-2 text-right">
-                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
-                              onClick={() => { setMarkRemark(""); setMarkTarget(r); }}>
-                              <Ban className="mr-1 size-3.5" /> 劝退
-                            </Button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -627,37 +620,39 @@ export default function ChaseListPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 标记劝退：可填可选备注；original_supplier_name 交 BEFORE INSERT 触发器回填 */}
+      {/* 标记劝退（入口在「供应商未匹配」）：按 style_no 标记整款，可填可选备注；
+          original_supplier_name 交 BEFORE INSERT 触发器回填（未匹配款多半为空，属正常） */}
       <Dialog open={!!markTarget} onOpenChange={(o) => { if (!o) { setMarkTarget(null); setMarkRemark(""); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>标记为劝退款</DialogTitle>
             <DialogDescription>
-              标记后该款将从「按供应商催货」「供应商未匹配」清单移除，并在本页单独归入「劝退款」、不计入缺口合计。
+              标记后该款将从「供应商未匹配」「按供应商催货」清单移除，并在「采购缺口」页单独归入「劝退款」记录、不计入缺口合计。
             </DialogDescription>
           </DialogHeader>
           {markTarget && (
             <div className="space-y-3 text-sm">
               <div className="rounded-md bg-muted/40 p-3 space-y-1">
-                <div><span className="text-muted-foreground">SKU：</span><span className="font-mono">{markTarget.sku}</span></div>
-                <div><span className="text-muted-foreground">款号：</span>{markTarget.style_no || "-"}</div>
-                <div><span className="text-muted-foreground">当前供应商：</span>{markTarget.supplier_name || "-"}</div>
+                <div><span className="text-muted-foreground">款号：</span><span className="font-mono">{markTarget.styleNo}</span></div>
+                {markTarget.name && markTarget.name !== markTarget.styleNo && (
+                  <div><span className="text-muted-foreground">款名：</span>{markTarget.name}</div>
+                )}
                 <div className="text-xs text-muted-foreground pt-1">
-                  {markTarget.style_no?.trim() ? "将按款号标记，同款全部 SKU 一并劝退" : "该行无款号，将按 SKU 单独标记"}
+                  按款号标记，同款全部 SKU 一并劝退
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="quantui-remark">备注（可选）</Label>
                 <Textarea id="quantui-remark" rows={3} value={markRemark}
                   onChange={(e) => setMarkRemark(e.target.value)}
-                  placeholder="如：长期缺货停产、改版下架…" />
+                  placeholder="如：新款无供应商、不值得开发、改版下架…" />
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setMarkTarget(null); setMarkRemark(""); }}
               disabled={markMutation.isPending}>取消</Button>
-            <Button onClick={() => markTarget && markMutation.mutate({ row: markTarget, remark: markRemark })}
+            <Button onClick={() => markTarget && markMutation.mutate({ styleNo: markTarget.styleNo, remark: markRemark })}
               disabled={markMutation.isPending}>
               {markMutation.isPending ? "标记中…" : "确认劝退"}
             </Button>
